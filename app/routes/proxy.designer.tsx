@@ -1,21 +1,43 @@
 import React from 'react';
-import { Stage, Layer, Circle, Text, TextPath, Transformer, Group } from 'react-konva';
+import { Stage, Layer, Circle, Text, TextPath, Transformer, Group, Image, Rect } from 'react-konva';
+import useImage from 'use-image';
 
 const App = () => {
   const shapeRef = React.useRef(null);
-  const [dimensions, setDimensions] = React.useState({ width: 800, height: 600 });
+  const [dimensions, setDimensions] = React.useState({ width: 1000, height: 1000 });
+  const [baseImage] = useImage('/media/images/8-spot-red-base-image.png');
+  const [svgImage] = useImage('/media/images/borders_v7-11.svg');
   const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number}>>([]);
+  const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number}>>([]);
+  const [svgElements, setSvgElements] = React.useState<Array<{id: string, x: number, y: number, width: number, height: number}>>([]);
   const [curvedTextElements, setCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean}>>([]);
+  const [designableArea, setDesignableArea] = React.useState({
+    width: 744,
+    height: 744,
+    cornerRadius: 372, // Max corner radius for circle
+    x: 1000 / 2 - 372, // Center in 1000px canvas
+    y: 1000 / 2 - 372, // Center in 1000px canvas
+    visible: true
+  });
+  const [backgroundColor, setBackgroundColor] = React.useState('transparent');
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const transformerRef = React.useRef<any>(null);
 
   React.useEffect(() => {
-    // Set dimensions after component mounts (client-side)
-    setDimensions({
-      width: window.innerWidth,
-      height: window.innerHeight
-    });
+    // Fixed canvas size - 1000x1000 square
+    const newDimensions = {
+      width: 1000,
+      height: 1000
+    };
+    setDimensions(newDimensions);
+    
+    // Update designable area position to center
+    setDesignableArea(prev => ({
+      ...prev,
+      x: newDimensions.width / 2 - prev.width / 2,
+      y: newDimensions.height / 2 - prev.height / 2
+    }));
     
     // it will log `Konva.Circle` instance
     console.log(shapeRef.current);
@@ -36,8 +58,8 @@ const App = () => {
     const newText = {
       id: `text-${Date.now()}`,
       text: 'Hello World',
-      x: Math.random() * (dimensions.width - 200) + 100, // Random position
-      y: Math.random() * (dimensions.height - 100) + 50
+      x: designableArea.x + designableArea.width / 2 - 50, // Center of designable area
+      y: designableArea.y + designableArea.height / 2 - 12 // Center vertically (minus half font size)
     };
     setTextElements(prev => [...prev, newText]);
   };
@@ -56,6 +78,28 @@ const App = () => {
     setCurvedTextElements(prev => [...prev, newCurvedText]);
   };
 
+  const addGradientText = () => {
+    const newGradientText = {
+      id: `gradient-text-${Date.now()}`,
+      text: 'Gold Gradient Text',
+      x: designableArea.x + designableArea.width / 2 - 80, // Center of designable area
+      y: designableArea.y + designableArea.height / 2 - 12 // Center vertically (minus half font size)
+    };
+    setGradientTextElements(prev => [...prev, newGradientText]);
+  };
+
+  const addSvg = () => {
+    const svgSize = 60; // Size for the SVG element
+    const newSvg = {
+      id: `svg-${Date.now()}`,
+      x: designableArea.x + designableArea.width / 2 - svgSize / 2, // Center of designable area
+      y: designableArea.y + designableArea.height / 2 - svgSize / 2, // Center vertically
+      width: svgSize,
+      height: svgSize
+    };
+    setSvgElements(prev => [...prev, newSvg]);
+  };
+
   const handleStageClick = (e: any) => {
     if (e.target === e.target.getStage()) {
       setSelectedId(null);
@@ -64,9 +108,30 @@ const App = () => {
   };
 
   const handleTextEdit = (id: string, newText: string) => {
-    setCurvedTextElements(prev => 
-      prev.map(el => el.id === id ? { ...el, text: newText } : el)
-    );
+    // Check if it's a curved text element
+    const curvedElement = curvedTextElements.find(el => el.id === id);
+    if (curvedElement) {
+      setCurvedTextElements(prev => 
+        prev.map(el => el.id === id ? { ...el, text: newText } : el)
+      );
+    }
+    
+    // Check if it's a regular text element
+    const textElement = textElements.find(el => el.id === id);
+    if (textElement) {
+      setTextElements(prev => 
+        prev.map(el => el.id === id ? { ...el, text: newText } : el)
+      );
+    }
+    
+    // Check if it's a gradient text element
+    const gradientElement = gradientTextElements.find(el => el.id === id);
+    if (gradientElement) {
+      setGradientTextElements(prev => 
+        prev.map(el => el.id === id ? { ...el, text: newText } : el)
+      );
+    }
+    
     setEditingId(null);
   };
 
@@ -110,6 +175,211 @@ const App = () => {
         <button onClick={addCurvedText} style={{ padding: '8px 16px', fontSize: '14px', marginRight: '10px' }}>
           Add Curved Text
         </button>
+        <button onClick={addGradientText} style={{ padding: '8px 16px', fontSize: '14px', marginRight: '10px' }}>
+          Add Gradient Text
+        </button>
+        <button onClick={addSvg} style={{ padding: '8px 16px', fontSize: '14px', marginRight: '10px' }}>
+          Add SVG
+        </button>
+        <button 
+          onClick={() => setDesignableArea(prev => ({ ...prev, visible: !prev.visible }))}
+          style={{ 
+            padding: '8px 16px', 
+            fontSize: '14px', 
+            marginRight: '10px',
+            backgroundColor: designableArea.visible ? '#28a745' : '#6c757d',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px'
+          }}
+        >
+          {designableArea.visible ? 'Hide' : 'Show'} Design Area
+        </button>
+        
+        {/* Designable Area Controls */}
+        <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f8f9fa', border: '1px solid #dee2e6', borderRadius: '4px' }}>
+          <strong>Design Area Controls:</strong>
+          <div style={{ display: 'flex', gap: '15px', marginTop: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <label>
+              Center X: 
+              <input
+                type="range"
+                min="200"
+                max={dimensions.width - 200}
+                value={designableArea.x + designableArea.width / 2}
+                onChange={(e) => {
+                  const newCenterX = parseInt(e.target.value);
+                  setDesignableArea(prev => ({ 
+                    ...prev, 
+                    x: newCenterX - prev.width / 2
+                  }));
+                }}
+                style={{ marginLeft: '5px', width: '100px' }}
+              />
+              <span style={{ marginLeft: '5px', minWidth: '40px', display: 'inline-block' }}>{Math.round(designableArea.x + designableArea.width / 2)}px</span>
+            </label>
+            <label>
+              Center Y: 
+              <input
+                type="range"
+                min="200"
+                max={dimensions.height - 200}
+                value={designableArea.y + designableArea.height / 2}
+                onChange={(e) => {
+                  const newCenterY = parseInt(e.target.value);
+                  setDesignableArea(prev => ({ 
+                    ...prev, 
+                    y: newCenterY - prev.height / 2
+                  }));
+                }}
+                style={{ marginLeft: '5px', width: '100px' }}
+              />
+              <span style={{ marginLeft: '5px', minWidth: '40px', display: 'inline-block' }}>{Math.round(designableArea.y + designableArea.height / 2)}px</span>
+            </label>
+            <label>
+              Width: 
+              <input
+                type="range"
+                min="100"
+                max="1000"
+                value={designableArea.width}
+                onChange={(e) => {
+                  const newWidth = parseInt(e.target.value);
+                  const centerX = designableArea.x + designableArea.width / 2;
+                  setDesignableArea(prev => ({ 
+                    ...prev, 
+                    width: newWidth,
+                    x: centerX - newWidth / 2, // Keep center fixed
+                    cornerRadius: Math.min(prev.cornerRadius, newWidth / 2)
+                  }));
+                }}
+                style={{ marginLeft: '5px', width: '100px' }}
+              />
+              <button
+                onClick={() => {
+                  const newWidth = Math.max(100, designableArea.width - 1);
+                  const centerX = designableArea.x + designableArea.width / 2;
+                  setDesignableArea(prev => ({ 
+                    ...prev, 
+                    width: newWidth,
+                    x: centerX - newWidth / 2,
+                    cornerRadius: Math.min(prev.cornerRadius, newWidth / 2)
+                  }));
+                }}
+                style={{ marginLeft: '3px', padding: '2px 6px', fontSize: '12px', cursor: 'pointer' }}
+              >
+                -
+              </button>
+              <button
+                onClick={() => {
+                  const newWidth = Math.min(1000, designableArea.width + 1);
+                  const centerX = designableArea.x + designableArea.width / 2;
+                  setDesignableArea(prev => ({ 
+                    ...prev, 
+                    width: newWidth,
+                    x: centerX - newWidth / 2,
+                    cornerRadius: Math.min(prev.cornerRadius, newWidth / 2)
+                  }));
+                }}
+                style={{ marginLeft: '2px', padding: '2px 6px', fontSize: '12px', cursor: 'pointer' }}
+              >
+                +
+              </button>
+              <span style={{ marginLeft: '5px', minWidth: '40px', display: 'inline-block' }}>{designableArea.width}px</span>
+            </label>
+            <label>
+              Height: 
+              <input
+                type="range"
+                min="100"
+                max="1000"
+                value={designableArea.height}
+                onChange={(e) => {
+                  const newHeight = parseInt(e.target.value);
+                  const centerY = designableArea.y + designableArea.height / 2;
+                  setDesignableArea(prev => ({ 
+                    ...prev, 
+                    height: newHeight,
+                    y: centerY - newHeight / 2, // Keep center fixed
+                    cornerRadius: Math.min(prev.cornerRadius, newHeight / 2)
+                  }));
+                }}
+                style={{ marginLeft: '5px', width: '100px' }}
+              />
+              <button
+                onClick={() => {
+                  const newHeight = Math.max(100, designableArea.height - 1);
+                  const centerY = designableArea.y + designableArea.height / 2;
+                  setDesignableArea(prev => ({ 
+                    ...prev, 
+                    height: newHeight,
+                    y: centerY - newHeight / 2,
+                    cornerRadius: Math.min(prev.cornerRadius, newHeight / 2)
+                  }));
+                }}
+                style={{ marginLeft: '3px', padding: '2px 6px', fontSize: '12px', cursor: 'pointer' }}
+              >
+                -
+              </button>
+              <button
+                onClick={() => {
+                  const newHeight = Math.min(1000, designableArea.height + 1);
+                  const centerY = designableArea.y + designableArea.height / 2;
+                  setDesignableArea(prev => ({ 
+                    ...prev, 
+                    height: newHeight,
+                    y: centerY - newHeight / 2,
+                    cornerRadius: Math.min(prev.cornerRadius, newHeight / 2)
+                  }));
+                }}
+                style={{ marginLeft: '2px', padding: '2px 6px', fontSize: '12px', cursor: 'pointer' }}
+              >
+                +
+              </button>
+              <span style={{ marginLeft: '5px', minWidth: '40px', display: 'inline-block' }}>{designableArea.height}px</span>
+            </label>
+            <label>
+              Corner Radius: 
+              <input
+                type="range"
+                min="0"
+                max={Math.min(designableArea.width, designableArea.height) / 2}
+                value={designableArea.cornerRadius}
+                onChange={(e) => setDesignableArea(prev => ({ ...prev, cornerRadius: parseInt(e.target.value) }))}
+                style={{ marginLeft: '5px', width: '100px' }}
+              />
+              <span style={{ marginLeft: '5px', minWidth: '40px', display: 'inline-block' }}>{designableArea.cornerRadius}px</span>
+            </label>
+            <span style={{ fontSize: '12px', color: '#6c757d' }}>
+              {designableArea.cornerRadius === Math.min(designableArea.width, designableArea.height) / 2 ? '(Circle)' : '(Rectangle)'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '15px', marginTop: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <label>
+              Background Color: 
+              <select
+                value={backgroundColor}
+                onChange={(e) => setBackgroundColor(e.target.value)}
+                style={{ marginLeft: '5px', padding: '2px 5px', fontSize: '14px' }}
+              >
+                <option value="transparent">Transparent</option>
+                <option value="red">Red</option>
+                <option value="white">White</option>
+                <option value="blue">Blue</option>
+                <option value="green">Green</option>
+                <option value="purple">Purple</option>
+                <option value="linear-gradient">Linear Gradient</option>
+                <option value="radial-gradient">Radial Gradient</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        
+        {/* Canvas Size Debug Info */}
+        <div style={{ marginTop: '10px', padding: '5px', fontSize: '12px', color: '#6c757d', fontFamily: 'monospace' }}>
+          Canvas Size: {dimensions.width} px width × {dimensions.height} px height
+        </div>
+        
         {selectedId && curvedTextElements.find(el => el.id === selectedId) && (
           <div style={{ display: 'inline-block', marginLeft: '20px' }}>
             <label style={{ marginRight: '10px' }}>
@@ -173,7 +443,12 @@ const App = () => {
         }}>
           <input
             type="text"
-            defaultValue={curvedTextElements.find(el => el.id === editingId)?.text || ''}
+            defaultValue={
+              curvedTextElements.find(el => el.id === editingId)?.text ||
+              textElements.find(el => el.id === editingId)?.text ||
+              gradientTextElements.find(el => el.id === editingId)?.text ||
+              ''
+            }
             autoFocus
             onBlur={(e) => handleTextEdit(editingId, e.target.value)}
             onKeyDown={(e) => {
@@ -193,27 +468,155 @@ const App = () => {
       )}
       <Stage width={dimensions.width} height={dimensions.height} onMouseDown={handleStageClick}>
         <Layer>
-          <Circle
-            ref={shapeRef}
-            x={dimensions.width / 2}
-            y={dimensions.height / 2}
-            radius={50}
-            fill="red"
-            draggable
-          />
-          {textElements.map((textEl) => (
-            <Text
-              key={textEl.id}
-              text={textEl.text}
-              x={textEl.x}
-              y={textEl.y}
-              fontSize={24}
-              fontFamily="Arial"
-              fill="black"
+          {/* Base product template - bottom layer */}
+          {baseImage && (
+            <Image
+              image={baseImage}
+              x={0} // Fill entire canvas
+              y={0}
+              width={1000}
+              height={1000}
+            />
+          )}
+          
+          {/* Clipped Design Content Group */}
+          <Group
+            clipFunc={(ctx) => {
+              // Create clipping path that exactly matches the dotted line overlay
+              const x = designableArea.x;
+              const y = designableArea.y;
+              const width = designableArea.width;
+              const height = designableArea.height;
+              const radius = designableArea.cornerRadius;
+              
+              // Use same logic as Konva Rect with cornerRadius
+              ctx.beginPath();
+              if (radius > 0) {
+                ctx.moveTo(x + radius, y);
+                ctx.arcTo(x + width, y, x + width, y + height, radius);
+                ctx.arcTo(x + width, y + height, x, y + height, radius);
+                ctx.arcTo(x, y + height, x, y, radius);
+                ctx.arcTo(x, y, x + width, y, radius);
+              } else {
+                ctx.rect(x, y, width, height);
+              }
+              ctx.closePath();
+            }}
+          >
+            {/* Background Color Layer */}
+            {backgroundColor !== 'transparent' && (
+              <Rect
+                x={designableArea.x}
+                y={designableArea.y}
+                width={designableArea.width}
+                height={designableArea.height}
+                cornerRadius={designableArea.cornerRadius}
+                fill={backgroundColor === 'linear-gradient' || backgroundColor === 'radial-gradient' ? undefined : backgroundColor}
+                fillLinearGradientStartPoint={backgroundColor === 'linear-gradient' ? { x: 0, y: 0 } : undefined}
+                fillLinearGradientEndPoint={backgroundColor === 'linear-gradient' ? { x: designableArea.width, y: 0 } : undefined}
+                fillLinearGradientColorStops={backgroundColor === 'linear-gradient' ? [0, '#c8102e', 1, '#ffaaaa'] : undefined}
+                fillRadialGradientStartPoint={backgroundColor === 'radial-gradient' ? { x: designableArea.width / 2, y: designableArea.height / 2 } : undefined}
+                fillRadialGradientEndPoint={backgroundColor === 'radial-gradient' ? { x: designableArea.width / 2, y: designableArea.height / 2 } : undefined}
+                fillRadialGradientStartRadius={backgroundColor === 'radial-gradient' ? 0 : undefined}
+                fillRadialGradientEndRadius={backgroundColor === 'radial-gradient' ? Math.min(designableArea.width, designableArea.height) / 2 : undefined}
+                fillRadialGradientColorStops={backgroundColor === 'radial-gradient' ? [0, '#c8102e', 1, '#ffaaaa'] : undefined}
+                listening={false}
+              />
+            )}
+            
+            {/* Demo circle - can be removed later */}
+            <Circle
+              ref={shapeRef}
+              x={dimensions.width / 2}
+              y={dimensions.height / 2}
+              radius={50}
+              fill="red"
               draggable
             />
-          ))}
-          {curvedTextElements.map((curvedEl) => {
+            {textElements.map((textEl) => (
+              <Text
+                key={textEl.id}
+                id={textEl.id}
+                text={textEl.text}
+                x={textEl.x}
+                y={textEl.y}
+                fontSize={24}
+                fontFamily="Arial"
+                fill="black"
+                draggable
+                onClick={() => setSelectedId(textEl.id)}
+                onTap={() => setSelectedId(textEl.id)}
+                onDblClick={() => setEditingId(textEl.id)}
+                onDblTap={() => setEditingId(textEl.id)}
+                onDragEnd={(e) => {
+                  const newX = e.target.x();
+                  const newY = e.target.y();
+                  setTextElements(prev => 
+                    prev.map(el => 
+                      el.id === textEl.id 
+                        ? { ...el, x: newX, y: newY }
+                        : el
+                    )
+                  );
+                }}
+              />
+            ))}
+            {gradientTextElements.map((gradientEl) => (
+              <Text
+                key={gradientEl.id}
+                id={gradientEl.id}
+                text={gradientEl.text}
+                x={gradientEl.x}
+                y={gradientEl.y}
+                fontSize={24}
+                fontFamily="Arial"
+                fillLinearGradientStartPoint={{ x: 0, y: 0 }}
+                fillLinearGradientEndPoint={{ x: 0, y: 24 }}
+                fillLinearGradientColorStops={[0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B']}
+                draggable
+                onClick={() => setSelectedId(gradientEl.id)}
+                onTap={() => setSelectedId(gradientEl.id)}
+                onDblClick={() => setEditingId(gradientEl.id)}
+                onDblTap={() => setEditingId(gradientEl.id)}
+                onDragEnd={(e) => {
+                  const newX = e.target.x();
+                  const newY = e.target.y();
+                  setGradientTextElements(prev => 
+                    prev.map(el => 
+                      el.id === gradientEl.id 
+                        ? { ...el, x: newX, y: newY }
+                        : el
+                    )
+                  );
+                }}
+              />
+            ))}
+            {svgElements.map((svgEl) => (
+              <Image
+                key={svgEl.id}
+                id={svgEl.id}
+                image={svgImage}
+                x={svgEl.x}
+                y={svgEl.y}
+                width={svgEl.width}
+                height={svgEl.height}
+                draggable
+                onClick={() => setSelectedId(svgEl.id)}
+                onTap={() => setSelectedId(svgEl.id)}
+                onDragEnd={(e) => {
+                  const newX = e.target.x();
+                  const newY = e.target.y();
+                  setSvgElements(prev => 
+                    prev.map(el => 
+                      el.id === svgEl.id 
+                        ? { ...el, x: newX, y: newY }
+                        : el
+                    )
+                  );
+                }}
+              />
+            ))}
+            {curvedTextElements.map((curvedEl) => {
             // Calculate center Y based on whether text is flipped
             // For normal text: pin top edge, so center = topY + radius
             // For flipped text: pin bottom edge, so center = topY - radius
@@ -287,6 +690,24 @@ const App = () => {
               </Group>
             );
           })}
+          </Group>
+          
+          {/* Designable Area Overlay */}
+          {designableArea.visible && (
+            <Rect
+              x={designableArea.x}
+              y={designableArea.y}
+              width={designableArea.width}
+              height={designableArea.height}
+              cornerRadius={designableArea.cornerRadius}
+              stroke="#007bff"
+              strokeWidth={2}
+              dash={[5, 5]}
+              fill="rgba(0, 123, 255, 0.1)"
+              listening={false} // Don't interfere with other interactions
+            />
+          )}
+          
           <Transformer
             ref={transformerRef}
             boundBoxFunc={(oldBox, newBox) => {

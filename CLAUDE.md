@@ -24,6 +24,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture Overview
 
+See `VISION.md` for the complete product vision and architecture roadmap for building a Shopify product customization system.
+
 ### Tech Stack
 - **Framework**: Remix (React-based full-stack framework)
 - **Database**: SQLite with Prisma ORM (easily configurable for other databases)
