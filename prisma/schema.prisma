@@ -30,3 +30,15 @@ model Session {
   collaborator  Boolean?  @default(false)
   emailVerified Boolean?  @default(false)
 }
+
+model Template {
+  id          String   @id @default(cuid())
+  name        String
+  shop        String   // Link to Shopify shop
+  canvasData  String   // JSON string of canvas state
+  thumbnail   String?  // Base64 or URL for preview
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([shop])
+}

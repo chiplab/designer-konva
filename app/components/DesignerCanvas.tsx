@@ -2,7 +2,15 @@ import React from 'react';
 import { Stage, Layer, Circle, Text, TextPath, Transformer, Group, Image, Rect } from 'react-konva';
 import useImage from 'use-image';
 
-const App = () => {
+interface DesignerCanvasProps {
+  initialTemplate?: {
+    id: string;
+    name: string;
+    canvasData: string;
+  } | null;
+}
+
+const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
   const shapeRef = React.useRef(null);
   const stageRef = React.useRef<any>(null);
   const [dimensions, setDimensions] = React.useState({ width: 1000, height: 1000 });
@@ -317,7 +325,7 @@ const App = () => {
       }
     } catch (error) {
       console.error('Error saving template:', error);
-      alert('Failed to save template: ' + error.message);
+      alert('Failed to save template: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setIsSaving(false);
     }
@@ -341,7 +349,7 @@ const App = () => {
       }
     } catch (error) {
       console.error('Error loading template:', error);
-      alert('Failed to load template: ' + error.message);
+      alert('Failed to load template: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setIsLoading(false);
     }
@@ -365,6 +373,18 @@ const App = () => {
   React.useEffect(() => {
     loadTemplatesList();
   }, []);
+
+  // Load initial template if provided
+  React.useEffect(() => {
+    if (initialTemplate && initialTemplate.canvasData) {
+      try {
+        const canvasData = JSON.parse(initialTemplate.canvasData);
+        loadCanvasState(canvasData);
+      } catch (error) {
+        console.error('Error loading initial template:', error);
+      }
+    }
+  }, [initialTemplate]);
 
   return (
     <div>
@@ -999,4 +1019,4 @@ const App = () => {
 };
 
 
-export default App;
+export default DesignerCanvas;
