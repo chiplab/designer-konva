@@ -153,6 +153,22 @@ export default function Index() {
                 </BlockStack>
                 <BlockStack gap="200">
                   <Text as="h3" variant="headingMd">
+                    Template Designer
+                  </Text>
+                  <Text as="p" variant="bodyMd">
+                    Create and manage product customization templates with our visual designer.
+                  </Text>
+                  <InlineStack gap="300">
+                    <Button url="/app/designer" variant="primary">
+                      Create Template
+                    </Button>
+                    <Button url="/app/templates" variant="plain">
+                      View All Templates
+                    </Button>
+                  </InlineStack>
+                </BlockStack>
+                <BlockStack gap="200">
+                  <Text as="h3" variant="headingMd">
                     Get started with products
                   </Text>
                   <Text as="p" variant="bodyMd">

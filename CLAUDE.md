@@ -101,3 +101,109 @@ The curved text feature in `proxy.designer.tsx` provides advanced typography con
 
 ### Canvas Architecture
 The designer canvas in `proxy.designer.tsx` uses a component-based architecture where each design element (like curved text) can be independently controlled and rendered. The canvas maintains a 600x400px viewport with centered content positioning.
+
+## Template Save System
+
+### Overview
+The template save system enables persistent storage of canvas designs using SQLite/Prisma ORM. Following Konva.js best practices, it saves minimal state data rather than full visual serialization, allowing efficient storage and fast reconstruction of designs.
+
+### Data Model
+
+```prisma
+model Template {
+  id          String   @id @default(cuid())
+  name        String
+  shop        String   // Link to Shopify shop
+  canvasData  String   // JSON string of canvas state
+  thumbnail   String?  // Base64 or URL for preview
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+```
+
+### State Serialization Strategy
+
+The system saves only essential positioning and property data, not visual details:
+
+```typescript
+interface CanvasState {
+  dimensions: { width: number; height: number };
+  backgroundColor: string;
+  designableArea: {
+    width: number;
+    height: number;
+    cornerRadius: number;
+    x: number;
+    y: number;
+    visible: boolean;
+  };
+  elements: {
+    textElements: Array<{
+      id: string;
+      text: string;
+      x: number;
+      y: number;
+      fontFamily: string;
+      fontSize?: number;
+      fill?: string;
+      rotation?: number;
+      scaleX?: number;
+      scaleY?: number;
+    }>;
+    curvedTextElements: Array<{
+      id: string;
+      text: string;
+      x: number;
+      topY: number;
+      radius: number;
+      flipped: boolean;
+      fontFamily: string;
+      // ... transformation properties
+    }>;
+    gradientTextElements: Array<{...}>;
+    svgElements: Array<{...}>;
+  };
+  assets: {
+    baseImage?: string; // URL reference
+    svgAssets?: string[]; // URL references
+  };
+}
+```
+
+### Implementation Guidelines
+
+1. **Serialization Functions** (in proxy.designer.tsx):
+   - `getCanvasState()`: Extracts current state from React components
+   - `loadCanvasState(state)`: Restores canvas from saved state
+
+2. **API Routes**:
+   - `api.templates.save.tsx`: POST endpoint to save templates
+   - `api.templates.$id.tsx`: GET endpoint to load specific template
+   - `api.templates.tsx`: GET endpoint to list all shop templates
+
+3. **Save Process**:
+   - Extract minimal state using `getCanvasState()`
+   - Generate thumbnail via `stage.toDataURL()`
+   - Save to database with shop isolation
+   - Return template ID for future reference
+
+4. **Load Process**:
+   - Fetch template by ID and shop
+   - Parse JSON canvas data
+   - Load fonts before applying state
+   - Restore state using `loadCanvasState()`
+
+### Key Principles
+
+- **Minimal State**: Only save coordinates, text, and essential properties
+- **Asset References**: Store URLs/IDs instead of embedding binary data
+- **Shop Isolation**: Templates are scoped to individual Shopify shops
+- **Reconstruction**: Visual details are recreated from minimal state
+- **Version Safety**: Consider adding version field for future migrations
+
+### Auto-Save Considerations
+
+- Implement debounced auto-save (e.g., 5-second delay)
+- Use localStorage for temporary saves before authentication
+- Sync to database after successful authentication
+- Provide visual feedback for save status
