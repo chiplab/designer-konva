@@ -1,6 +1,7 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
+import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData, Link } from "@remix-run/react";
+import { useLoaderData, useSubmit, useActionData } from "@remix-run/react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Page,
   Layout,
@@ -9,13 +10,107 @@ import {
   ResourceItem,
   Text,
   Thumbnail,
-  Button,
   EmptyState,
   Badge,
+  Modal,
+  ChoiceList,
+  Banner,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+
+// GraphQL mutation to set metafield
+const METAFIELD_SET_MUTATION = `#graphql
+  mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
+    metafieldsSet(metafields: $metafields) {
+      metafields {
+        id
+        namespace
+        key
+        value
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { admin } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const action = formData.get("_action");
+
+  if (action === "assignTemplate") {
+    const templateId = formData.get("templateId") as string;
+    const variantsJson = formData.get("variants") as string;
+    const variants = JSON.parse(variantsJson);
+
+    console.log("Starting template assignment:", { templateId, variants });
+
+    try {
+      // Process each selected variant
+      const results = await Promise.all(
+        variants.map(async (variant: any) => {
+          console.log(`Processing variant: ${variant.id}`);
+          
+          const response = await admin.graphql(
+            METAFIELD_SET_MUTATION,
+            {
+              variables: {
+                metafields: [
+                  {
+                    ownerId: variant.id,
+                    namespace: "custom_designer",
+                    key: "template_id",
+                    value: templateId,
+                    type: "single_line_text_field"
+                  }
+                ]
+              }
+            }
+          );
+          
+          const result = await response.json() as any;
+          console.log(`Response for variant ${variant.id}:`, JSON.stringify(result, null, 2));
+          
+          // Check for GraphQL errors
+          if (result.errors) {
+            console.error(`GraphQL errors for variant ${variant.id}:`, result.errors);
+            throw new Error(`GraphQL error: ${JSON.stringify(result.errors)}`);
+          }
+          
+          // Check for user errors
+          if (result.data?.metafieldsSet?.userErrors?.length > 0) {
+            const userErrors = result.data.metafieldsSet.userErrors;
+            console.error(`User errors for variant ${variant.id}:`, userErrors);
+            throw new Error(`User error: ${userErrors.map((e: any) => e.message).join(", ")}`);
+          }
+          
+          return result;
+        })
+      );
+
+      console.log("All variants processed successfully");
+
+      return json({ 
+        success: true, 
+        message: `Template assigned to ${variants.length} variant(s)` 
+      } as const);
+    } catch (error) {
+      console.error("Error assigning template:", error);
+      return json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Failed to assign template" 
+      }, { status: 500 });
+    }
+  }
+
+  return json({ success: false });
+};
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -34,6 +129,51 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function Templates() {
   const { templates } = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [products, setProducts] = useState<any[]>([]);
+  const [selectedVariants, setSelectedVariants] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showSuccessBanner, setShowSuccessBanner] = useState(false);
+  const submit = useSubmit();
+  
+  useEffect(() => {
+    if (actionData?.success) {
+      setShowSuccessBanner(true);
+      setTimeout(() => setShowSuccessBanner(false), 5000);
+    }
+  }, [actionData]);
+
+  const handleAssignTemplate = useCallback(async (templateId: string) => {
+    setSelectedTemplate(templateId);
+    setLoading(true);
+    
+    try {
+      // Fetch products and variants
+      const response = await fetch('/app/api/products');
+      const data = await response.json();
+      setProducts(data.products || []);
+      setPickerOpen(true);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleModalSubmit = useCallback(() => {
+    if (selectedVariants.length > 0 && selectedTemplate) {
+      const formData = new FormData();
+      formData.append("templateId", selectedTemplate);
+      formData.append("variants", JSON.stringify(selectedVariants.map(id => ({ id }))));
+      formData.append("_action", "assignTemplate");
+      submit(formData, { method: "post" });
+    }
+    setPickerOpen(false);
+    setSelectedTemplate(null);
+    setSelectedVariants([]);
+  }, [selectedVariants, selectedTemplate, submit]);
 
   const emptyStateMarkup = (
     <EmptyState
@@ -74,6 +214,12 @@ export default function Templates() {
             url={`/app/designer?template=${id}`}
             media={media}
             accessibilityLabel={`View details for ${name}`}
+            shortcutActions={[
+              {
+                content: "Assign to products",
+                onAction: () => handleAssignTemplate(id),
+              },
+            ]}
           >
             <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between" }}>
               <div>
@@ -81,11 +227,11 @@ export default function Templates() {
                   {name}
                 </Text>
                 <div style={{ marginTop: "4px" }}>
-                  <Text variant="bodySm" color="subdued">
+                  <Text variant="bodySm" tone="subdued" as="p">
                     Created: {new Date(createdAt).toLocaleDateString()}
                   </Text>
                   {updatedAt !== createdAt && (
-                    <Text variant="bodySm" color="subdued">
+                    <Text variant="bodySm" tone="subdued" as="p">
                       {" • Updated: " + new Date(updatedAt).toLocaleDateString()}
                     </Text>
                   )}
@@ -101,6 +247,18 @@ export default function Templates() {
 
   return (
     <Page>
+      {showSuccessBanner && actionData?.success && 'message' in actionData && (
+        <Banner tone="success" onDismiss={() => setShowSuccessBanner(false)}>
+          <p>{actionData.message}</p>
+        </Banner>
+      )}
+      
+      {actionData && !actionData.success && 'error' in actionData && actionData.error && (
+        <Banner tone="critical" onDismiss={() => {}}>
+          <p>Error: {actionData.error as string}</p>
+        </Banner>
+      )}
+      
       <TitleBar title="Templates">
         <button variant="primary" onClick={() => window.location.href = "/app/designer"}>
           Create template
@@ -113,6 +271,57 @@ export default function Templates() {
           </Card>
         </Layout.Section>
       </Layout>
+      
+      <Modal
+        open={pickerOpen}
+        onClose={() => {
+          setPickerOpen(false);
+          setSelectedTemplate(null);
+          setSelectedVariants([]);
+        }}
+        title="Select Product Variants"
+        primaryAction={{
+          content: "Assign Template",
+          onAction: handleModalSubmit,
+          disabled: selectedVariants.length === 0,
+        }}
+        secondaryActions={[
+          {
+            content: "Cancel",
+            onAction: () => {
+              setPickerOpen(false);
+              setSelectedTemplate(null);
+              setSelectedVariants([]);
+            },
+          },
+        ]}
+      >
+        <Modal.Section>
+          {loading ? (
+            <Text as="p">Loading products...</Text>
+          ) : products.length === 0 ? (
+            <Text as="p">No products found.</Text>
+          ) : (
+            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              {products.map((product: any) => (
+                <div key={product.id} style={{ marginBottom: '16px' }}>
+                  <Text variant="headingMd" as="h3">{product.title}</Text>
+                  <ChoiceList
+                    title="Select variants"
+                    allowMultiple
+                    choices={product.variants.edges.map((edge: any) => ({
+                      label: edge.node.displayName,
+                      value: edge.node.id,
+                    }))}
+                    selected={selectedVariants}
+                    onChange={setSelectedVariants}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal.Section>
+      </Modal>
     </Page>
   );
 }

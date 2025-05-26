@@ -26,6 +26,8 @@ export default function App() {
         </Link>
         <Link to="/app/templates">Templates</Link>
         <Link to="/app/designer">Designer</Link>
+        <Link to="/app/product-bindings">Product Bindings</Link>
+        <Link to="/app/metafield-setup">Setup</Link>
         <Link to="/app/additional">Additional page</Link>
       </NavMenu>
       <Outlet />

@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData, useSearchParams } from "@remix-run/react";
+import { useLoaderData } from "@remix-run/react";
 import { Page, Layout, Card } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -30,8 +30,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function Designer() {
   const { template } = useLoaderData<typeof loader>();
-  const [searchParams] = useSearchParams();
-  const templateId = searchParams.get("template");
   
   return (
     <Page>
