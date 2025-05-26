@@ -154,6 +154,117 @@ Product Variant → references Template (via MetaObject)
 - Real-time preview generation
 - Export to high-quality image
 
+## Font Management Strategy
+
+### Font Selection for Small Circular Designs
+
+Curated list of 20 fonts optimized for poker chips and similar small circular products:
+
+#### System Fonts (Instant Loading)
+- **Arial** - Clean, highly legible, excellent at small sizes
+- **Helvetica** - Classic, professional, great contrast  
+- **Verdana** - Designed for screen reading, wide letters
+- **Tahoma** - Condensed but readable, saves space
+- **Impact** - Bold, attention-grabbing for headings
+
+#### Google Fonts - Sans-Serif (High Legibility)
+- **Roboto** - Modern, friendly, excellent small-size rendering
+- **Open Sans** - Optimized for legibility, neutral design
+- **Lato** - Humanist, warm but professional
+- **Montserrat** - Geometric, strong presence
+- **Source Sans Pro** - Clean, technical, Adobe-designed
+
+#### Google Fonts - Bold/Display (For Impact)
+- **Oswald** - Condensed, strong vertical emphasis
+- **Raleway** - Elegant, thin-to-bold range
+- **Bebas Neue** - Ultra-condensed, great for short text
+- **Anton** - Single weight, very bold, compact
+- **Fjalla One** - Medium condensed, Scandinavian feel
+
+#### Google Fonts - Serif (Elegant Options)
+- **Playfair Display** - High contrast, elegant for formal designs
+- **Merriweather** - Optimized for screens, readable serif
+- **Crimson Text** - Classic book typography feel
+
+#### Google Fonts - Script (Special Occasions)
+- **Dancing Script** - Casual handwriting, wedding/celebration style
+- **Pacifico** - Surf-style script, fun and relaxed
+
+### Font Loading Strategy
+
+#### Implementation Architecture
+```javascript
+const FontManager = {
+  // Preload immediately for instant access
+  priorityFonts: ['Arial', 'Impact', 'Roboto', 'Oswald', 'Bebas Neue'],
+  
+  // Organized by use case for UI
+  categories: {
+    'Clean & Modern': ['Arial', 'Roboto', 'Open Sans', 'Lato'],
+    'Bold & Strong': ['Impact', 'Oswald', 'Anton', 'Bebas Neue'], 
+    'Elegant': ['Playfair Display', 'Merriweather', 'Raleway'],
+    'Fun & Casual': ['Dancing Script', 'Pacifico']
+  },
+  
+  loadedFonts: new Set(),
+  
+  async loadFont(fontFamily) {
+    if (this.loadedFonts.has(fontFamily)) return;
+    
+    // Google Fonts API integration
+    const link = document.createElement('link');
+    link.href = `https://fonts.googleapis.com/css2?family=${fontFamily.replace(' ', '+')}:wght@400;700&display=swap`;
+    link.rel = 'stylesheet';
+    document.head.appendChild(link);
+    
+    // Wait for font to actually load
+    await document.fonts.load(`16px "${fontFamily}"`);
+    this.loadedFonts.add(fontFamily);
+  }
+};
+```
+
+#### Progressive Loading Pattern
+1. **Immediate**: System fonts available instantly
+2. **Priority**: Load 5 most popular Google Fonts on app start
+3. **On-Demand**: Load additional fonts when user selects category
+4. **Lazy**: Load remaining fonts only when user hovers/clicks
+
+#### Konva Integration
+```javascript
+// Template font constraints
+Template: {
+  constraints: {
+    allowed_fonts: [
+      'Arial', 'Impact', 'Roboto', 'Oswald', // Safe choices
+      'Dancing Script' // Special occasion upgrade
+    ],
+    font_categories: ['Clean & Modern', 'Bold & Strong']
+  }
+}
+
+// Font change handler
+async function changeFont(textNode, fontFamily) {
+  await FontManager.loadFont(fontFamily);
+  textNode.fontFamily(fontFamily);
+  layer.batchDraw();
+}
+```
+
+### Design Considerations for Small Circular Products
+
+**Why These Fonts Work:**
+- **Size Performance**: All maintain legibility at 12-16px
+- **Contrast Ready**: Work on both light and dark backgrounds  
+- **Print Quality**: No thin strokes that disappear in production
+- **Space Efficient**: Condensed options for longer text, wide options for emphasis
+- **Character Clarity**: Strong differentiation between similar letters (O/0, I/l/1)
+
+**Template Integration:**
+- Different font sets per product type (elegant for weddings, bold for sports)
+- Automatic fallbacks if font fails to load
+- Font size recommendations based on design area constraints
+
 ---
 
 *This vision document outlines the full system architecture. The current Claude Code session focuses on building the Konva designer prototype as the foundation for this larger system.*

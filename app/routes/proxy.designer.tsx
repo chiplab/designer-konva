@@ -7,10 +7,10 @@ const App = () => {
   const [dimensions, setDimensions] = React.useState({ width: 1000, height: 1000 });
   const [baseImage] = useImage('/media/images/8-spot-red-base-image.png');
   const [svgImage] = useImage('/media/images/borders_v7-11.svg');
-  const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number}>>([]);
-  const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number}>>([]);
+  const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string}>>([]);
+  const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string}>>([]);
   const [svgElements, setSvgElements] = React.useState<Array<{id: string, x: number, y: number, width: number, height: number}>>([]);
-  const [curvedTextElements, setCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean}>>([]);
+  const [curvedTextElements, setCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string}>>([]);
   const [designableArea, setDesignableArea] = React.useState({
     width: 744,
     height: 744,
@@ -23,6 +23,28 @@ const App = () => {
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const transformerRef = React.useRef<any>(null);
+
+  // Font Management - POC with priority fonts from VISION.md
+  const priorityFonts = ['Arial', 'Impact', 'Roboto', 'Oswald', 'Bebas Neue'];
+  const [loadedFonts, setLoadedFonts] = React.useState(new Set(['Arial'])); // Arial is always available
+
+  const loadFont = async (fontFamily: string) => {
+    if (loadedFonts.has(fontFamily) || fontFamily === 'Arial') return;
+    
+    try {
+      // Google Fonts API integration
+      const link = document.createElement('link');
+      link.href = `https://fonts.googleapis.com/css2?family=${fontFamily.replace(' ', '+')}:wght@400;700&display=swap`;
+      link.rel = 'stylesheet';
+      document.head.appendChild(link);
+      
+      // Wait for font to actually load
+      await document.fonts.load(`16px "${fontFamily}"`);
+      setLoadedFonts(prev => new Set([...prev, fontFamily]));
+    } catch (error) {
+      console.warn(`Failed to load font: ${fontFamily}`, error);
+    }
+  };
 
   React.useEffect(() => {
     // Fixed canvas size - 1000x1000 square
@@ -59,7 +81,8 @@ const App = () => {
       id: `text-${Date.now()}`,
       text: 'Hello World',
       x: designableArea.x + designableArea.width / 2 - 50, // Center of designable area
-      y: designableArea.y + designableArea.height / 2 - 12 // Center vertically (minus half font size)
+      y: designableArea.y + designableArea.height / 2 - 12, // Center vertically (minus half font size)
+      fontFamily: 'Arial'
     };
     setTextElements(prev => [...prev, newText]);
   };
@@ -73,7 +96,8 @@ const App = () => {
       x: dimensions.width / 2,
       topY: topY,
       radius: radius,
-      flipped: false
+      flipped: false,
+      fontFamily: 'Arial'
     };
     setCurvedTextElements(prev => [...prev, newCurvedText]);
   };
@@ -83,7 +107,8 @@ const App = () => {
       id: `gradient-text-${Date.now()}`,
       text: 'Gold Gradient Text',
       x: designableArea.x + designableArea.width / 2 - 80, // Center of designable area
-      y: designableArea.y + designableArea.height / 2 - 12 // Center vertically (minus half font size)
+      y: designableArea.y + designableArea.height / 2 - 12, // Center vertically (minus half font size)
+      fontFamily: 'Arial'
     };
     setGradientTextElements(prev => [...prev, newGradientText]);
   };
@@ -164,6 +189,55 @@ const App = () => {
         }
       }, 0);
     }
+  };
+
+  const handleFontChange = async (fontFamily: string) => {
+    if (!selectedId) return;
+    
+    // Load the font first
+    await loadFont(fontFamily);
+    
+    // Update the appropriate element state
+    // Check if it's a curved text element
+    const curvedElement = curvedTextElements.find(el => el.id === selectedId);
+    if (curvedElement) {
+      setCurvedTextElements(prev => 
+        prev.map(el => el.id === selectedId ? { ...el, fontFamily } : el)
+      );
+    }
+    
+    // Check if it's a regular text element
+    const textElement = textElements.find(el => el.id === selectedId);
+    if (textElement) {
+      setTextElements(prev => 
+        prev.map(el => el.id === selectedId ? { ...el, fontFamily } : el)
+      );
+    }
+    
+    // Check if it's a gradient text element
+    const gradientElement = gradientTextElements.find(el => el.id === selectedId);
+    if (gradientElement) {
+      setGradientTextElements(prev => 
+        prev.map(el => el.id === selectedId ? { ...el, fontFamily } : el)
+      );
+    }
+    
+    // Force re-render and update transformer bounds after font loads
+    setTimeout(() => {
+      if (transformerRef.current) {
+        const stage = transformerRef.current.getStage();
+        const selectedNode = stage?.findOne('#' + selectedId);
+        if (selectedNode) {
+          // Re-render the layer first
+          selectedNode.getLayer()?.batchDraw();
+          
+          // Force transformer to recalculate bounds for new font metrics
+          transformerRef.current.nodes([selectedNode]);
+          transformerRef.current.forceUpdate();
+          transformerRef.current.getLayer()?.batchDraw();
+        }
+      }
+    }, 100); // Small delay to ensure font is applied
   };
 
   return (
@@ -429,6 +503,37 @@ const App = () => {
             Center Y (calculated): {(curvedTextElements.find(el => el.id === selectedId)?.topY || 0) + (curvedTextElements.find(el => el.id === selectedId)?.radius || 0)}<br/>
           </div>
         )}
+        
+        {/* Font Controls - POC */}
+        {selectedId && (textElements.find(el => el.id === selectedId) || gradientTextElements.find(el => el.id === selectedId) || curvedTextElements.find(el => el.id === selectedId)) && (
+          <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f8f9fa', border: '1px solid #dee2e6', borderRadius: '4px' }}>
+            <strong>Font Controls (POC):</strong>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '5px', alignItems: 'center' }}>
+              <label>
+                Font Family: 
+                <select
+                  value={
+                    textElements.find(el => el.id === selectedId)?.fontFamily ||
+                    gradientTextElements.find(el => el.id === selectedId)?.fontFamily ||
+                    curvedTextElements.find(el => el.id === selectedId)?.fontFamily ||
+                    'Arial'
+                  }
+                  onChange={(e) => handleFontChange(e.target.value)}
+                  style={{ marginLeft: '5px', padding: '4px 8px', fontSize: '14px' }}
+                >
+                  {priorityFonts.map(font => (
+                    <option key={font} value={font}>
+                      {font} {loadedFonts.has(font) ? '✓' : '⏳'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <span style={{ fontSize: '12px', color: '#6c757d' }}>
+                {loadedFonts.size} of {priorityFonts.length} fonts loaded
+              </span>
+            </div>
+          </div>
+        )}
       </div>
       {editingId && (
         <div style={{
@@ -541,7 +646,7 @@ const App = () => {
                 x={textEl.x}
                 y={textEl.y}
                 fontSize={24}
-                fontFamily="Arial"
+                fontFamily={textEl.fontFamily}
                 fill="black"
                 draggable
                 onClick={() => setSelectedId(textEl.id)}
@@ -569,7 +674,7 @@ const App = () => {
                 x={gradientEl.x}
                 y={gradientEl.y}
                 fontSize={24}
-                fontFamily="Arial"
+                fontFamily={gradientEl.fontFamily}
                 fillLinearGradientStartPoint={{ x: 0, y: 0 }}
                 fillLinearGradientEndPoint={{ x: 0, y: 24 }}
                 fillLinearGradientColorStops={[0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B']}
@@ -683,7 +788,7 @@ const App = () => {
                   text={curvedEl.text}
                   data={pathData}
                   fontSize={20}
-                  fontFamily="Arial"
+                  fontFamily={curvedEl.fontFamily}
                   fill="black"
                   align="center"
                 />
