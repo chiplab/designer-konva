@@ -1,0 +1,107 @@
+{% comment %}
+  Product Customizer Integration
+  This snippet adds a customization button to products that have a template assigned
+{% endcomment %}
+
+{% if product.selected_or_first_available_variant.metafields.custom_designer.template_id %}
+  <div class="product-customizer-container">
+    <button 
+      id="customize-product-btn" 
+      class="product-customizer-button"
+      data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+      data-template-id="{{ product.selected_or_first_available_variant.metafields.custom_designer.template_id }}"
+    >
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/>
+      </svg>
+      Customize This Product
+    </button>
+  </div>
+
+  {% comment %} Load customizer scripts {% endcomment %}
+  <script src="{{ 'canvas-text-renderer.js' | asset_url }}" defer></script>
+  <script src="{{ 'product-customizer-modal.js' | asset_url }}" defer></script>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const customizeBtn = document.getElementById('customize-product-btn');
+      if (!customizeBtn) return;
+      
+      // Initialize customizer modal
+      const customizer = new ProductCustomizerModal({
+        variantId: customizeBtn.dataset.variantId,
+        templateId: customizeBtn.dataset.templateId,
+        apiUrl: '/apps/designer',
+        onSave: function(customization) {
+          // Add customization to cart
+          const formData = {
+            id: customization.variantId,
+            quantity: 1,
+            properties: {
+              '_customization_id': Date.now().toString(),
+              '_template_id': customization.templateId,
+              '_custom_preview': customization.preview,
+              ...Object.entries(customization.textUpdates).reduce((acc, [key, value]) => {
+                acc[`Text: ${key}`] = value;
+                return acc;
+              }, {})
+            }
+          };
+          
+          // Add to cart via Shopify AJAX API
+          fetch('/cart/add.js', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData)
+          })
+          .then(response => response.json())
+          .then(data => {
+            // Show success message or redirect to cart
+            window.location.href = '/cart';
+          })
+          .catch(error => {
+            console.error('Error adding to cart:', error);
+            alert('Failed to add customized product to cart. Please try again.');
+          });
+        }
+      });
+      
+      customizer.init();
+      
+      // Open modal on button click
+      customizeBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        customizer.open();
+      });
+    });
+  </script>
+
+  <style>
+    .product-customizer-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      background: #000;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 16px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-top: 16px;
+    }
+    
+    .product-customizer-button:hover {
+      background: #333;
+    }
+    
+    .product-customizer-button svg {
+      width: 20px;
+      height: 20px;
+    }
+  </style>
+{% endif %}
