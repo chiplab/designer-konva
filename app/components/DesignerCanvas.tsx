@@ -22,8 +22,11 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = React.useState({ width: 1000, height: 1000 });
   const [containerSize, setContainerSize] = React.useState({ width: 1000, height: 1000 });
-  const [baseImage] = useImage('/media/images/8-spot-red-base-image.png');
-  const [svgImage] = useImage('/media/images/borders_v7-11.svg');
+  // Support for S3 URLs
+  const [baseImageUrl, setBaseImageUrl] = React.useState('/media/images/8-spot-red-base-image.png');
+  const [svgImageUrl, setSvgImageUrl] = React.useState('/media/images/borders_v7-11.svg');
+  const [baseImage] = useImage(baseImageUrl);
+  const [svgImage] = useImage(svgImageUrl);
   const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string}>>([]);
   const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string}>>([]);
   const [svgElements, setSvgElements] = React.useState<Array<{id: string, x: number, y: number, width: number, height: number}>>([]);
@@ -309,8 +312,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
         svgElements
       },
       assets: {
-        baseImage: '/media/images/8-spot-red-base-image.png',
-        svgAssets: ['/media/images/borders_v7-11.svg']
+        baseImage: baseImageUrl,
+        svgAssets: [svgImageUrl]
       }
     };
   };
@@ -331,7 +334,15 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       if (state.elements.svgElements) setSvgElements(state.elements.svgElements);
     }
     
-    // Note: Assets are already hardcoded for now
+    // Load assets (with fallback to local defaults)
+    if (state.assets) {
+      if (state.assets.baseImage) {
+        setBaseImageUrl(state.assets.baseImage);
+      }
+      if (state.assets.svgAssets && state.assets.svgAssets.length > 0) {
+        setSvgImageUrl(state.assets.svgAssets[0]);
+      }
+    }
   };
 
   // Apply text updates from modal state
@@ -550,6 +561,62 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
           </select>
           
           {isLoading && <span style={{ fontSize: '14px', color: '#666' }}>Loading...</span>}
+        </div>
+        
+        {/* Asset Management Controls */}
+        <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f0f4f8', border: '1px solid #dae1e7', borderRadius: '4px' }}>
+          <strong>Asset Management (S3):</strong>
+          <div style={{ display: 'flex', gap: '15px', marginTop: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <label>
+              Base Image: 
+              <select
+                value={baseImageUrl}
+                onChange={(e) => setBaseImageUrl(e.target.value)}
+                style={{ marginLeft: '5px', padding: '4px 8px', fontSize: '14px' }}
+              >
+                <option value="/media/images/8-spot-red-base-image.png">Local: Red Base</option>
+                <option value="/media/images/8-spot-black-base.png">Local: Black Base</option>
+                <option value="/media/images/8-spot-blue-base.png">Local: Blue Base</option>
+                <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-red-base-image.png">S3: Red Base</option>
+                <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-black-base.png">S3: Black Base</option>
+                <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-blue-base.png">S3: Blue Base</option>
+              </select>
+            </label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  const formData = new FormData();
+                  formData.append('file', file);
+                  formData.append('assetType', 'image');
+                  
+                  try {
+                    const response = await fetch('/api/assets/upload', {
+                      method: 'POST',
+                      body: formData,
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                      setBaseImageUrl(result.asset.url);
+                      alert('Image uploaded to S3 successfully!');
+                    } else {
+                      console.error('Upload failed:', result);
+                      alert(`Upload failed: ${result.error}\n${result.details || ''}\n${result.hint || ''}`);
+                    }
+                  } catch (error) {
+                    console.error('Upload error:', error);
+                    alert('Failed to upload image: ' + (error instanceof Error ? error.message : 'Unknown error'));
+                  }
+                }
+              }}
+              style={{ fontSize: '14px' }}
+            />
+            <span style={{ fontSize: '12px', color: '#6c757d' }}>
+              {baseImageUrl.startsWith('http') ? '☁️ S3' : '💾 Local'}
+            </span>
+          </div>
         </div>
         
         {/* Designable Area Controls */}
