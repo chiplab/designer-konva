@@ -50,7 +50,13 @@ class CanvasTextRenderer {
     // Load base image
     if (this.template.assets?.baseImage) {
       try {
-        this.images.base = await loadImage(this.template.assets.baseImage);
+        // Convert local paths to app proxy URLs
+        let imageUrl = this.template.assets.baseImage;
+        if (imageUrl.startsWith('/media/')) {
+          // Route through app proxy to handle CORS
+          imageUrl = `${this.apiUrl}/assets${imageUrl}`;
+        }
+        this.images.base = await loadImage(imageUrl);
       } catch (error) {
         console.warn('Failed to load base image:', error);
       }

@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://shipment-disputes-destroyed-disclaimer.trycloudflare.com"
+application_url = "https://missouri-amd-thompson-achieved.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://shipment-disputes-destroyed-disclaimer.trycloudflare.com/auth/callback",
-  "https://shipment-disputes-destroyed-disclaimer.trycloudflare.com/auth/shopify/callback",
-  "https://shipment-disputes-destroyed-disclaimer.trycloudflare.com/api/auth/callback"
+  "https://missouri-amd-thompson-achieved.trycloudflare.com/auth/callback",
+  "https://missouri-amd-thompson-achieved.trycloudflare.com/auth/shopify/callback",
+  "https://missouri-amd-thompson-achieved.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://shipment-disputes-destroyed-disclaimer.trycloudflare.com/api"
+url = "https://missouri-amd-thompson-achieved.trycloudflare.com/api"
 subpath = "designer"
 prefix = "apps"
 
