@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://pp-lou-interior-ballot.trycloudflare.com"
+application_url = "https://missouri-amd-thompson-achieved.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,10 +27,15 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://pp-lou-interior-ballot.trycloudflare.com/auth/callback",
-  "https://pp-lou-interior-ballot.trycloudflare.com/auth/shopify/callback",
-  "https://pp-lou-interior-ballot.trycloudflare.com/api/auth/callback"
+  "https://missouri-amd-thompson-achieved.trycloudflare.com/auth/callback",
+  "https://missouri-amd-thompson-achieved.trycloudflare.com/auth/shopify/callback",
+  "https://missouri-amd-thompson-achieved.trycloudflare.com/api/auth/callback"
 ]
+
+[app_proxy]
+url = "https://missouri-amd-thompson-achieved.trycloudflare.com/api"
+subpath = "designer"
+prefix = "apps"
 
 [pos]
 embedded = false

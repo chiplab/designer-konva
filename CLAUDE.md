@@ -207,3 +207,103 @@ interface CanvasState {
 - Use localStorage for temporary saves before authentication
 - Sync to database after successful authentication
 - Provide visual feedback for save status
+
+## Template-Variant Binding System
+
+### Overview
+The template-variant binding system uses Shopify metafields to associate designer templates with specific product variants, enabling product customization workflows.
+
+### Metafield Configuration
+
+```
+Namespace: custom_designer
+Key: template_id
+Type: single_line_text_field
+Owner: ProductVariant
+```
+
+### Implementation Components
+
+1. **Metafield Setup Route** (`app.metafield-setup.tsx`):
+   - Creates metafield definition via GraphQL mutation
+   - One-time setup to enable metafield in Shopify admin
+   - Makes metafield visible and editable in variant admin UI
+
+2. **Template Assignment** (`app.templates.tsx`):
+   - Added "Assign to products" action to each template
+   - Uses ResourcePicker to select product variants
+   - Updates variant metafields via GraphQL mutation
+   - Supports bulk assignment to multiple variants
+
+3. **Product Bindings View** (`app.product-bindings.tsx`):
+   - Lists all variants with assigned templates
+   - Shows product info, variant details, and template name
+   - Provides overview of template usage across catalog
+
+### GraphQL Operations
+
+**Creating/Updating Metafield:**
+```graphql
+mutation productVariantUpdate($input: ProductVariantInput!) {
+  productVariantUpdate(input: $input) {
+    productVariant {
+      id
+      metafield(namespace: "custom_designer", key: "template_id") {
+        id
+        value
+      }
+    }
+  }
+}
+```
+
+**Reading Metafield:**
+```graphql
+query GetProductVariantsWithMetafields {
+  productVariants(first: 100) {
+    edges {
+      node {
+        id
+        metafield(namespace: "custom_designer", key: "template_id") {
+          value
+        }
+      }
+    }
+  }
+}
+```
+
+### Workflow
+
+1. **Setup**: Run metafield setup once per store (visit /app/metafield-setup)
+2. **Create**: Design templates in the designer
+3. **Assign**: Link templates to product variants via "Assign to products" action
+4. **View**: Check bindings in Product Bindings page
+5. **Customize**: Load template when customer clicks "Customize" (future theme extension)
+
+### Future Theme Extension Integration
+
+The metafield enables theme integration:
+```liquid
+{% if product.selected_variant.metafields.custom_designer.template_id %}
+  <button data-template-id="{{ product.selected_variant.metafields.custom_designer.template_id }}">
+    Customize This Product
+  </button>
+{% endif %}
+```
+
+### Implementation Notes
+
+1. **Metafield Mutation**: Use `metafieldsSet` mutation instead of `productVariantUpdate`:
+   ```graphql
+   mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
+     metafieldsSet(metafields: $metafields) {
+       metafields { id namespace key value }
+       userErrors { field message code }
+     }
+   }
+   ```
+
+2. **Variant Selection**: Replaced deprecated ResourcePicker with custom Modal + ChoiceList
+3. **Error Handling**: Added comprehensive logging and user feedback
+4. **Type Safety**: Fixed TypeScript errors with proper type assertions
