@@ -183,68 +183,72 @@ class CanvasTextRenderer {
       ? topY - radius  // Bottom edge stays at topY
       : topY + radius; // Top edge stays at topY
 
-    // Set up text properties to match Konva
     ctx.save();
+    ctx.translate(x, centerY);
+    
+    // Set up text properties to match Konva
     ctx.font = `${fontSize}px ${fontFamily}`;
     ctx.fillStyle = element.fill || 'black';
-    ctx.textAlign = 'left';
+    ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    // First, measure each character width like Konva does
-    const chars = text.split('');
-    const charData = [];
-    let totalWidth = 0;
-
-    // Measure each character individually
-    chars.forEach((char) => {
-      const width = ctx.measureText(char).width;
-      charData.push({ char, width });
-      totalWidth += width;
-    });
-
-    // Calculate the actual angle span based on measured text width
-    const angleSpan = totalWidth / radius;
+    // Measure the actual text width
+    const measuredWidth = ctx.measureText(text).width;
     
-    // Starting angle - center the text
+    // Use a more accurate angle calculation
+    // Konva seems to use a tighter spacing than text.length * 12
+    const angleSpan = measuredWidth / radius;
+    
+    // Create the path for the text - matching Konva exactly
     let startAngle;
     if (flipped) {
+      // Bottom arc - text reads left to right along bottom
       startAngle = Math.PI/2 + angleSpan/2;
     } else {
+      // Top arc - text reads left to right along top
       startAngle = -Math.PI/2 - angleSpan/2;
     }
 
-    // Draw each character with proper spacing
-    let currentAngle = startAngle;
+    // Measure individual character widths for accurate positioning
+    const chars = text.split('');
+    const charWidths = chars.map(char => ctx.measureText(char).width);
     
-    charData.forEach((data) => {
+    // Calculate positions for each character
+    let currentDistance = 0;
+    
+    chars.forEach((char, i) => {
       ctx.save();
       
-      // Calculate position for this character
-      // Use the angle at the middle of the character
-      const charMidAngle = currentAngle - (data.width / 2) / radius;
+      // Calculate the angle for the center of this character
+      const charCenterDistance = currentDistance + charWidths[i] / 2;
+      const charAngle = charCenterDistance / radius;
+      
+      let angle;
+      if (flipped) {
+        // For flipped text, go clockwise from top
+        angle = startAngle - charAngle;
+      } else {
+        // For normal text, go clockwise from top
+        angle = startAngle + charAngle;
+      }
       
       // Calculate position
-      const charX = x + Math.cos(charMidAngle) * radius;
-      const charY = centerY + Math.sin(charMidAngle) * radius;
+      const charX = Math.cos(angle) * radius;
+      const charY = Math.sin(angle) * radius;
       
       // Move to character position
       ctx.translate(charX, charY);
       
       // Rotate to follow the curve
-      // Match Konva's rotation: perpendicular to radius
-      if (flipped) {
-        ctx.rotate(charMidAngle - Math.PI/2);
-      } else {
-        ctx.rotate(charMidAngle + Math.PI/2);
-      }
+      ctx.rotate(angle + Math.PI/2);
       
-      // Draw character at origin after transformation
-      ctx.fillText(data.char, 0, 0);
+      // Draw character
+      ctx.fillText(char, 0, 0);
       
       ctx.restore();
       
-      // Move angle for next character
-      currentAngle -= data.width / radius;
+      // Move to next character position
+      currentDistance += charWidths[i];
     });
 
     ctx.restore();
