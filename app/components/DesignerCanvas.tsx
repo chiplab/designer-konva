@@ -8,14 +8,25 @@ interface DesignerCanvasProps {
     name: string;
     canvasData: string;
   } | null;
+  initialState?: {
+    templateId?: string;
+    variantId?: string;
+    textUpdates?: Record<string, string>;
+    fromModal?: boolean;
+  } | null;
 }
 
-const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
+const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initialState }) => {
   const shapeRef = React.useRef(null);
   const stageRef = React.useRef<any>(null);
+  const containerRef = React.useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = React.useState({ width: 1000, height: 1000 });
-  const [baseImage] = useImage('/media/images/8-spot-red-base-image.png');
-  const [svgImage] = useImage('/media/images/borders_v7-11.svg');
+  const [containerSize, setContainerSize] = React.useState({ width: 1000, height: 1000 });
+  // Support for S3 URLs
+  const [baseImageUrl, setBaseImageUrl] = React.useState('/media/images/8-spot-red-base-image.png');
+  const [svgImageUrl, setSvgImageUrl] = React.useState('/media/images/borders_v7-11.svg');
+  const [baseImage] = useImage(baseImageUrl);
+  const [svgImage] = useImage(svgImageUrl);
   const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string}>>([]);
   const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string}>>([]);
   const [svgElements, setSvgElements] = React.useState<Array<{id: string, x: number, y: number, width: number, height: number}>>([]);
@@ -58,6 +69,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
     }
   };
 
+  // Calculate scale factor for responsive canvas
+  const scale = Math.min(containerSize.width / 1000, containerSize.height / 1000);
+
   React.useEffect(() => {
     // Fixed canvas size - 1000x1000 square
     const newDimensions = {
@@ -75,6 +89,27 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
     
     // it will log `Konva.Circle` instance
     console.log(shapeRef.current);
+  }, []);
+
+  // Handle container resize
+  React.useEffect(() => {
+    const handleResize = () => {
+      if (containerRef.current) {
+        const container = containerRef.current;
+        const rect = container.getBoundingClientRect();
+        setContainerSize({
+          width: rect.width,
+          height: rect.height
+        });
+      }
+    };
+
+    // Set initial size
+    handleResize();
+
+    // Add resize listener
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   React.useEffect(() => {
@@ -142,6 +177,18 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
       setSelectedId(null);
       setEditingId(null);
     }
+  };
+
+  // Convert mouse coordinates to canvas coordinates when scaled
+  const getCanvasCoordinates = (clientX: number, clientY: number) => {
+    if (!stageRef.current) return { x: clientX, y: clientY };
+    
+    const stage = stageRef.current;
+    const rect = stage.container().getBoundingClientRect();
+    const x = (clientX - rect.left) / scale;
+    const y = (clientY - rect.top) / scale;
+    
+    return { x, y };
   };
 
   const handleTextEdit = (id: string, newText: string) => {
@@ -265,8 +312,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
         svgElements
       },
       assets: {
-        baseImage: '/media/images/8-spot-red-base-image.png',
-        svgAssets: ['/media/images/borders_v7-11.svg']
+        baseImage: baseImageUrl,
+        svgAssets: [svgImageUrl]
       }
     };
   };
@@ -287,7 +334,41 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
       if (state.elements.svgElements) setSvgElements(state.elements.svgElements);
     }
     
-    // Note: Assets are already hardcoded for now
+    // Load assets (with fallback to local defaults)
+    if (state.assets) {
+      if (state.assets.baseImage) {
+        setBaseImageUrl(state.assets.baseImage);
+      }
+      if (state.assets.svgAssets && state.assets.svgAssets.length > 0) {
+        setSvgImageUrl(state.assets.svgAssets[0]);
+      }
+    }
+  };
+
+  // Apply text updates from modal state
+  const applyTextUpdates = (textUpdates: Record<string, string>) => {
+    if (!textUpdates) return;
+    
+    // Update regular text elements
+    setTextElements(prev => 
+      prev.map(el => 
+        textUpdates[el.id] ? { ...el, text: textUpdates[el.id] } : el
+      )
+    );
+    
+    // Update curved text elements
+    setCurvedTextElements(prev => 
+      prev.map(el => 
+        textUpdates[el.id] ? { ...el, text: textUpdates[el.id] } : el
+      )
+    );
+    
+    // Update gradient text elements
+    setGradientTextElements(prev => 
+      prev.map(el => 
+        textUpdates[el.id] ? { ...el, text: textUpdates[el.id] } : el
+      )
+    );
   };
 
   // Save template function
@@ -386,6 +467,29 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
     }
   }, [initialTemplate]);
 
+  // Apply text updates from modal state after template is loaded
+  React.useEffect(() => {
+    if (initialState?.textUpdates && initialTemplate) {
+      // Small delay to ensure template is fully loaded
+      setTimeout(() => {
+        applyTextUpdates(initialState.textUpdates!);
+      }, 100);
+    }
+  }, [initialTemplate, initialState]);
+
+  // Handle save event from full designer
+  React.useEffect(() => {
+    const handleSave = (event: any) => {
+      if (event.detail?.source === 'fullDesigner') {
+        // Use existing save functionality but with customer-friendly messaging
+        saveTemplate();
+      }
+    };
+
+    window.addEventListener('saveDesign', handleSave);
+    return () => window.removeEventListener('saveDesign', handleSave);
+  }, []);
+
   return (
     <div>
       <div style={{ padding: '10px' }}>
@@ -457,6 +561,62 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
           </select>
           
           {isLoading && <span style={{ fontSize: '14px', color: '#666' }}>Loading...</span>}
+        </div>
+        
+        {/* Asset Management Controls */}
+        <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f0f4f8', border: '1px solid #dae1e7', borderRadius: '4px' }}>
+          <strong>Asset Management (S3):</strong>
+          <div style={{ display: 'flex', gap: '15px', marginTop: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <label>
+              Base Image: 
+              <select
+                value={baseImageUrl}
+                onChange={(e) => setBaseImageUrl(e.target.value)}
+                style={{ marginLeft: '5px', padding: '4px 8px', fontSize: '14px' }}
+              >
+                <option value="/media/images/8-spot-red-base-image.png">Local: Red Base</option>
+                <option value="/media/images/8-spot-black-base.png">Local: Black Base</option>
+                <option value="/media/images/8-spot-blue-base.png">Local: Blue Base</option>
+                <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-red-base-image.png">S3: Red Base</option>
+                <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-black-base.png">S3: Black Base</option>
+                <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-blue-base.png">S3: Blue Base</option>
+              </select>
+            </label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  const formData = new FormData();
+                  formData.append('file', file);
+                  formData.append('assetType', 'image');
+                  
+                  try {
+                    const response = await fetch('/api/assets/upload', {
+                      method: 'POST',
+                      body: formData,
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                      setBaseImageUrl(result.asset.url);
+                      alert('Image uploaded to S3 successfully!');
+                    } else {
+                      console.error('Upload failed:', result);
+                      alert(`Upload failed: ${result.error}\n${result.details || ''}\n${result.hint || ''}`);
+                    }
+                  } catch (error) {
+                    console.error('Upload error:', error);
+                    alert('Failed to upload image: ' + (error instanceof Error ? error.message : 'Unknown error'));
+                  }
+                }
+              }}
+              style={{ fontSize: '14px' }}
+            />
+            <span style={{ fontSize: '12px', color: '#6c757d' }}>
+              {baseImageUrl.startsWith('http') ? '☁️ S3' : '💾 Local'}
+            </span>
+          </div>
         </div>
         
         {/* Designable Area Controls */}
@@ -760,7 +920,28 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
           </div>
         </div>
       )}
-      <Stage ref={stageRef} width={dimensions.width} height={dimensions.height} onMouseDown={handleStageClick}>
+      <div 
+        ref={containerRef} 
+        style={{ 
+          width: '100%', 
+          height: '100vh', 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center',
+          overflow: 'hidden'
+        }}
+      >
+        <Stage 
+          ref={stageRef} 
+          width={dimensions.width} 
+          height={dimensions.height} 
+          scaleX={scale} 
+          scaleY={scale}
+          onMouseDown={handleStageClick}
+          style={{
+            border: '1px solid #ddd'
+          }}
+        >
         <Layer>
           {/* Base product template - bottom layer */}
           {baseImage && (
@@ -818,15 +999,6 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
               />
             )}
             
-            {/* Demo circle - can be removed later */}
-            <Circle
-              ref={shapeRef}
-              x={dimensions.width / 2}
-              y={dimensions.height / 2}
-              radius={50}
-              fill="red"
-              draggable
-            />
             {textElements.map((textEl) => (
               <Text
                 key={textEl.id}
@@ -1013,7 +1185,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
             }}
           />
         </Layer>
-      </Stage>
+        </Stage>
+      </div>
     </div>
   );
 };
