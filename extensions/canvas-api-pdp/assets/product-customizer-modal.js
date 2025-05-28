@@ -382,7 +382,7 @@ class ProductCustomizerModal {
     const stateParam = btoa(JSON.stringify(currentState));
     
     // Navigate to full designer
-    window.location.href = `/apps/designer/full?state=${stateParam}`;
+    window.location.href = `/apps/designer/customizer/full?state=${stateParam}`;
   }
 }
 

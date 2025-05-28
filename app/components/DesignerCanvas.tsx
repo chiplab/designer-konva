@@ -8,12 +8,20 @@ interface DesignerCanvasProps {
     name: string;
     canvasData: string;
   } | null;
+  initialState?: {
+    templateId?: string;
+    variantId?: string;
+    textUpdates?: Record<string, string>;
+    fromModal?: boolean;
+  } | null;
 }
 
-const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
+const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initialState }) => {
   const shapeRef = React.useRef(null);
   const stageRef = React.useRef<any>(null);
+  const containerRef = React.useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = React.useState({ width: 1000, height: 1000 });
+  const [containerSize, setContainerSize] = React.useState({ width: 1000, height: 1000 });
   const [baseImage] = useImage('/media/images/8-spot-red-base-image.png');
   const [svgImage] = useImage('/media/images/borders_v7-11.svg');
   const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string}>>([]);
@@ -58,6 +66,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
     }
   };
 
+  // Calculate scale factor for responsive canvas
+  const scale = Math.min(containerSize.width / 1000, containerSize.height / 1000);
+
   React.useEffect(() => {
     // Fixed canvas size - 1000x1000 square
     const newDimensions = {
@@ -75,6 +86,27 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
     
     // it will log `Konva.Circle` instance
     console.log(shapeRef.current);
+  }, []);
+
+  // Handle container resize
+  React.useEffect(() => {
+    const handleResize = () => {
+      if (containerRef.current) {
+        const container = containerRef.current;
+        const rect = container.getBoundingClientRect();
+        setContainerSize({
+          width: rect.width,
+          height: rect.height
+        });
+      }
+    };
+
+    // Set initial size
+    handleResize();
+
+    // Add resize listener
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   React.useEffect(() => {
@@ -142,6 +174,18 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
       setSelectedId(null);
       setEditingId(null);
     }
+  };
+
+  // Convert mouse coordinates to canvas coordinates when scaled
+  const getCanvasCoordinates = (clientX: number, clientY: number) => {
+    if (!stageRef.current) return { x: clientX, y: clientY };
+    
+    const stage = stageRef.current;
+    const rect = stage.container().getBoundingClientRect();
+    const x = (clientX - rect.left) / scale;
+    const y = (clientY - rect.top) / scale;
+    
+    return { x, y };
   };
 
   const handleTextEdit = (id: string, newText: string) => {
@@ -290,6 +334,32 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
     // Note: Assets are already hardcoded for now
   };
 
+  // Apply text updates from modal state
+  const applyTextUpdates = (textUpdates: Record<string, string>) => {
+    if (!textUpdates) return;
+    
+    // Update regular text elements
+    setTextElements(prev => 
+      prev.map(el => 
+        textUpdates[el.id] ? { ...el, text: textUpdates[el.id] } : el
+      )
+    );
+    
+    // Update curved text elements
+    setCurvedTextElements(prev => 
+      prev.map(el => 
+        textUpdates[el.id] ? { ...el, text: textUpdates[el.id] } : el
+      )
+    );
+    
+    // Update gradient text elements
+    setGradientTextElements(prev => 
+      prev.map(el => 
+        textUpdates[el.id] ? { ...el, text: textUpdates[el.id] } : el
+      )
+    );
+  };
+
   // Save template function
   const saveTemplate = async () => {
     const templateName = prompt('Enter template name:');
@@ -385,6 +455,29 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
       }
     }
   }, [initialTemplate]);
+
+  // Apply text updates from modal state after template is loaded
+  React.useEffect(() => {
+    if (initialState?.textUpdates && initialTemplate) {
+      // Small delay to ensure template is fully loaded
+      setTimeout(() => {
+        applyTextUpdates(initialState.textUpdates!);
+      }, 100);
+    }
+  }, [initialTemplate, initialState]);
+
+  // Handle save event from full designer
+  React.useEffect(() => {
+    const handleSave = (event: any) => {
+      if (event.detail?.source === 'fullDesigner') {
+        // Use existing save functionality but with customer-friendly messaging
+        saveTemplate();
+      }
+    };
+
+    window.addEventListener('saveDesign', handleSave);
+    return () => window.removeEventListener('saveDesign', handleSave);
+  }, []);
 
   return (
     <div>
@@ -760,7 +853,28 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
           </div>
         </div>
       )}
-      <Stage ref={stageRef} width={dimensions.width} height={dimensions.height} onMouseDown={handleStageClick}>
+      <div 
+        ref={containerRef} 
+        style={{ 
+          width: '100%', 
+          height: '100vh', 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center',
+          overflow: 'hidden'
+        }}
+      >
+        <Stage 
+          ref={stageRef} 
+          width={dimensions.width} 
+          height={dimensions.height} 
+          scaleX={scale} 
+          scaleY={scale}
+          onMouseDown={handleStageClick}
+          style={{
+            border: '1px solid #ddd'
+          }}
+        >
         <Layer>
           {/* Base product template - bottom layer */}
           {baseImage && (
@@ -818,15 +932,6 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
               />
             )}
             
-            {/* Demo circle - can be removed later */}
-            <Circle
-              ref={shapeRef}
-              x={dimensions.width / 2}
-              y={dimensions.height / 2}
-              radius={50}
-              fill="red"
-              draggable
-            />
             {textElements.map((textEl) => (
               <Text
                 key={textEl.id}
@@ -1013,7 +1118,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate }) => {
             }}
           />
         </Layer>
-      </Stage>
+        </Stage>
+      </div>
     </div>
   );
 };
