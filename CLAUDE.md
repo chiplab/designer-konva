@@ -452,7 +452,7 @@ For images hosted on S3 to work properly with canvas operations:
 
 ### Cross-Origin Image Loading
 To prevent "tainted canvas" errors when generating thumbnails:
-- All external images (S3, CDNs) use `useImage(url, 'Anonymous')`
+- All external images (S3, CDNs) use `useImage(url, 'anonymous')`
 - Local images from `/public` don't need crossOrigin setting
 - The canvas automatically detects URL type and applies appropriate settings
 
@@ -465,7 +465,7 @@ The save process includes robust image loading:
 
 ### Best Practices
 - Ensure S3 CORS is properly configured before using S3-hosted images
-- Use 'Anonymous' (capital A) for crossOrigin parameter in useImage
+- Use 'anonymous' (lowercase) for crossOrigin parameter in useImage
 - S3 uploads include proper cache control headers
 - Canvas operations handle missing or failed images gracefully
 - Monitor console for CORS errors when images fail to display
