@@ -54,6 +54,7 @@ export async function uploadToS3(
       ContentType: contentType,
       Metadata: metadata,
       // ACL removed - using bucket policy for public access instead
+      CacheControl: "public, max-age=31536000", // Cache for 1 year
     });
 
     await s3Client.send(command);

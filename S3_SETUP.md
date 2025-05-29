@@ -40,11 +40,32 @@ Your bucket needs to allow public read access for images. You have two options:
 3. Enable "ACLs enabled" and select "Bucket owner preferred"
 4. Under "Block Public Access settings", ensure "Block public access to buckets and objects granted through new access control lists (ACLs)" is OFF
 
-### 1.2 CORS Configuration
+### 1.2 CORS Configuration (CRITICAL)
+
+CORS must be properly configured for images to display in the canvas. Choose one of these methods:
+
+#### Method A: Using AWS CLI (Recommended)
+
+Run the provided script from the project root:
+
+```bash
+./scripts/apply-s3-cors.sh
+```
+
+Or manually apply using AWS CLI:
+
+```bash
+aws s3api put-bucket-cors \
+  --bucket shopify-designs \
+  --cors-configuration file://s3-cors-config.json \
+  --region us-west-1
+```
+
+#### Method B: Via AWS Console
 
 1. In your S3 bucket, go to "Permissions" tab
 2. Scroll to "Cross-origin resource sharing (CORS)"
-3. Add the CORS configuration from `s3-cors-config.json`:
+3. Click "Edit" and paste the entire contents of `s3-cors-config.json`:
 
 ```json
 [
@@ -63,6 +84,11 @@ Your bucket needs to allow public read access for images. You have two options:
     "MaxAgeSeconds": 3000
   }
 ]
+```
+
+**Important**: After applying CORS, verify it's working:
+```bash
+aws s3api get-bucket-cors --bucket shopify-designs --region us-west-1
 ```
 
 ## Step 2: Create IAM User
@@ -132,8 +158,16 @@ aws s3 cp public/media/images/borders_v7-11.svg s3://shopify-designs/assets/defa
 
 ### CORS Errors
 
-1. Ensure CORS is properly configured on your S3 bucket
-2. Check that your app's domain is included in AllowedOrigins
+If you see errors like "has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header":
+
+1. **Apply CORS configuration**: Run `./scripts/apply-s3-cors.sh`
+2. **Verify CORS is applied**: 
+   ```bash
+   aws s3api get-bucket-cors --bucket shopify-designs --region us-west-1
+   ```
+3. **Check your domain is included**: Ensure your app's domain matches one of the patterns in AllowedOrigins
+4. **Clear browser cache**: CORS settings may be cached
+5. **Wait a few minutes**: S3 CORS changes can take 2-3 minutes to propagate globally
 
 ### Access Denied Errors
 

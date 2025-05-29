@@ -232,7 +232,8 @@ interface CanvasState {
 
 3. **Save Process**:
    - Extract minimal state using `getCanvasState()`
-   - Generate thumbnail via `stage.toDataURL()`
+   - Wait for all images to fully load before thumbnail generation
+   - Generate thumbnail via `stage.toDataURL()` with error handling
    - Include templateId in form data if updating existing template
    - Save to database with shop isolation
    - Return template ID for future reference
@@ -437,3 +438,31 @@ See `S3_SETUP.md` for detailed setup instructions and common issues:
 - CORS settings
 - IAM permissions
 - Environment variable setup
+
+## Canvas Image Handling
+
+### S3 CORS Requirements
+For images hosted on S3 to work properly with canvas operations:
+1. S3 bucket MUST have CORS configured (see S3_SETUP.md)
+2. Apply CORS using: `aws s3api put-bucket-cors --bucket shopify-designs --cors-configuration file://s3-cors-config-cli.json --region us-west-1`
+3. Wait 2-3 minutes for CORS changes to propagate
+
+### Cross-Origin Image Loading
+To prevent "tainted canvas" errors when generating thumbnails:
+- All external images (S3, CDNs) use `useImage(url, 'Anonymous')`
+- Local images from `/public` don't need crossOrigin setting
+- The canvas automatically detects URL type and applies appropriate settings
+
+### Thumbnail Generation
+The save process includes robust image loading:
+1. Waits for all canvas images to fully load before generating thumbnails
+2. Uses event listeners with timeout fallbacks (5 seconds max)
+3. Implements error handling with lower quality fallback options
+4. Logs warnings for failed image loads but continues with save process
+
+### Best Practices
+- Ensure S3 CORS is properly configured before using S3-hosted images
+- Use 'Anonymous' (capital A) for crossOrigin parameter in useImage
+- S3 uploads include proper cache control headers
+- Canvas operations handle missing or failed images gracefully
+- Monitor console for CORS errors when images fail to display
