@@ -1490,6 +1490,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 id={curvedEl.id}
                 x={curvedEl.x}
                 y={centerY}
+                rotation={curvedEl.rotation || 0}
+                scaleX={curvedEl.scaleX || 1}
+                scaleY={curvedEl.scaleY || 1}
                 draggable
                 onClick={() => setSelectedId(curvedEl.id)}
                 onTap={() => setSelectedId(curvedEl.id)}
@@ -1508,6 +1511,26 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                     prev.map(el => 
                       el.id === curvedEl.id 
                         ? { ...el, x: newX, topY: newTopY }
+                        : el
+                    )
+                  );
+                }}
+                onTransformEnd={(e) => {
+                  const node = e.target;
+                  setCurvedTextElements(prev => 
+                    prev.map(el => 
+                      el.id === curvedEl.id 
+                        ? { 
+                            ...el, 
+                            x: node.x(),
+                            // Calculate topY from centerY based on flip state
+                            topY: curvedEl.flipped 
+                              ? node.y() + curvedEl.radius 
+                              : node.y() - curvedEl.radius,
+                            rotation: node.rotation(),
+                            scaleX: node.scaleX(),
+                            scaleY: node.scaleY()
+                          }
                         : el
                     )
                   );
