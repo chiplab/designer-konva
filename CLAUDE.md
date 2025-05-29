@@ -32,20 +32,27 @@ See `VISION.md` for the complete product vision and architecture roadmap for bui
 - **UI**: Shopify Polaris components + App Bridge for embedded Shopify admin integration
 - **API**: Shopify Admin GraphQL API (January 2025 version)
 - **Authentication**: Shopify App OAuth with session storage via Prisma
+- **Storage**: AWS S3 for asset storage (images, SVGs, fonts)
+- **Canvas**: Konva.js for design canvas and React-Konva for React integration
 
 ### Project Structure
 - `app/` - Main application code (Remix convention)
   - `routes/` - File-based routing with nested routes
+  - `components/` - Reusable React components (e.g., DesignerCanvas)
+  - `services/` - Service modules (e.g., s3.server.ts for AWS S3 operations)
   - `shopify.server.ts` - Shopify app configuration and authentication
   - `db.server.ts` - Database connection
 - `prisma/` - Database schema and migrations
-- `extensions/` - Shopify app extensions (if any)
+- `extensions/` - Shopify app extensions (theme extensions, app proxy)
+- `public/` - Static assets (local fallback for S3 assets)
 
 ### Key Configuration Files
 - `shopify.app.toml` - Shopify app configuration (scopes: write_products)
 - `shopify.web.toml` - Web component configuration 
 - `vite.config.ts` - Build configuration with Shopify-specific HMR setup
-- `prisma/schema.prisma` - Database schema with Session model for Shopify auth
+- `prisma/schema.prisma` - Database schema with Session and Template models
+- `.env` - Environment variables (AWS credentials, Shopify API keys)
+- `S3_SETUP.md` - AWS S3 bucket configuration guide
 
 ### Authentication & API Access
 - All admin routes require authentication via `authenticate.admin(request)`
@@ -55,7 +62,14 @@ See `VISION.md` for the complete product vision and architecture roadmap for bui
 
 ### Routes Pattern
 - `app._index.tsx` - Main dashboard with product creation demo
-- `app.additional.tsx` - Additional page example
+- `app.designer.tsx` - Embedded designer interface with Konva canvas
+- `app.templates.tsx` - Template management (list, assign to products)
+- `app.product-bindings.tsx` - View template-variant associations
+- `app.metafield-setup.tsx` - One-time metafield configuration
+- `api.templates.*.tsx` - Template CRUD operations
+- `api.assets.*.tsx` - Asset upload and management endpoints
+- `api.customizer.$.tsx` - Full-screen designer resource route
+- `proxy.designer.tsx` - Standalone designer (accessed via app proxy)
 - `auth.*.tsx` - Authentication flow handling
 - `webhooks.*.tsx` - Webhook endpoints for app lifecycle events
 
@@ -158,10 +172,42 @@ interface CanvasState {
       radius: number;
       flipped: boolean;
       fontFamily: string;
-      // ... transformation properties
+      fontSize?: number;
+      fill?: string;
+      rotation?: number;
+      scaleX?: number;
+      scaleY?: number;
     }>;
-    gradientTextElements: Array<{...}>;
-    svgElements: Array<{...}>;
+    gradientTextElements: Array<{
+      id: string;
+      text: string;
+      x: number;
+      y: number;
+      fontFamily: string;
+      fontSize?: number;
+      rotation?: number;
+      scaleX?: number;
+      scaleY?: number;
+    }>;
+    svgElements: Array<{
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      rotation?: number;
+      scaleX?: number;
+      scaleY?: number;
+    }>;
+    imageElements: Array<{
+      id: string;
+      url: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      rotation?: number;
+    }>;
   };
   assets: {
     baseImage?: string; // URL reference
@@ -172,18 +218,22 @@ interface CanvasState {
 
 ### Implementation Guidelines
 
-1. **Serialization Functions** (in proxy.designer.tsx):
+1. **Serialization Functions** (in DesignerCanvas.tsx):
    - `getCanvasState()`: Extracts current state from React components
    - `loadCanvasState(state)`: Restores canvas from saved state
 
 2. **API Routes**:
-   - `api.templates.save.tsx`: POST endpoint to save templates
+   - `api.templates.save.tsx`: POST endpoint to save/update templates
+     - Creates new template if no templateId provided
+     - Updates existing template if templateId is in form data
+     - Verifies shop ownership before updates
    - `api.templates.$id.tsx`: GET endpoint to load specific template
    - `api.templates.tsx`: GET endpoint to list all shop templates
 
 3. **Save Process**:
    - Extract minimal state using `getCanvasState()`
    - Generate thumbnail via `stage.toDataURL()`
+   - Include templateId in form data if updating existing template
    - Save to database with shop isolation
    - Return template ID for future reference
 
@@ -192,6 +242,14 @@ interface CanvasState {
    - Parse JSON canvas data
    - Load fonts before applying state
    - Restore state using `loadCanvasState()`
+
+5. **Critical Element Properties**:
+   - **IMPORTANT**: All elements must save transformation properties to preserve visual state
+   - Text elements: fontSize, fill, rotation, scaleX, scaleY
+   - Gradient text: fontSize, rotation, scaleX, scaleY (gradient is hardcoded)
+   - SVG elements: rotation, scaleX, scaleY (dimensions updated on transform)
+   - Curved text: fontSize, fill, rotation, scaleX, scaleY
+   - All elements require `onTransformEnd` handlers to capture transformations
 
 ### Key Principles
 
@@ -307,3 +365,75 @@ The metafield enables theme integration:
 2. **Variant Selection**: Replaced deprecated ResourcePicker with custom Modal + ChoiceList
 3. **Error Handling**: Added comprehensive logging and user feedback
 4. **Type Safety**: Fixed TypeScript errors with proper type assertions
+
+## AWS S3 Asset Storage
+
+### Overview
+The system uses AWS S3 for cloud-based asset storage, replacing base64 encoding for better performance and scalability. Templates store S3 URLs instead of embedding binary data.
+
+### Configuration
+
+1. **Environment Variables** (in `.env`):
+   ```
+   AWS_ACCESS_KEY_ID=your-access-key
+   AWS_SECRET_ACCESS_KEY=your-secret-key
+   ```
+
+2. **S3 Bucket Settings**:
+   - Bucket: `shopify-designs`
+   - Region: `us-west-1`
+   - Public read access via bucket policy (ACLs disabled for security)
+   - CORS configured for Shopify domains
+
+### Implementation Components
+
+1. **S3 Service Module** (`app/services/s3.server.ts`):
+   - Upload files and base64 images to S3
+   - Generate unique keys for assets
+   - Handle errors with descriptive messages
+   - Support for public/private assets
+
+2. **Asset Upload Endpoint** (`api.assets.upload.tsx`):
+   - Accepts file uploads from the designer
+   - Validates file types (images, SVGs, fonts)
+   - Returns S3 URL for immediate use
+
+3. **UI Integration**:
+   - Asset selector dropdown in designer
+   - File upload input for new assets
+   - Visual indicators for S3 vs local assets
+   - Support in both embedded and standalone designers
+
+### Asset Management Flow
+
+1. **Upload**: Files are uploaded to S3 with structured paths:
+   ```
+   templates/{shop}/{templateId}/thumbnail-{timestamp}.png
+   assets/{shop}/{assetType}/{timestamp}-{filename}
+   ```
+
+2. **Reference**: Templates store S3 URLs in the `assets` section:
+   ```typescript
+   assets: {
+     baseImage: "https://shopify-designs.s3.us-west-1.amazonaws.com/...",
+     svgAssets: ["https://..."]
+   }
+   ```
+
+3. **Display**: Canvas loads assets directly from S3 URLs
+
+### Key Principles
+
+- **No ACLs**: Bucket uses IAM policies instead of ACLs for security
+- **Public Read**: Assets are publicly readable via bucket policy
+- **Shop Isolation**: Assets organized by shop domain
+- **Fallback Support**: Local assets available for development
+- **Error Handling**: Detailed error messages for debugging
+
+### Troubleshooting
+
+See `S3_SETUP.md` for detailed setup instructions and common issues:
+- Bucket policy configuration
+- CORS settings
+- IAM permissions
+- Environment variable setup
