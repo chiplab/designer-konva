@@ -2,6 +2,75 @@ import React from 'react';
 import { Stage, Layer, Circle, Text, TextPath, Transformer, Group, Image, Rect } from 'react-konva';
 import useImage from 'use-image';
 
+// Image element component
+const ImageElement: React.FC<{
+  imageElement: {
+    id: string;
+    url: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    rotation?: number;
+  };
+  isSelected: boolean;
+  onSelect: () => void;
+  onChange: (attrs: any) => void;
+}> = ({ imageElement, isSelected, onSelect, onChange }) => {
+  const [image] = useImage(imageElement.url);
+  const imageRef = React.useRef<any>(null);
+
+  return (
+    <Image
+      ref={imageRef}
+      id={imageElement.id}
+      image={image}
+      x={imageElement.x + imageElement.width / 2}
+      y={imageElement.y + imageElement.height / 2}
+      width={imageElement.width}
+      height={imageElement.height}
+      offsetX={imageElement.width / 2}
+      offsetY={imageElement.height / 2}
+      rotation={imageElement.rotation || 0}
+      draggable
+      onClick={onSelect}
+      onTap={onSelect}
+      onDragEnd={(e) => {
+        const node = e.target;
+        onChange({
+          x: node.x() - imageElement.width / 2,
+          y: node.y() - imageElement.height / 2,
+        });
+      }}
+      onTransformEnd={(e) => {
+        const node = imageRef.current;
+        const scaleX = node.scaleX();
+        const scaleY = node.scaleY();
+        
+        // Calculate new dimensions
+        const newWidth = Math.max(5, node.width() * scaleX);
+        const newHeight = Math.max(5, node.height() * scaleY);
+        
+        // Reset scale to 1
+        node.scaleX(1);
+        node.scaleY(1);
+        
+        // Update offsets for new size
+        node.offsetX(newWidth / 2);
+        node.offsetY(newHeight / 2);
+        
+        onChange({
+          x: node.x() - newWidth / 2,
+          y: node.y() - newHeight / 2,
+          width: newWidth,
+          height: newHeight,
+          rotation: node.rotation(),
+        });
+      }}
+    />
+  );
+};
+
 interface DesignerCanvasProps {
   initialTemplate?: {
     id: string;
@@ -21,16 +90,17 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   const stageRef = React.useRef<any>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = React.useState({ width: 1000, height: 1000 });
-  const [containerSize, setContainerSize] = React.useState({ width: 1000, height: 1000 });
+  const [containerSize, setContainerSize] = React.useState({ width: 800, height: 600 });
   // Support for S3 URLs
   const [baseImageUrl, setBaseImageUrl] = React.useState('/media/images/8-spot-red-base-image.png');
   const [svgImageUrl, setSvgImageUrl] = React.useState('/media/images/borders_v7-11.svg');
   const [baseImage] = useImage(baseImageUrl);
   const [svgImage] = useImage(svgImageUrl);
-  const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string}>>([]);
-  const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string}>>([]);
-  const [svgElements, setSvgElements] = React.useState<Array<{id: string, x: number, y: number, width: number, height: number}>>([]);
-  const [curvedTextElements, setCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string}>>([]);
+  const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fill?: string, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
+  const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
+  const [svgElements, setSvgElements] = React.useState<Array<{id: string, x: number, y: number, width: number, height: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
+  const [curvedTextElements, setCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string, fontSize?: number, fill?: string, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
+  const [imageElements, setImageElements] = React.useState<Array<{id: string, url: string, x: number, y: number, width: number, height: number, rotation?: number}>>([]);
   const [designableArea, setDesignableArea] = React.useState({
     width: 744,
     height: 744,
@@ -69,8 +139,13 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
     }
   };
 
-  // Calculate scale factor for responsive canvas
-  const scale = Math.min(containerSize.width / 1000, containerSize.height / 1000);
+  // Calculate scale factor for responsive canvas with padding
+  const padding = 20; // Add some padding around the canvas
+  const scale = Math.min(
+    (containerSize.width - padding * 2) / dimensions.width,
+    (containerSize.height - padding * 2) / dimensions.height,
+    1 // Maximum scale of 1 to prevent canvas from becoming larger than actual size
+  );
 
   React.useEffect(() => {
     // Fixed canvas size - 1000x1000 square
@@ -97,6 +172,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       if (containerRef.current) {
         const container = containerRef.current;
         const rect = container.getBoundingClientRect();
+        
         setContainerSize({
           width: rect.width,
           height: rect.height
@@ -104,12 +180,22 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       }
     };
 
-    // Set initial size
-    handleResize();
+    // Set initial size with a small delay to ensure DOM is ready
+    setTimeout(handleResize, 100);
 
     // Add resize listener
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    
+    // Also observe container size changes
+    const resizeObserver = new ResizeObserver(handleResize);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
+    };
   }, []);
 
   React.useEffect(() => {
@@ -129,7 +215,12 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       text: 'Hello World',
       x: designableArea.x + designableArea.width / 2 - 50, // Center of designable area
       y: designableArea.y + designableArea.height / 2 - 12, // Center vertically (minus half font size)
-      fontFamily: 'Arial'
+      fontFamily: 'Arial',
+      fontSize: 24,
+      fill: 'black',
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1
     };
     setTextElements(prev => [...prev, newText]);
   };
@@ -144,7 +235,12 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       topY: topY,
       radius: radius,
       flipped: false,
-      fontFamily: 'Arial'
+      fontFamily: 'Arial',
+      fontSize: 20,
+      fill: 'black',
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1
     };
     setCurvedTextElements(prev => [...prev, newCurvedText]);
   };
@@ -155,7 +251,11 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       text: 'Gold Gradient Text',
       x: designableArea.x + designableArea.width / 2 - 80, // Center of designable area
       y: designableArea.y + designableArea.height / 2 - 12, // Center vertically (minus half font size)
-      fontFamily: 'Arial'
+      fontFamily: 'Arial',
+      fontSize: 24,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1
     };
     setGradientTextElements(prev => [...prev, newGradientText]);
   };
@@ -167,7 +267,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       x: designableArea.x + designableArea.width / 2 - svgSize / 2, // Center of designable area
       y: designableArea.y + designableArea.height / 2 - svgSize / 2, // Center vertically
       width: svgSize,
-      height: svgSize
+      height: svgSize,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1
     };
     setSvgElements(prev => [...prev, newSvg]);
   };
@@ -309,7 +412,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
         textElements,
         curvedTextElements,
         gradientTextElements,
-        svgElements
+        svgElements,
+        imageElements
       },
       assets: {
         baseImage: baseImageUrl,
@@ -332,6 +436,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       if (state.elements.curvedTextElements) setCurvedTextElements(state.elements.curvedTextElements);
       if (state.elements.gradientTextElements) setGradientTextElements(state.elements.gradientTextElements);
       if (state.elements.svgElements) setSvgElements(state.elements.svgElements);
+      if (state.elements.imageElements) setImageElements(state.elements.imageElements);
     }
     
     // Load assets (with fallback to local defaults)
@@ -373,7 +478,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
 
   // Save template function
   const saveTemplate = async () => {
-    const templateName = prompt('Enter template name:');
+    // If editing existing template, use its name, otherwise prompt for new name
+    const templateName = initialTemplate?.name || prompt('Enter template name:');
     if (!templateName) return;
 
     setIsSaving(true);
@@ -381,14 +487,44 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       // Get canvas state
       const canvasState = getCanvasState();
       
-      // Generate thumbnail
-      const thumbnail = stageRef.current?.toDataURL({ pixelRatio: 0.3 });
+      // Deselect everything to hide transformer before generating thumbnail
+      setSelectedId(null);
+      
+      // Force transformer to detach
+      if (transformerRef.current) {
+        transformerRef.current.nodes([]);
+        transformerRef.current.getLayer()?.batchDraw();
+      }
+      
+      // Wait for the UI to update
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Calculate the bounds of the designable area for cropping
+      const cropX = designableArea.x;
+      const cropY = designableArea.y;
+      const cropWidth = designableArea.width;
+      const cropHeight = designableArea.height;
+      
+      // Generate thumbnail cropped to designable area
+      const thumbnail = stageRef.current?.toDataURL({ 
+        x: cropX,
+        y: cropY,
+        width: cropWidth,
+        height: cropHeight,
+        pixelRatio: 0.8, // Higher quality
+        mimeType: 'image/jpeg',
+        quality: 0.9
+      });
 
       const formData = new FormData();
       formData.append('name', templateName);
       formData.append('canvasData', JSON.stringify(canvasState));
       if (thumbnail) {
         formData.append('thumbnail', thumbnail);
+      }
+      // Include template ID if we're updating an existing template
+      if (initialTemplate?.id) {
+        formData.append('templateId', initialTemplate.id);
       }
 
       const response = await fetch('/api/templates/save', {
@@ -399,7 +535,11 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       const result = await response.json();
       
       if (result.success) {
-        alert('Template saved successfully!');
+        if (result.warning) {
+          alert(`Template saved but with warning: ${result.warning}`);
+        } else {
+          alert('Template saved successfully!');
+        }
         loadTemplatesList(); // Refresh templates list
       } else {
         throw new Error(result.error || 'Failed to save template');
@@ -491,8 +631,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   }, []);
 
   return (
-    <div>
-      <div style={{ padding: '10px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ padding: '10px', flexShrink: 0, backgroundColor: '#f7f8fa', borderBottom: '1px solid #ddd', maxHeight: '300px', overflowY: 'auto' }}>
         <button onClick={addText} style={{ padding: '8px 16px', fontSize: '14px', marginRight: '10px' }}>
           Add Text
         </button>
@@ -505,6 +645,60 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
         <button onClick={addSvg} style={{ padding: '8px 16px', fontSize: '14px', marginRight: '10px' }}>
           Add SVG
         </button>
+        
+        {/* Add Image Button with file input */}
+        <label style={{ 
+          padding: '8px 16px', 
+          fontSize: '14px', 
+          marginRight: '10px',
+          backgroundColor: '#f0f0f0',
+          border: '1px solid #ccc',
+          borderRadius: '3px',
+          cursor: 'pointer',
+          display: 'inline-block'
+        }}>
+          Add Image
+          <input
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('assetType', 'userImage');
+                
+                try {
+                  const response = await fetch('/api/assets/upload', {
+                    method: 'POST',
+                    body: formData,
+                  });
+                  const result = await response.json();
+                  if (result.success) {
+                    // Add image to canvas at center of designable area
+                    const newImage = {
+                      id: `image-${Date.now()}`,
+                      url: result.asset.url,
+                      x: designableArea.x + designableArea.width / 2 - 50, // Top-left position (center - half width)
+                      y: designableArea.y + designableArea.height / 2 - 50, // Top-left position (center - half height)
+                      width: 100,
+                      height: 100,
+                      rotation: 0
+                    };
+                    setImageElements(prev => [...prev, newImage]);
+                  } else {
+                    alert(`Upload failed: ${result.error}`);
+                  }
+                } catch (error) {
+                  console.error('Upload error:', error);
+                  alert('Failed to upload image');
+                }
+              }
+            }}
+          />
+        </label>
+        
         <button 
           onClick={() => setDesignableArea(prev => ({ ...prev, visible: !prev.visible }))}
           style={{ 
@@ -537,7 +731,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
               cursor: isSaving ? 'not-allowed' : 'pointer'
             }}
           >
-            {isSaving ? 'Saving...' : 'Save Template'}
+            {isSaving ? 'Saving...' : initialTemplate ? 'Update Template' : 'Save Template'}
           </button>
           
           <select 
@@ -924,24 +1118,34 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
         ref={containerRef} 
         style={{ 
           width: '100%', 
-          height: '100vh', 
+          height: '100%', 
+          flex: '1',
           display: 'flex', 
           justifyContent: 'center', 
           alignItems: 'center',
-          overflow: 'hidden'
+          overflow: 'hidden',
+          position: 'relative',
+          minHeight: '400px',
+          backgroundColor: '#ffffff'
         }}
       >
-        <Stage 
-          ref={stageRef} 
-          width={dimensions.width} 
-          height={dimensions.height} 
-          scaleX={scale} 
-          scaleY={scale}
-          onMouseDown={handleStageClick}
-          style={{
-            border: '1px solid #ddd'
-          }}
-        >
+        <div style={{
+          width: dimensions.width * scale,
+          height: dimensions.height * scale,
+          border: '1px solid #ddd',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+          borderRadius: '4px',
+          backgroundColor: 'white',
+          overflow: 'hidden'
+        }}>
+          <Stage 
+            ref={stageRef} 
+            width={dimensions.width} 
+            height={dimensions.height} 
+            scaleX={scale} 
+            scaleY={scale}
+            onMouseDown={handleStageClick}
+          >
         <Layer>
           {/* Base product template - bottom layer */}
           {baseImage && (
@@ -1006,9 +1210,12 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 text={textEl.text}
                 x={textEl.x}
                 y={textEl.y}
-                fontSize={24}
+                fontSize={textEl.fontSize || 24}
                 fontFamily={textEl.fontFamily}
-                fill="black"
+                fill={textEl.fill || "black"}
+                rotation={textEl.rotation || 0}
+                scaleX={textEl.scaleX || 1}
+                scaleY={textEl.scaleY || 1}
                 draggable
                 onClick={() => setSelectedId(textEl.id)}
                 onTap={() => setSelectedId(textEl.id)}
@@ -1025,6 +1232,23 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                     )
                   );
                 }}
+                onTransformEnd={(e) => {
+                  const node = e.target;
+                  setTextElements(prev => 
+                    prev.map(el => 
+                      el.id === textEl.id 
+                        ? { 
+                            ...el, 
+                            x: node.x(),
+                            y: node.y(),
+                            rotation: node.rotation(),
+                            scaleX: node.scaleX(),
+                            scaleY: node.scaleY()
+                          }
+                        : el
+                    )
+                  );
+                }}
               />
             ))}
             {gradientTextElements.map((gradientEl) => (
@@ -1034,8 +1258,11 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 text={gradientEl.text}
                 x={gradientEl.x}
                 y={gradientEl.y}
-                fontSize={24}
+                fontSize={gradientEl.fontSize || 24}
                 fontFamily={gradientEl.fontFamily}
+                rotation={gradientEl.rotation || 0}
+                scaleX={gradientEl.scaleX || 1}
+                scaleY={gradientEl.scaleY || 1}
                 fillLinearGradientStartPoint={{ x: 0, y: 0 }}
                 fillLinearGradientEndPoint={{ x: 0, y: 24 }}
                 fillLinearGradientColorStops={[0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B']}
@@ -1055,6 +1282,23 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                     )
                   );
                 }}
+                onTransformEnd={(e) => {
+                  const node = e.target;
+                  setGradientTextElements(prev => 
+                    prev.map(el => 
+                      el.id === gradientEl.id 
+                        ? { 
+                            ...el, 
+                            x: node.x(),
+                            y: node.y(),
+                            rotation: node.rotation(),
+                            scaleX: node.scaleX(),
+                            scaleY: node.scaleY()
+                          }
+                        : el
+                    )
+                  );
+                }}
               />
             ))}
             {svgElements.map((svgEl) => (
@@ -1062,21 +1306,78 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 key={svgEl.id}
                 id={svgEl.id}
                 image={svgImage}
-                x={svgEl.x}
-                y={svgEl.y}
+                x={svgEl.x + svgEl.width / 2}
+                y={svgEl.y + svgEl.height / 2}
                 width={svgEl.width}
                 height={svgEl.height}
+                offsetX={svgEl.width / 2}
+                offsetY={svgEl.height / 2}
+                rotation={svgEl.rotation || 0}
+                scaleX={svgEl.scaleX || 1}
+                scaleY={svgEl.scaleY || 1}
                 draggable
                 onClick={() => setSelectedId(svgEl.id)}
                 onTap={() => setSelectedId(svgEl.id)}
                 onDragEnd={(e) => {
-                  const newX = e.target.x();
-                  const newY = e.target.y();
+                  const node = e.target;
                   setSvgElements(prev => 
                     prev.map(el => 
                       el.id === svgEl.id 
-                        ? { ...el, x: newX, y: newY }
+                        ? { 
+                            ...el, 
+                            x: node.x() - svgEl.width / 2,
+                            y: node.y() - svgEl.height / 2
+                          }
                         : el
+                    )
+                  );
+                }}
+                onTransformEnd={(e) => {
+                  const node = e.target;
+                  const scaleX = node.scaleX();
+                  const scaleY = node.scaleY();
+                  
+                  // Calculate new dimensions
+                  const newWidth = Math.max(5, svgEl.width * scaleX);
+                  const newHeight = Math.max(5, svgEl.height * scaleY);
+                  
+                  // Reset scale to 1
+                  node.scaleX(1);
+                  node.scaleY(1);
+                  
+                  // Update offsets for new size
+                  node.offsetX(newWidth / 2);
+                  node.offsetY(newHeight / 2);
+                  
+                  setSvgElements(prev =>
+                    prev.map(el =>
+                      el.id === svgEl.id
+                        ? {
+                            ...el,
+                            x: node.x() - newWidth / 2,
+                            y: node.y() - newHeight / 2,
+                            width: newWidth,
+                            height: newHeight,
+                            rotation: node.rotation(),
+                            scaleX: 1,
+                            scaleY: 1
+                          }
+                        : el
+                    )
+                  );
+                }}
+              />
+            ))}
+            {imageElements.map((imgEl) => (
+              <ImageElement
+                key={imgEl.id}
+                imageElement={imgEl}
+                isSelected={selectedId === imgEl.id}
+                onSelect={() => setSelectedId(imgEl.id)}
+                onChange={(newAttrs) => {
+                  setImageElements(prev =>
+                    prev.map(el =>
+                      el.id === imgEl.id ? { ...el, ...newAttrs } : el
                     )
                   );
                 }}
@@ -1148,9 +1449,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 <TextPath
                   text={curvedEl.text}
                   data={pathData}
-                  fontSize={20}
+                  fontSize={curvedEl.fontSize || 20}
                   fontFamily={curvedEl.fontFamily}
-                  fill="black"
+                  fill={curvedEl.fill || "black"}
                   align="center"
                 />
               </Group>
@@ -1176,6 +1477,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
           
           <Transformer
             ref={transformerRef}
+            centeredScaling
             boundBoxFunc={(oldBox, newBox) => {
               // Limit resize
               if (newBox.width < 5 || newBox.height < 5) {
@@ -1183,9 +1485,28 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
               }
               return newBox;
             }}
+            anchorCornerRadius={5}
+            anchorSize={8}
+            borderStroke="#0066ff"
+            anchorStroke="#0066ff"
+            anchorFill="white"
+            keepRatio={true}
+            rotateEnabled={true}
+            rotateAnchorOffset={20}
+            enabledAnchors={[
+              'top-left',
+              'top-center',
+              'top-right',
+              'middle-right',
+              'middle-left',
+              'bottom-left',
+              'bottom-center',
+              'bottom-right',
+            ]}
           />
         </Layer>
         </Stage>
+        </div>
       </div>
     </div>
   );

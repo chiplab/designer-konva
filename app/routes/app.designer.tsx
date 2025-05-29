@@ -41,7 +41,12 @@ export default function Designer() {
       <Layout>
         <Layout.Section>
           <Card>
-            <div style={{ padding: '0' }}>
+            <div style={{ 
+              padding: '0',
+              height: 'calc(100vh - 120px)', // Account for header and padding
+              minHeight: '600px',
+              position: 'relative'
+            }}>
               <DesignerCanvas initialTemplate={template} />
             </div>
           </Card>
