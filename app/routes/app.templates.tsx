@@ -40,9 +40,46 @@ const METAFIELD_SET_MUTATION = `#graphql
 `;
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const action = formData.get("_action");
+
+  if (action === "deleteTemplate") {
+    const templateId = formData.get("templateId") as string;
+    
+    try {
+      // Verify the template belongs to this shop before deleting
+      const template = await db.template.findFirst({
+        where: {
+          id: templateId,
+          shop: session.shop,
+        },
+      });
+
+      if (!template) {
+        return json({ 
+          success: false, 
+          error: "Template not found or access denied" 
+        }, { status: 404 });
+      }
+
+      // Delete the template
+      await db.template.delete({
+        where: { id: templateId },
+      });
+
+      return json({ 
+        success: true, 
+        message: `Template "${template.name}" deleted successfully` 
+      });
+    } catch (error) {
+      console.error("Error deleting template:", error);
+      return json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Failed to delete template" 
+      }, { status: 500 });
+    }
+  }
 
   if (action === "assignTemplate") {
     const templateId = formData.get("templateId") as string;
@@ -136,6 +173,8 @@ export default function Templates() {
   const [selectedVariants, setSelectedVariants] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [showSuccessBanner, setShowSuccessBanner] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [templateToDelete, setTemplateToDelete] = useState<{ id: string; name: string } | null>(null);
   const submit = useSubmit();
   
   useEffect(() => {
@@ -174,6 +213,22 @@ export default function Templates() {
     setSelectedTemplate(null);
     setSelectedVariants([]);
   }, [selectedVariants, selectedTemplate, submit]);
+
+  const handleDeleteTemplate = useCallback((id: string, name: string) => {
+    setTemplateToDelete({ id, name });
+    setDeleteModalOpen(true);
+  }, []);
+
+  const confirmDelete = useCallback(() => {
+    if (templateToDelete) {
+      const formData = new FormData();
+      formData.append("templateId", templateToDelete.id);
+      formData.append("_action", "deleteTemplate");
+      submit(formData, { method: "post" });
+    }
+    setDeleteModalOpen(false);
+    setTemplateToDelete(null);
+  }, [templateToDelete, submit]);
 
   const emptyStateMarkup = (
     <EmptyState
@@ -218,6 +273,11 @@ export default function Templates() {
               {
                 content: "Assign to products",
                 onAction: () => handleAssignTemplate(id),
+              },
+              {
+                content: "Delete",
+                destructive: true,
+                onAction: () => handleDeleteTemplate(id, name),
               },
             ]}
           >
@@ -320,6 +380,35 @@ export default function Templates() {
               ))}
             </div>
           )}
+        </Modal.Section>
+      </Modal>
+      
+      <Modal
+        open={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setTemplateToDelete(null);
+        }}
+        title="Delete template?"
+        primaryAction={{
+          content: "Delete",
+          destructive: true,
+          onAction: confirmDelete,
+        }}
+        secondaryActions={[
+          {
+            content: "Cancel",
+            onAction: () => {
+              setDeleteModalOpen(false);
+              setTemplateToDelete(null);
+            },
+          },
+        ]}
+      >
+        <Modal.Section>
+          <Text as="p">
+            Are you sure you want to delete the template "{templateToDelete?.name}"? This action cannot be undone.
+          </Text>
         </Modal.Section>
       </Modal>
     </Page>

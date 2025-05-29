@@ -17,7 +17,7 @@ const ImageElement: React.FC<{
   onSelect: () => void;
   onChange: (attrs: any) => void;
 }> = ({ imageElement, isSelected, onSelect, onChange }) => {
-  const [image] = useImage(imageElement.url);
+  const [image] = useImage(imageElement.url, 'Anonymous');
   const imageRef = React.useRef<any>(null);
 
   return (
@@ -94,8 +94,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   // Support for S3 URLs
   const [baseImageUrl, setBaseImageUrl] = React.useState('/media/images/8-spot-red-base-image.png');
   const [svgImageUrl, setSvgImageUrl] = React.useState('/media/images/borders_v7-11.svg');
-  const [baseImage] = useImage(baseImageUrl);
-  const [svgImage] = useImage(svgImageUrl);
+  // Use 'Anonymous' only for external URLs (S3), not for local files
+  const [baseImage] = useImage(baseImageUrl, baseImageUrl.startsWith('http') ? 'Anonymous' : undefined);
+  const [svgImage] = useImage(svgImageUrl, svgImageUrl.startsWith('http') ? 'Anonymous' : undefined);
   const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fill?: string, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [svgElements, setSvgElements] = React.useState<Array<{id: string, x: number, y: number, width: number, height: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
@@ -499,6 +500,56 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       // Wait for the UI to update
       await new Promise(resolve => setTimeout(resolve, 100));
       
+      // Wait for all images to be loaded
+      const stage = stageRef.current;
+      if (stage) {
+        const allImages = stage.find('Image');
+        const imageLoadPromises = allImages.map((imageNode: any) => {
+          return new Promise((resolve) => {
+            const img = imageNode.image();
+            if (!img) {
+              // No image loaded yet - wait a bit
+              setTimeout(() => resolve(true), 500);
+              return;
+            }
+            
+            if (img.complete) {
+              resolve(true);
+            } else {
+              // Set up both load and error handlers
+              const onLoad = () => {
+                img.removeEventListener('load', onLoad);
+                img.removeEventListener('error', onError);
+                resolve(true);
+              };
+              const onError = () => {
+                console.warn('Image failed to load for thumbnail:', img.src);
+                img.removeEventListener('load', onLoad);
+                img.removeEventListener('error', onError);
+                resolve(true); // Continue even if image fails
+              };
+              
+              img.addEventListener('load', onLoad);
+              img.addEventListener('error', onError);
+              
+              // Timeout after 5 seconds
+              setTimeout(() => {
+                img.removeEventListener('load', onLoad);
+                img.removeEventListener('error', onError);
+                resolve(true);
+              }, 5000);
+            }
+          });
+        });
+        
+        // Wait for all images to load
+        await Promise.all(imageLoadPromises);
+        
+        // Force a redraw to ensure all images are rendered
+        stage.batchDraw();
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+      
       // Calculate the bounds of the designable area for cropping
       const cropX = designableArea.x;
       const cropY = designableArea.y;
@@ -506,21 +557,42 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       const cropHeight = designableArea.height;
       
       // Generate thumbnail cropped to designable area
-      const thumbnail = stageRef.current?.toDataURL({ 
-        x: cropX,
-        y: cropY,
-        width: cropWidth,
-        height: cropHeight,
-        pixelRatio: 0.8, // Higher quality
-        mimeType: 'image/jpeg',
-        quality: 0.9
-      });
+      let thumbnail: string | undefined;
+      try {
+        thumbnail = stageRef.current?.toDataURL({ 
+          x: cropX,
+          y: cropY,
+          width: cropWidth,
+          height: cropHeight,
+          pixelRatio: 0.8, // Higher quality
+          mimeType: 'image/jpeg',
+          quality: 0.9
+        });
+      } catch (thumbnailError) {
+        console.error('Error generating thumbnail:', thumbnailError);
+        // Try to generate a lower quality thumbnail as fallback
+        try {
+          thumbnail = stageRef.current?.toDataURL({ 
+            x: cropX,
+            y: cropY,
+            width: cropWidth,
+            height: cropHeight,
+            pixelRatio: 0.4, // Lower quality fallback
+            mimeType: 'image/jpeg',
+            quality: 0.7
+          });
+        } catch (fallbackError) {
+          console.error('Fallback thumbnail generation also failed:', fallbackError);
+        }
+      }
 
       const formData = new FormData();
       formData.append('name', templateName);
       formData.append('canvasData', JSON.stringify(canvasState));
       if (thumbnail) {
         formData.append('thumbnail', thumbnail);
+      } else {
+        console.warn('No thumbnail generated for template');
       }
       // Include template ID if we're updating an existing template
       if (initialTemplate?.id) {
