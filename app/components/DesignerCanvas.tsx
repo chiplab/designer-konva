@@ -403,6 +403,52 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
     }, 100); // Small delay to ensure font is applied
   };
 
+  const handleFontSizeChange = (fontSize: number) => {
+    if (!selectedId) return;
+    
+    // Update the appropriate element state
+    // Check if it's a curved text element
+    const curvedElement = curvedTextElements.find(el => el.id === selectedId);
+    if (curvedElement) {
+      setCurvedTextElements(prev => 
+        prev.map(el => el.id === selectedId ? { ...el, fontSize } : el)
+      );
+    }
+    
+    // Check if it's a regular text element
+    const textElement = textElements.find(el => el.id === selectedId);
+    if (textElement) {
+      setTextElements(prev => 
+        prev.map(el => el.id === selectedId ? { ...el, fontSize } : el)
+      );
+    }
+    
+    // Check if it's a gradient text element
+    const gradientElement = gradientTextElements.find(el => el.id === selectedId);
+    if (gradientElement) {
+      setGradientTextElements(prev => 
+        prev.map(el => el.id === selectedId ? { ...el, fontSize } : el)
+      );
+    }
+    
+    // Force re-render and update transformer bounds after font size change
+    setTimeout(() => {
+      if (transformerRef.current) {
+        const stage = transformerRef.current.getStage();
+        const selectedNode = stage?.findOne('#' + selectedId);
+        if (selectedNode) {
+          // Re-render the layer first
+          selectedNode.getLayer()?.batchDraw();
+          
+          // Force transformer to recalculate bounds for new font size
+          transformerRef.current.nodes([selectedNode]);
+          transformerRef.current.forceUpdate();
+          transformerRef.current.getLayer()?.batchDraw();
+        }
+      }
+    }, 50); // Small delay to ensure font size is applied
+  };
+
   // Canvas state serialization functions
   const getCanvasState = () => {
     return {
@@ -1118,7 +1164,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
         {selectedId && (textElements.find(el => el.id === selectedId) || gradientTextElements.find(el => el.id === selectedId) || curvedTextElements.find(el => el.id === selectedId)) && (
           <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f8f9fa', border: '1px solid #dee2e6', borderRadius: '4px' }}>
             <strong>Font Controls (POC):</strong>
-            <div style={{ display: 'flex', gap: '10px', marginTop: '5px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '15px', marginTop: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
               <label>
                 Font Family: 
                 <select
@@ -1137,6 +1183,36 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                     </option>
                   ))}
                 </select>
+              </label>
+              <label>
+                Font Size: 
+                <input
+                  type="range"
+                  min="8"
+                  max="72"
+                  value={
+                    textElements.find(el => el.id === selectedId)?.fontSize ||
+                    gradientTextElements.find(el => el.id === selectedId)?.fontSize ||
+                    curvedTextElements.find(el => el.id === selectedId)?.fontSize ||
+                    24
+                  }
+                  onChange={(e) => handleFontSizeChange(parseInt(e.target.value))}
+                  style={{ marginLeft: '5px', width: '100px' }}
+                />
+                <input
+                  type="number"
+                  min="8"
+                  max="72"
+                  value={
+                    textElements.find(el => el.id === selectedId)?.fontSize ||
+                    gradientTextElements.find(el => el.id === selectedId)?.fontSize ||
+                    curvedTextElements.find(el => el.id === selectedId)?.fontSize ||
+                    24
+                  }
+                  onChange={(e) => handleFontSizeChange(parseInt(e.target.value) || 24)}
+                  style={{ marginLeft: '5px', width: '50px', padding: '4px', fontSize: '14px' }}
+                />
+                <span style={{ marginLeft: '5px' }}>px</span>
               </label>
               <span style={{ fontSize: '12px', color: '#6c757d' }}>
                 {loadedFonts.size} of {priorityFonts.length} fonts loaded
