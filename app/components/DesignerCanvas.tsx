@@ -17,7 +17,7 @@ const ImageElement: React.FC<{
   onSelect: () => void;
   onChange: (attrs: any) => void;
 }> = ({ imageElement, isSelected, onSelect, onChange }) => {
-  const [image] = useImage(imageElement.url, 'Anonymous');
+  const [image] = useImage(imageElement.url, 'anonymous');
   const imageRef = React.useRef<any>(null);
 
   return (
@@ -94,9 +94,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   // Support for S3 URLs
   const [baseImageUrl, setBaseImageUrl] = React.useState('/media/images/8-spot-red-base-image.png');
   const [svgImageUrl, setSvgImageUrl] = React.useState('/media/images/borders_v7-11.svg');
-  // Use 'Anonymous' only for external URLs (S3), not for local files
-  const [baseImage] = useImage(baseImageUrl, baseImageUrl.startsWith('http') ? 'Anonymous' : undefined);
-  const [svgImage] = useImage(svgImageUrl, svgImageUrl.startsWith('http') ? 'Anonymous' : undefined);
+  // Use 'anonymous' only for external URLs (S3), not for local files
+  const [baseImage] = useImage(baseImageUrl, baseImageUrl.startsWith('http') ? 'anonymous' : undefined);
+  const [svgImage] = useImage(svgImageUrl, svgImageUrl.startsWith('http') ? 'anonymous' : undefined);
   const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fill?: string, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [svgElements, setSvgElements] = React.useState<Array<{id: string, x: number, y: number, width: number, height: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
@@ -550,36 +550,31 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
         await new Promise(resolve => setTimeout(resolve, 200));
       }
       
-      // Calculate the bounds of the designable area for cropping
-      const cropX = designableArea.x;
-      const cropY = designableArea.y;
-      const cropWidth = designableArea.width;
-      const cropHeight = designableArea.height;
-      
-      // Generate thumbnail cropped to designable area
+      // Generate thumbnail - properly account for stage scale
+      // Since the stage is scaled for responsive display, we need to adjust our capture parameters
       let thumbnail: string | undefined;
       try {
+        // The stage is scaled, so we capture the scaled area but use inverse pixelRatio
+        // to get the original resolution in the output
         thumbnail = stageRef.current?.toDataURL({ 
-          x: cropX,
-          y: cropY,
-          width: cropWidth,
-          height: cropHeight,
-          pixelRatio: 0.8, // Higher quality
-          mimeType: 'image/jpeg',
-          quality: 0.9
+          x: 0,
+          y: 0,
+          width: dimensions.width * scale,    // Capture the full scaled width
+          height: dimensions.height * scale,   // Capture the full scaled height
+          pixelRatio: 1 / scale,              // Inverse scale to get original resolution
+          mimeType: 'image/png'               // Use PNG to preserve exact appearance
         });
       } catch (thumbnailError) {
         console.error('Error generating thumbnail:', thumbnailError);
         // Try to generate a lower quality thumbnail as fallback
         try {
           thumbnail = stageRef.current?.toDataURL({ 
-            x: cropX,
-            y: cropY,
-            width: cropWidth,
-            height: cropHeight,
-            pixelRatio: 0.4, // Lower quality fallback
-            mimeType: 'image/jpeg',
-            quality: 0.7
+            x: 0,
+            y: 0,
+            width: dimensions.width * scale,
+            height: dimensions.height * scale,
+            pixelRatio: 0.6 / scale,  // Lower quality fallback with scale adjustment
+            mimeType: 'image/png'
           });
         } catch (fallbackError) {
           console.error('Fallback thumbnail generation also failed:', fallbackError);
