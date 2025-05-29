@@ -288,11 +288,14 @@ Owner: ProductVariant
    - One-time setup to enable metafield in Shopify admin
    - Makes metafield visible and editable in variant admin UI
 
-2. **Template Assignment** (`app.templates.tsx`):
-   - Added "Assign to products" action to each template
+2. **Template Management** (`app.templates.tsx`):
+   - Lists all templates with thumbnails and metadata
+   - "Assign to products" action to link templates to variants
+   - "Delete" action with confirmation modal
    - Uses ResourcePicker to select product variants
    - Updates variant metafields via GraphQL mutation
    - Supports bulk assignment to multiple variants
+   - Shop-scoped deletion with ownership verification
 
 3. **Product Bindings View** (`app.product-bindings.tsx`):
    - Lists all variants with assigned templates
