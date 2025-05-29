@@ -17,7 +17,7 @@ const ImageElement: React.FC<{
   onSelect: () => void;
   onChange: (attrs: any) => void;
 }> = ({ imageElement, isSelected, onSelect, onChange }) => {
-  const [image] = useImage(imageElement.url, 'Anonymous');
+  const [image] = useImage(imageElement.url, 'anonymous');
   const imageRef = React.useRef<any>(null);
 
   return (
@@ -94,9 +94,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   // Support for S3 URLs
   const [baseImageUrl, setBaseImageUrl] = React.useState('/media/images/8-spot-red-base-image.png');
   const [svgImageUrl, setSvgImageUrl] = React.useState('/media/images/borders_v7-11.svg');
-  // Use 'Anonymous' only for external URLs (S3), not for local files
-  const [baseImage] = useImage(baseImageUrl, baseImageUrl.startsWith('http') ? 'Anonymous' : undefined);
-  const [svgImage] = useImage(svgImageUrl, svgImageUrl.startsWith('http') ? 'Anonymous' : undefined);
+  // Use 'anonymous' only for external URLs (S3), not for local files
+  const [baseImage] = useImage(baseImageUrl, baseImageUrl.startsWith('http') ? 'anonymous' : undefined);
+  const [svgImage] = useImage(svgImageUrl, svgImageUrl.startsWith('http') ? 'anonymous' : undefined);
   const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fill?: string, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [svgElements, setSvgElements] = React.useState<Array<{id: string, x: number, y: number, width: number, height: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
@@ -403,6 +403,52 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
     }, 100); // Small delay to ensure font is applied
   };
 
+  const handleFontSizeChange = (fontSize: number) => {
+    if (!selectedId) return;
+    
+    // Update the appropriate element state
+    // Check if it's a curved text element
+    const curvedElement = curvedTextElements.find(el => el.id === selectedId);
+    if (curvedElement) {
+      setCurvedTextElements(prev => 
+        prev.map(el => el.id === selectedId ? { ...el, fontSize } : el)
+      );
+    }
+    
+    // Check if it's a regular text element
+    const textElement = textElements.find(el => el.id === selectedId);
+    if (textElement) {
+      setTextElements(prev => 
+        prev.map(el => el.id === selectedId ? { ...el, fontSize } : el)
+      );
+    }
+    
+    // Check if it's a gradient text element
+    const gradientElement = gradientTextElements.find(el => el.id === selectedId);
+    if (gradientElement) {
+      setGradientTextElements(prev => 
+        prev.map(el => el.id === selectedId ? { ...el, fontSize } : el)
+      );
+    }
+    
+    // Force re-render and update transformer bounds after font size change
+    setTimeout(() => {
+      if (transformerRef.current) {
+        const stage = transformerRef.current.getStage();
+        const selectedNode = stage?.findOne('#' + selectedId);
+        if (selectedNode) {
+          // Re-render the layer first
+          selectedNode.getLayer()?.batchDraw();
+          
+          // Force transformer to recalculate bounds for new font size
+          transformerRef.current.nodes([selectedNode]);
+          transformerRef.current.forceUpdate();
+          transformerRef.current.getLayer()?.batchDraw();
+        }
+      }
+    }, 50); // Small delay to ensure font size is applied
+  };
+
   // Canvas state serialization functions
   const getCanvasState = () => {
     return {
@@ -550,36 +596,31 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
         await new Promise(resolve => setTimeout(resolve, 200));
       }
       
-      // Calculate the bounds of the designable area for cropping
-      const cropX = designableArea.x;
-      const cropY = designableArea.y;
-      const cropWidth = designableArea.width;
-      const cropHeight = designableArea.height;
-      
-      // Generate thumbnail cropped to designable area
+      // Generate thumbnail - properly account for stage scale
+      // Since the stage is scaled for responsive display, we need to adjust our capture parameters
       let thumbnail: string | undefined;
       try {
+        // The stage is scaled, so we capture the scaled area but use inverse pixelRatio
+        // to get the original resolution in the output
         thumbnail = stageRef.current?.toDataURL({ 
-          x: cropX,
-          y: cropY,
-          width: cropWidth,
-          height: cropHeight,
-          pixelRatio: 0.8, // Higher quality
-          mimeType: 'image/jpeg',
-          quality: 0.9
+          x: 0,
+          y: 0,
+          width: dimensions.width * scale,    // Capture the full scaled width
+          height: dimensions.height * scale,   // Capture the full scaled height
+          pixelRatio: 1 / scale,              // Inverse scale to get original resolution
+          mimeType: 'image/png'               // Use PNG to preserve exact appearance
         });
       } catch (thumbnailError) {
         console.error('Error generating thumbnail:', thumbnailError);
         // Try to generate a lower quality thumbnail as fallback
         try {
           thumbnail = stageRef.current?.toDataURL({ 
-            x: cropX,
-            y: cropY,
-            width: cropWidth,
-            height: cropHeight,
-            pixelRatio: 0.4, // Lower quality fallback
-            mimeType: 'image/jpeg',
-            quality: 0.7
+            x: 0,
+            y: 0,
+            width: dimensions.width * scale,
+            height: dimensions.height * scale,
+            pixelRatio: 0.6 / scale,  // Lower quality fallback with scale adjustment
+            mimeType: 'image/png'
           });
         } catch (fallbackError) {
           console.error('Fallback thumbnail generation also failed:', fallbackError);
@@ -1123,7 +1164,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
         {selectedId && (textElements.find(el => el.id === selectedId) || gradientTextElements.find(el => el.id === selectedId) || curvedTextElements.find(el => el.id === selectedId)) && (
           <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f8f9fa', border: '1px solid #dee2e6', borderRadius: '4px' }}>
             <strong>Font Controls (POC):</strong>
-            <div style={{ display: 'flex', gap: '10px', marginTop: '5px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '15px', marginTop: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
               <label>
                 Font Family: 
                 <select
@@ -1142,6 +1183,36 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                     </option>
                   ))}
                 </select>
+              </label>
+              <label>
+                Font Size: 
+                <input
+                  type="range"
+                  min="8"
+                  max="72"
+                  value={
+                    textElements.find(el => el.id === selectedId)?.fontSize ||
+                    gradientTextElements.find(el => el.id === selectedId)?.fontSize ||
+                    curvedTextElements.find(el => el.id === selectedId)?.fontSize ||
+                    24
+                  }
+                  onChange={(e) => handleFontSizeChange(parseInt(e.target.value))}
+                  style={{ marginLeft: '5px', width: '100px' }}
+                />
+                <input
+                  type="number"
+                  min="8"
+                  max="72"
+                  value={
+                    textElements.find(el => el.id === selectedId)?.fontSize ||
+                    gradientTextElements.find(el => el.id === selectedId)?.fontSize ||
+                    curvedTextElements.find(el => el.id === selectedId)?.fontSize ||
+                    24
+                  }
+                  onChange={(e) => handleFontSizeChange(parseInt(e.target.value) || 24)}
+                  style={{ marginLeft: '5px', width: '50px', padding: '4px', fontSize: '14px' }}
+                />
+                <span style={{ marginLeft: '5px' }}>px</span>
               </label>
               <span style={{ fontSize: '12px', color: '#6c757d' }}>
                 {loadedFonts.size} of {priorityFonts.length} fonts loaded
@@ -1495,6 +1566,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 id={curvedEl.id}
                 x={curvedEl.x}
                 y={centerY}
+                rotation={curvedEl.rotation || 0}
+                scaleX={curvedEl.scaleX || 1}
+                scaleY={curvedEl.scaleY || 1}
                 draggable
                 onClick={() => setSelectedId(curvedEl.id)}
                 onTap={() => setSelectedId(curvedEl.id)}
@@ -1513,6 +1587,26 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                     prev.map(el => 
                       el.id === curvedEl.id 
                         ? { ...el, x: newX, topY: newTopY }
+                        : el
+                    )
+                  );
+                }}
+                onTransformEnd={(e) => {
+                  const node = e.target;
+                  setCurvedTextElements(prev => 
+                    prev.map(el => 
+                      el.id === curvedEl.id 
+                        ? { 
+                            ...el, 
+                            x: node.x(),
+                            // Calculate topY from centerY based on flip state
+                            topY: curvedEl.flipped 
+                              ? node.y() + curvedEl.radius 
+                              : node.y() - curvedEl.radius,
+                            rotation: node.rotation(),
+                            scaleX: node.scaleX(),
+                            scaleY: node.scaleY()
+                          }
                         : el
                     )
                   );
