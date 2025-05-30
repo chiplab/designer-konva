@@ -113,12 +113,12 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   });
   const [backgroundColor, setBackgroundColor] = React.useState('transparent');
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
-  const [editingId, setEditingId] = React.useState<string | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [templates, setTemplates] = React.useState<Array<{id: string, name: string}>>([]);
   const [floatingToolbarPos, setFloatingToolbarPos] = React.useState<{ x: number; y: number } | null>(null);
   const transformerRef = React.useRef<any>(null);
+  const [showColorPicker, setShowColorPicker] = React.useState(false);
 
   // Font Management - POC with priority fonts from VISION.md
   const priorityFonts = ['Arial', 'Impact', 'Roboto', 'Oswald', 'Bebas Neue'];
@@ -221,6 +221,12 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       }
     } else {
       setFloatingToolbarPos(null);
+      setShowColorPicker(false); // Close color picker when deselecting
+      // Detach transformer when nothing is selected
+      if (transformerRef.current) {
+        transformerRef.current.nodes([]);
+        transformerRef.current.getLayer()?.batchDraw();
+      }
     }
   }, [selectedId, scale]);
 
@@ -263,9 +269,26 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
 
 
   const handleStageClick = (e: any) => {
-    if (e.target === e.target.getStage()) {
+    // Get the clicked target
+    const clickedTarget = e.target;
+    
+    // Check if we clicked on something that should deselect
+    // This includes: stage, background elements, non-draggable shapes
+    const shouldDeselect = 
+      clickedTarget === e.target.getStage() || // Clicked on stage itself
+      clickedTarget.getClassName() === 'Layer' || // Clicked on layer
+      (clickedTarget.getClassName() === 'Rect' && !clickedTarget.draggable()) || // Background rect
+      (clickedTarget.getClassName() === 'Image' && !clickedTarget.draggable()) || // Base image (non-draggable)
+      (clickedTarget.getClassName() === 'Group' && !clickedTarget.draggable()); // Group container
+    
+    if (shouldDeselect) {
       setSelectedId(null);
-      setEditingId(null);
+      setShowColorPicker(false);
+      // Immediately detach transformer
+      if (transformerRef.current) {
+        transformerRef.current.nodes([]);
+        transformerRef.current.getLayer()?.batchDraw();
+      }
     }
   };
 
@@ -341,33 +364,6 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
     }
   };
 
-  const handleTextEdit = (id: string, newText: string) => {
-    // Check if it's a curved text element
-    const curvedElement = curvedTextElements.find(el => el.id === id);
-    if (curvedElement) {
-      setCurvedTextElements(prev => 
-        prev.map(el => el.id === id ? { ...el, text: newText } : el)
-      );
-    }
-    
-    // Check if it's a regular text element
-    const textElement = textElements.find(el => el.id === id);
-    if (textElement) {
-      setTextElements(prev => 
-        prev.map(el => el.id === id ? { ...el, text: newText } : el)
-      );
-    }
-    
-    // Check if it's a gradient text element
-    const gradientElement = gradientTextElements.find(el => el.id === id);
-    if (gradientElement) {
-      setGradientTextElements(prev => 
-        prev.map(el => el.id === id ? { ...el, text: newText } : el)
-      );
-    }
-    
-    setEditingId(null);
-  };
 
   const handleDiameterChange = (newRadius: number) => {
     if (selectedId) {
@@ -851,13 +847,13 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Delete key to remove selected element
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId && !editingId) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
         e.preventDefault();
         deleteSelectedElement();
       }
       
       // Ctrl+D or Cmd+D to duplicate
-      if (e.key === 'd' && (e.ctrlKey || e.metaKey) && selectedId && !editingId) {
+      if (e.key === 'd' && (e.ctrlKey || e.metaKey) && selectedId) {
         e.preventDefault();
         duplicateElement();
       }
@@ -865,7 +861,26 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, editingId]);
+  }, [selectedId]);
+
+  // Close color picker when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      // Check if click is outside color picker
+      const target = e.target as HTMLElement;
+      const colorPicker = target.closest('[data-color-picker]');
+      const colorButton = target.closest('[data-color-button]');
+      
+      if (!colorPicker && !colorButton && showColorPicker) {
+        setShowColorPicker(false);
+      }
+    };
+
+    if (showColorPicker) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [showColorPicker]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -907,17 +922,52 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                   });
                   const result = await response.json();
                   if (result.success) {
-                    // Add image to canvas at center of designable area
-                    const newImage = {
-                      id: `image-${Date.now()}`,
-                      url: result.asset.url,
-                      x: designableArea.x + designableArea.width / 2 - 50, // Top-left position (center - half width)
-                      y: designableArea.y + designableArea.height / 2 - 50, // Top-left position (center - half height)
-                      width: 100,
-                      height: 100,
-                      rotation: 0
+                    // Load the image to get its natural dimensions
+                    const img = new window.Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload = () => {
+                      // Calculate size maintaining aspect ratio
+                      const maxSize = 400; // Maximum width or height
+                      const aspectRatio = img.width / img.height;
+                      let width, height;
+                      
+                      if (img.width > img.height) {
+                        // Landscape image
+                        width = Math.min(img.width, maxSize);
+                        height = width / aspectRatio;
+                      } else {
+                        // Portrait or square image
+                        height = Math.min(img.height, maxSize);
+                        width = height * aspectRatio;
+                      }
+                      
+                      // Add image to canvas at center of designable area
+                      const newImage = {
+                        id: `image-${Date.now()}`,
+                        url: result.asset.url,
+                        x: designableArea.x + designableArea.width / 2 - width / 2, // Center horizontally
+                        y: designableArea.y + designableArea.height / 2 - height / 2, // Center vertically
+                        width: width,
+                        height: height,
+                        rotation: 0
+                      };
+                      setImageElements(prev => [...prev, newImage]);
                     };
-                    setImageElements(prev => [...prev, newImage]);
+                    img.onerror = () => {
+                      console.error('Failed to load image for dimensions');
+                      // Fallback to square if image fails to load
+                      const newImage = {
+                        id: `image-${Date.now()}`,
+                        url: result.asset.url,
+                        x: designableArea.x + designableArea.width / 2 - 50,
+                        y: designableArea.y + designableArea.height / 2 - 50,
+                        width: 100,
+                        height: 100,
+                        rotation: 0
+                      };
+                      setImageElements(prev => [...prev, newImage]);
+                    };
+                    img.src = result.asset.url;
                   } else {
                     alert(`Upload failed: ${result.error}`);
                   }
@@ -1384,264 +1434,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
         <div style={{ marginTop: '10px', padding: '5px', fontSize: '12px', color: '#6c757d', fontFamily: 'monospace' }}>
           Canvas Size: {dimensions.width} px width × {dimensions.height} px height
         </div>
-        
-        {selectedId && curvedTextElements.find(el => el.id === selectedId) && (
-          <div style={{ display: 'inline-block', marginLeft: '20px' }}>
-            <label style={{ marginRight: '10px' }}>
-              Diameter: 
-              <input
-                type="range"
-                min="50"
-                max="300"
-                value={curvedTextElements.find(el => el.id === selectedId)?.radius || 100}
-                onChange={(e) => handleDiameterChange(parseInt(e.target.value))}
-                style={{ marginLeft: '5px', width: '150px' }}
-              />
-              <span style={{ marginLeft: '5px' }}>
-                {(curvedTextElements.find(el => el.id === selectedId)?.radius || 100) * 2}px
-              </span>
-            </label>
-            <button 
-              onClick={handleFlipText}
-              style={{ 
-                padding: '8px 16px', 
-                fontSize: '14px', 
-                marginLeft: '20px',
-                backgroundColor: '#007bff',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-            >
-              Flip Text
-            </button>
-          </div>
-        )}
-        {selectedId && curvedTextElements.find(el => el.id === selectedId) && (
-          <div style={{ 
-            background: '#f0f0f0', 
-            padding: '10px', 
-            margin: '10px 0', 
-            border: '1px solid #ccc',
-            fontFamily: 'monospace',
-            fontSize: '12px'
-          }}>
-            <strong>Debug Info for Selected Circle:</strong><br/>
-            Radius: {curvedTextElements.find(el => el.id === selectedId)?.radius}<br/>
-            Top Y (stored): {curvedTextElements.find(el => el.id === selectedId)?.topY}<br/>
-            Visual Top Y: {(() => {
-              const el = curvedTextElements.find(el => el.id === selectedId);
-              if (!el) return 0;
-              return el.flipped ? el.topY - 2 * el.radius : el.topY;
-            })()}<br/>
-            Center X: {curvedTextElements.find(el => el.id === selectedId)?.x}<br/>
-            Center Y (calculated): {(() => {
-              const el = curvedTextElements.find(el => el.id === selectedId);
-              if (!el) return 0;
-              return el.flipped ? el.topY - el.radius : el.topY + el.radius;
-            })()}<br/>
-            Flipped: {curvedTextElements.find(el => el.id === selectedId)?.flipped ? 'Yes' : 'No'}<br/>
-          </div>
-        )}
-        
-        {/* Font Controls - POC */}
-        {selectedId && (textElements.find(el => el.id === selectedId) || gradientTextElements.find(el => el.id === selectedId) || curvedTextElements.find(el => el.id === selectedId)) && (
-          <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f8f9fa', border: '1px solid #dee2e6', borderRadius: '4px' }}>
-            <strong>Font Controls (POC):</strong>
-            <div style={{ display: 'flex', gap: '15px', marginTop: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <label>
-                Font Family: 
-                <select
-                  value={
-                    textElements.find(el => el.id === selectedId)?.fontFamily ||
-                    gradientTextElements.find(el => el.id === selectedId)?.fontFamily ||
-                    curvedTextElements.find(el => el.id === selectedId)?.fontFamily ||
-                    'Arial'
-                  }
-                  onChange={(e) => handleFontChange(e.target.value)}
-                  style={{ marginLeft: '5px', padding: '4px 8px', fontSize: '14px' }}
-                >
-                  {priorityFonts.map(font => (
-                    <option key={font} value={font}>
-                      {font} {loadedFonts.has(font) ? '✓' : '⏳'}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Font Size: 
-                <input
-                  type="range"
-                  min="8"
-                  max="72"
-                  value={
-                    textElements.find(el => el.id === selectedId)?.fontSize ||
-                    gradientTextElements.find(el => el.id === selectedId)?.fontSize ||
-                    curvedTextElements.find(el => el.id === selectedId)?.fontSize ||
-                    24
-                  }
-                  onChange={(e) => handleFontSizeChange(parseInt(e.target.value))}
-                  style={{ marginLeft: '5px', width: '100px' }}
-                />
-                <input
-                  type="number"
-                  min="8"
-                  max="72"
-                  value={
-                    textElements.find(el => el.id === selectedId)?.fontSize ||
-                    gradientTextElements.find(el => el.id === selectedId)?.fontSize ||
-                    curvedTextElements.find(el => el.id === selectedId)?.fontSize ||
-                    24
-                  }
-                  onChange={(e) => handleFontSizeChange(parseInt(e.target.value) || 24)}
-                  style={{ marginLeft: '5px', width: '50px', padding: '4px', fontSize: '14px' }}
-                />
-                <span style={{ marginLeft: '5px' }}>px</span>
-              </label>
-              <span style={{ fontSize: '12px', color: '#6c757d' }}>
-                {loadedFonts.size} of {priorityFonts.length} fonts loaded
-              </span>
-            </div>
-            
-            {/* Color Palette */}
-            {(
-              <div style={{ marginTop: '10px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>
-                  Text Color:
-                </label>
-                <div style={{ 
-                  display: 'flex', 
-                  gap: '6px', 
-                  flexWrap: 'wrap',
-                  maxWidth: '400px'
-                }}>
-                  {[
-                    { name: 'White', hex: '#ffffff' },
-                    { name: 'Red', hex: '#c8102e' },
-                    { name: 'Blue', hex: '#0057b8' },
-                    { name: 'Green', hex: '#009639' },
-                    { name: 'Black', hex: '#000000' },
-                    { name: 'Purple', hex: '#5f259f' },
-                    { name: 'Yellow', hex: '#fff110' },
-                    { name: 'Grey', hex: '#a2aaad' },
-                    { name: 'Orange', hex: '#ff8200' },
-                    { name: 'Ivory', hex: '#f1e6b2' },
-                    { name: 'Light Blue', hex: '#71c5e8' },
-                    { name: 'Pink', hex: '#f8a3bc' },
-                    { name: 'Brown', hex: '#9e652e' }
-                  ].map((color) => {
-                    const currentColor = 
-                      textElements.find(el => el.id === selectedId)?.fill ||
-                      curvedTextElements.find(el => el.id === selectedId)?.fill ||
-                      '#000000';
-                    
-                    return (
-                      <button
-                        key={color.hex}
-                        onClick={() => handleColorChange(color.hex)}
-                        style={{
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '50%',
-                          backgroundColor: color.hex,
-                          border: currentColor === color.hex ? '3px solid #0066ff' : '2px solid #ccc',
-                          cursor: 'pointer',
-                          padding: 0,
-                          transition: 'all 0.2s',
-                          boxShadow: color.hex === '#ffffff' ? 'inset 0 0 0 1px #ddd' : 'none'
-                        }}
-                        title={color.name}
-                        onMouseEnter={(e) => {
-                          if (currentColor !== color.hex) {
-                            e.currentTarget.style.transform = 'scale(1.1)';
-                            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = 'scale(1)';
-                          e.currentTarget.style.boxShadow = color.hex === '#ffffff' ? 'inset 0 0 0 1px #ddd' : 'none';
-                        }}
-                      />
-                    );
-                  })}
-                  
-                  {/* Gold Gradient option */}
-                  {(() => {
-                    const currentColor = 
-                      textElements.find(el => el.id === selectedId)?.fill ||
-                      curvedTextElements.find(el => el.id === selectedId)?.fill ||
-                      '#000000';
-                    
-                    return (
-                      <button
-                        onClick={() => handleColorChange('gold-gradient')}
-                        style={{
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '50%',
-                          background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #B8860B 100%)',
-                          border: currentColor === 'gold-gradient' ? '3px solid #0066ff' : '2px solid #ccc',
-                          cursor: 'pointer',
-                          padding: 0,
-                          transition: 'all 0.2s',
-                        }}
-                        title="Gold Gradient"
-                        onMouseEnter={(e) => {
-                          if (currentColor !== 'gold-gradient') {
-                            e.currentTarget.style.transform = 'scale(1.1)';
-                            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = 'scale(1)';
-                          e.currentTarget.style.boxShadow = 'none';
-                        }}
-                      />
-                    );
-                  })()}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
       </div>
-      {editingId && (
-        <div style={{
-          position: 'absolute',
-          top: '100px',
-          left: '20px',
-          background: 'white',
-          padding: '10px',
-          border: '1px solid #ccc',
-          borderRadius: '4px',
-          zIndex: 1000
-        }}>
-          <input
-            type="text"
-            defaultValue={
-              curvedTextElements.find(el => el.id === editingId)?.text ||
-              textElements.find(el => el.id === editingId)?.text ||
-              gradientTextElements.find(el => el.id === editingId)?.text ||
-              ''
-            }
-            autoFocus
-            onBlur={(e) => handleTextEdit(editingId, e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                handleTextEdit(editingId, e.currentTarget.value);
-              }
-              if (e.key === 'Escape') {
-                setEditingId(null);
-              }
-            }}
-            style={{ padding: '5px', fontSize: '16px', width: '300px' }}
-          />
-          <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
-            Press Enter to save, Escape to cancel
-          </div>
-        </div>
-      )}
       <div 
         ref={containerRef} 
         style={{ 
@@ -1673,8 +1466,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
             scaleX={scale} 
             scaleY={scale}
             onMouseDown={handleStageClick}
+            onTouchStart={handleStageClick}
           >
-        <Layer>
+        <Layer onMouseDown={handleStageClick} onTouchStart={handleStageClick}>
           {/* Base product template - bottom layer */}
           {baseImage && (
             <Image
@@ -1750,8 +1544,6 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 draggable
                 onClick={() => setSelectedId(textEl.id)}
                 onTap={() => setSelectedId(textEl.id)}
-                onDblClick={() => setEditingId(textEl.id)}
-                onDblTap={() => setEditingId(textEl.id)}
                 onDragEnd={(e) => {
                   const newX = e.target.x();
                   const newY = e.target.y();
@@ -1802,8 +1594,6 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 draggable
                 onClick={() => setSelectedId(gradientEl.id)}
                 onTap={() => setSelectedId(gradientEl.id)}
-                onDblClick={() => setEditingId(gradientEl.id)}
-                onDblTap={() => setEditingId(gradientEl.id)}
                 onDragEnd={(e) => {
                   const newX = e.target.x();
                   const newY = e.target.y();
@@ -1899,8 +1689,6 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 draggable
                 onClick={() => setSelectedId(curvedEl.id)}
                 onTap={() => setSelectedId(curvedEl.id)}
-                onDblClick={() => setEditingId(curvedEl.id)}
-                onDblTap={() => setEditingId(curvedEl.id)}
                 onDragEnd={(e) => {
                   const newX = e.target.x();
                   const newY = e.target.y();
@@ -2007,62 +1795,63 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
         </div>
       </div>
       
-      {/* Floating Toolbar - positioned absolutely */}
-      {floatingToolbarPos && selectedId && !editingId && (
+      {/* Fixed Top Toolbar - positioned at top of canvas */}
+      {selectedId && (
         <div
           style={{
-            position: 'fixed',
-            left: floatingToolbarPos.x,
-            top: floatingToolbarPos.y,
+            position: 'absolute',
+            left: '50%',
+            top: '80px',
             transform: 'translateX(-50%)',
             background: 'white',
-            border: '1px solid #ccc',
-            borderRadius: '6px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-            padding: '4px',
+            border: '1px solid #ddd',
+            borderRadius: '8px',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
+            padding: '8px',
             display: 'flex',
-            gap: '4px',
+            gap: '8px',
+            alignItems: 'center',
             zIndex: 1000,
           }}
         >
+          {/* Actions Group */}
           <button
             onClick={duplicateElement}
             style={{
-              width: '32px',
-              height: '32px',
-              padding: '4px',
+              width: '36px',
+              height: '36px',
+              padding: '6px',
               border: 'none',
-              borderRadius: '4px',
+              borderRadius: '6px',
               background: 'white',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               fontSize: '16px',
-              transition: 'background-color 0.2s',
+              transition: 'all 0.2s',
             }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0f0f0'}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
             title="Duplicate (Ctrl+D)"
           >
             📋
           </button>
-          <div style={{ width: '1px', background: '#ddd', margin: '4px 0' }} />
           <button
             onClick={deleteSelectedElement}
             style={{
-              width: '32px',
-              height: '32px',
-              padding: '4px',
+              width: '36px',
+              height: '36px',
+              padding: '6px',
               border: 'none',
-              borderRadius: '4px',
+              borderRadius: '6px',
               background: 'white',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               fontSize: '16px',
-              transition: 'background-color 0.2s',
+              transition: 'all 0.2s',
             }}
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#ffebee'}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
@@ -2070,6 +1859,302 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
           >
             🗑️
           </button>
+          
+          {/* Font controls - only show for text elements */}
+          {(textElements.find(el => el.id === selectedId) || gradientTextElements.find(el => el.id === selectedId) || curvedTextElements.find(el => el.id === selectedId)) && (
+            <>
+              <div style={{ width: '1px', background: '#e0e0e0', height: '24px', margin: '0 4px' }} />
+              
+              {/* Font Family Dropdown - no label */}
+              <select
+                value={
+                  textElements.find(el => el.id === selectedId)?.fontFamily ||
+                  gradientTextElements.find(el => el.id === selectedId)?.fontFamily ||
+                  curvedTextElements.find(el => el.id === selectedId)?.fontFamily ||
+                  'Arial'
+                }
+                onChange={(e) => handleFontChange(e.target.value)}
+                style={{ 
+                  padding: '4px 8px', 
+                  fontSize: '14px',
+                  border: '1px solid #ddd',
+                  borderRadius: '4px',
+                  background: 'white',
+                  cursor: 'pointer'
+                }}
+              >
+                {priorityFonts.map(font => (
+                  <option key={font} value={font}>
+                    {font} {loadedFonts.has(font) ? '✓' : '⏳'}
+                  </option>
+                ))}
+              </select>
+              
+              {/* Font Size - with label */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '14px' }}>Size:</span>
+                <input
+                  type="number"
+                  min="8"
+                  max="72"
+                  value={
+                    textElements.find(el => el.id === selectedId)?.fontSize ||
+                    gradientTextElements.find(el => el.id === selectedId)?.fontSize ||
+                    curvedTextElements.find(el => el.id === selectedId)?.fontSize ||
+                    24
+                  }
+                  onChange={(e) => handleFontSizeChange(parseInt(e.target.value) || 24)}
+                  style={{ 
+                    width: '50px', 
+                    padding: '4px', 
+                    fontSize: '14px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px'
+                  }}
+                />
+              </div>
+              
+              {/* Color Swatch */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  data-color-button="true"
+                  onClick={() => setShowColorPicker(!showColorPicker)}
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    backgroundColor: (() => {
+                      const color = textElements.find(el => el.id === selectedId)?.fill ||
+                        curvedTextElements.find(el => el.id === selectedId)?.fill ||
+                        '#000000';
+                      return color === 'gold-gradient' ? 'transparent' : color;
+                    })(),
+                    background: (() => {
+                      const color = textElements.find(el => el.id === selectedId)?.fill ||
+                        curvedTextElements.find(el => el.id === selectedId)?.fill ||
+                        '#000000';
+                      return color === 'gold-gradient' ? 'linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #B8860B 100%)' : color;
+                    })(),
+                    border: '2px solid #ccc',
+                    cursor: 'pointer',
+                    padding: 0,
+                    transition: 'all 0.2s',
+                    boxShadow: showColorPicker ? '0 0 0 2px #0066ff' : 'none'
+                  }}
+                  title="Text Color"
+                />
+                
+                {/* Color Picker Popup */}
+                {showColorPicker && (
+                  <div
+                    data-color-picker="true"
+                    style={{
+                    position: 'absolute',
+                    top: '36px',
+                    right: 0,
+                    background: 'white',
+                    border: '1px solid #ccc',
+                    borderRadius: '6px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                    padding: '8px',
+                    display: 'flex',
+                    gap: '6px',
+                    flexWrap: 'wrap',
+                    width: '200px',
+                    zIndex: 1001,
+                  }}>
+                    {[
+                      { name: 'White', hex: '#ffffff' },
+                      { name: 'Red', hex: '#c8102e' },
+                      { name: 'Blue', hex: '#0057b8' },
+                      { name: 'Green', hex: '#009639' },
+                      { name: 'Black', hex: '#000000' },
+                      { name: 'Purple', hex: '#5f259f' },
+                      { name: 'Yellow', hex: '#fff110' },
+                      { name: 'Grey', hex: '#a2aaad' },
+                      { name: 'Orange', hex: '#ff8200' },
+                      { name: 'Ivory', hex: '#f1e6b2' },
+                      { name: 'Light Blue', hex: '#71c5e8' },
+                      { name: 'Pink', hex: '#f8a3bc' },
+                      { name: 'Brown', hex: '#9e652e' }
+                    ].map((color) => {
+                      const currentColor = 
+                        textElements.find(el => el.id === selectedId)?.fill ||
+                        curvedTextElements.find(el => el.id === selectedId)?.fill ||
+                        '#000000';
+                      
+                      return (
+                        <button
+                          key={color.hex}
+                          onClick={() => {
+                            handleColorChange(color.hex);
+                            setShowColorPicker(false);
+                          }}
+                          style={{
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '50%',
+                            backgroundColor: color.hex,
+                            border: currentColor === color.hex ? '2px solid #0066ff' : '1px solid #ccc',
+                            cursor: 'pointer',
+                            padding: 0,
+                            transition: 'all 0.2s',
+                            boxShadow: color.hex === '#ffffff' ? 'inset 0 0 0 1px #ddd' : 'none'
+                          }}
+                          title={color.name}
+                          onMouseEnter={(e) => {
+                            if (currentColor !== color.hex) {
+                              e.currentTarget.style.transform = 'scale(1.1)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = 'scale(1)';
+                          }}
+                        />
+                      );
+                    })}
+                    
+                    {/* Gold Gradient option */}
+                    <button
+                      onClick={() => {
+                        handleColorChange('gold-gradient');
+                        setShowColorPicker(false);
+                      }}
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #B8860B 100%)',
+                        border: (textElements.find(el => el.id === selectedId)?.fill || curvedTextElements.find(el => el.id === selectedId)?.fill) === 'gold-gradient' ? '2px solid #0066ff' : '1px solid #ccc',
+                        cursor: 'pointer',
+                        padding: 0,
+                        transition: 'all 0.2s',
+                      }}
+                      title="Gold Gradient"
+                      onMouseEnter={(e) => {
+                        const currentColor = textElements.find(el => el.id === selectedId)?.fill || curvedTextElements.find(el => el.id === selectedId)?.fill;
+                        if (currentColor !== 'gold-gradient') {
+                          e.currentTarget.style.transform = 'scale(1.1)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'scale(1)';
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+          
+          {/* Curved Text Controls - only show for curved text elements */}
+          {curvedTextElements.find(el => el.id === selectedId) && (
+            <>
+              <div style={{ width: '1px', background: '#e0e0e0', height: '24px', margin: '0 4px' }} />
+              
+              {/* Curve Slider */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '14px' }}>Curve:</span>
+                <input
+                  type="range"
+                  min="50"
+                  max="300"
+                  value={curvedTextElements.find(el => el.id === selectedId)?.radius || 100}
+                  onChange={(e) => handleDiameterChange(parseInt(e.target.value))}
+                  style={{ 
+                    width: '80px',
+                    cursor: 'pointer'
+                  }}
+                />
+                <span style={{ fontSize: '12px', color: '#666', minWidth: '35px' }}>
+                  {(curvedTextElements.find(el => el.id === selectedId)?.radius || 100) * 2}
+                </span>
+              </div>
+              
+              {/* Flip Button */}
+              <button
+                onClick={handleFlipText}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  padding: '4px',
+                  border: 'none',
+                  borderRadius: '4px',
+                  background: 'white',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '16px',
+                  transition: 'background-color 0.2s',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e3f2fd'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+                title="Flip Text"
+              >
+                ↕️
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      
+      {/* Text Input - positioned with transformer */}
+      {floatingToolbarPos && selectedId && (textElements.find(el => el.id === selectedId) || gradientTextElements.find(el => el.id === selectedId) || curvedTextElements.find(el => el.id === selectedId)) && (
+        <div
+          style={{
+            position: 'fixed',
+            left: floatingToolbarPos.x,
+            top: floatingToolbarPos.y,
+            transform: 'translateX(-50%)',
+            zIndex: 1001,
+          }}
+        >
+          <input
+            type="text"
+            value={
+              textElements.find(el => el.id === selectedId)?.text ||
+              gradientTextElements.find(el => el.id === selectedId)?.text ||
+              curvedTextElements.find(el => el.id === selectedId)?.text ||
+              ''
+            }
+            onChange={(e) => {
+              const newText = e.target.value;
+              // Update text in real-time
+              if (textElements.find(el => el.id === selectedId)) {
+                setTextElements(prev => 
+                  prev.map(el => el.id === selectedId ? { ...el, text: newText } : el)
+                );
+              } else if (curvedTextElements.find(el => el.id === selectedId)) {
+                setCurvedTextElements(prev => 
+                  prev.map(el => el.id === selectedId ? { ...el, text: newText } : el)
+                );
+              } else if (gradientTextElements.find(el => el.id === selectedId)) {
+                setGradientTextElements(prev => 
+                  prev.map(el => el.id === selectedId ? { ...el, text: newText } : el)
+                );
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setSelectedId(null);
+              }
+            }}
+            style={{ 
+              padding: '8px 12px', 
+              fontSize: '16px', 
+              width: '300px',
+              border: '2px solid #0066ff',
+              borderRadius: '6px',
+              outline: 'none',
+              background: 'white',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+              fontFamily: 'Arial, sans-serif',
+              textAlign: 'center'
+            }}
+            placeholder="Enter text..."
+            autoFocus
+          />
         </div>
       )}
     </div>

@@ -538,3 +538,54 @@ The curved text implementation maintains the visual top edge position when adjus
 - **Normal orientation**: Top edge stays fixed while bottom expands/contracts
 - **Flipped orientation**: Visual top (which is the bottom edge when flipped) stays fixed
 - This creates an intuitive user experience where text appears anchored at its top
+
+## Advanced Designer UI Improvements
+
+### Image Upload with Aspect Ratio Preservation
+- Images are uploaded to S3 and maintain their original aspect ratios
+- Maximum size of 400px (width or height) while preserving proportions
+- Images are automatically centered in the designable area upon upload
+- Supports both user images and base template images
+
+### Context-Aware Floating Toolbar
+The designer now features a sophisticated two-part toolbar system:
+
+1. **Fixed Top Toolbar** (VistaPrint-style):
+   - Positioned 80px from top, centered horizontally
+   - Contains all element controls in a clean, consistent location
+   - Shows contextually based on selected element type:
+     - **All elements**: Duplicate and Delete buttons
+     - **Text elements**: Font family dropdown, font size input, color picker
+     - **Curved text**: Additional curve radius slider and flip button
+   - Professional styling with proper separators and hover states
+
+2. **Floating Text Input**:
+   - Appears above selected text elements (follows transformer position)
+   - Real-time text editing as you type (no need to press Enter)
+   - Blue border indicates active editing state
+   - 300px width for comfortable text entry
+   - Escape key to deselect
+
+### Font Controls in Toolbar
+- **Font Family**: Dropdown without label (self-explanatory)
+- **Font Size**: "Size:" label with number input (removed slider for space)
+- **Color Picker**: Compact swatch that expands on click
+  - Shows current color as a circle
+  - Click to reveal full color palette
+  - Automatically closes when clicking outside
+
+### Curved Text Controls in Toolbar
+- **Curve Slider**: Labeled "Curve:" with compact 80px slider
+- **Diameter Display**: Shows current diameter value
+- **Flip Button**: Icon-based (↕️) for space efficiency
+
+### Improved Selection Behavior
+- Click anywhere on empty canvas to deselect elements
+- Clicking on background, base image, or non-draggable elements deselects
+- Transformer properly detaches when deselecting
+- Color picker automatically closes on deselection
+
+### Keyboard Shortcuts
+- **Delete/Backspace**: Remove selected element
+- **Ctrl/Cmd+D**: Duplicate selected element
+- **Escape**: Deselect element (when in text input)
