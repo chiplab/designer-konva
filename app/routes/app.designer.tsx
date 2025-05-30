@@ -1,7 +1,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
-import { Page, Layout, Card } from "@shopify/polaris";
+import { Page } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import DesignerCanvas from "../components/DesignerCanvas";
@@ -32,26 +32,20 @@ export default function Designer() {
   const { template } = useLoaderData<typeof loader>();
   
   return (
-    <Page>
+    <Page fullWidth>
       <TitleBar title={template ? `Edit: ${template.name}` : "Template Designer"}>
         <button onClick={() => window.location.href = "/app/templates"}>
           View all templates
         </button>
       </TitleBar>
-      <Layout>
-        <Layout.Section>
-          <Card>
-            <div style={{ 
-              padding: '0',
-              height: 'calc(100vh - 120px)', // Account for header and padding
-              minHeight: '600px',
-              position: 'relative'
-            }}>
-              <DesignerCanvas initialTemplate={template} />
-            </div>
-          </Card>
-        </Layout.Section>
-      </Layout>
+      <div style={{ 
+        height: 'calc(100vh - 64px)', // Account for top bar only
+        minHeight: '600px',
+        position: 'relative',
+        backgroundColor: '#ffffff'
+      }}>
+        <DesignerCanvas initialTemplate={template} />
+      </div>
     </Page>
   );
 }

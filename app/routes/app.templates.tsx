@@ -306,7 +306,7 @@ export default function Templates() {
   );
 
   return (
-    <Page>
+    <Page fullWidth>
       {showSuccessBanner && actionData?.success && 'message' in actionData && (
         <Banner tone="success" onDismiss={() => setShowSuccessBanner(false)}>
           <p>{actionData.message}</p>

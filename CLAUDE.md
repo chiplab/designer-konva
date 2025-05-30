@@ -469,3 +469,72 @@ The save process includes robust image loading:
 - S3 uploads include proper cache control headers
 - Canvas operations handle missing or failed images gracefully
 - Monitor console for CORS errors when images fail to display
+
+## UI/UX Design Decisions
+
+### Native Shopify UI Integration
+The designer interface uses Shopify Polaris components with the `fullWidth` prop on Page components to match native Shopify Product pages. This removes max-width constraints and provides a seamless, integrated experience within the Shopify admin.
+
+### Element Interaction Patterns
+
+1. **Floating Toolbar**: When an element is selected, a floating toolbar appears above the transformer with:
+   - Duplicate button (📋) - Also accessible via Ctrl/Cmd+D
+   - Delete button (🗑️) - Also accessible via Delete/Backspace keys
+   - Positioned dynamically to follow elements as they move
+
+2. **Keyboard Shortcuts**:
+   - Delete/Backspace: Remove selected element
+   - Ctrl/Cmd+D: Duplicate selected element
+   - Escape: Cancel text editing
+
+3. **Visual Feedback**:
+   - Blue transformer borders for selected elements
+   - Hover effects on all interactive buttons
+   - Clear visual indicators for active states
+
+### Simplified Element Types
+
+The designer supports three core element types:
+1. **Regular Text**: Standard text with font, size, and color controls
+2. **Curved Text**: Text along circular paths with radius and flip controls
+3. **Images**: User-uploaded images with resize and rotation support
+
+**Removed Features**:
+- SVG elements were removed to simplify the interface
+- Gradient text as a separate element type was removed
+
+### Color System
+
+1. **Predefined Color Palette**: 13 carefully selected colors matching common design needs:
+   - White (#ffffff)
+   - Red (#c8102e)
+   - Blue (#0057b8)
+   - Green (#009639)
+   - Black (#000000)
+   - Purple (#5f259f)
+   - Yellow (#fff110)
+   - Grey (#a2aaad)
+   - Orange (#ff8200)
+   - Ivory (#f1e6b2)
+   - Light Blue (#71c5e8)
+   - Pink (#f8a3bc)
+   - Brown (#9e652e)
+
+2. **Gold Gradient**: A special gradient option that applies a vertical gradient:
+   - Top: Gold (#FFD700)
+   - Middle: Orange (#FFA500)
+   - Bottom: Dark Goldenrod (#B8860B)
+   - Available for both regular and curved text
+
+3. **Visual Presentation**: 
+   - Circular color swatches for intuitive selection
+   - Hover effects with scale and shadow
+   - Active state indicated by blue border
+   - Gradient swatch shows actual gradient preview
+
+### Curved Text Positioning
+
+The curved text implementation maintains the visual top edge position when adjusting the diameter:
+- **Normal orientation**: Top edge stays fixed while bottom expands/contracts
+- **Flipped orientation**: Visual top (which is the bottom edge when flipped) stays fixed
+- This creates an intuitive user experience where text appears anchored at its top

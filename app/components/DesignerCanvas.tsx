@@ -1,5 +1,5 @@
 import React from 'react';
-import { Stage, Layer, Circle, Text, TextPath, Transformer, Group, Image, Rect } from 'react-konva';
+import { Stage, Layer, Text, TextPath, Transformer, Group, Image, Rect } from 'react-konva';
 import useImage from 'use-image';
 
 // Image element component
@@ -16,7 +16,9 @@ const ImageElement: React.FC<{
   isSelected: boolean;
   onSelect: () => void;
   onChange: (attrs: any) => void;
-}> = ({ imageElement, isSelected, onSelect, onChange }) => {
+  onDragEnd?: () => void;
+  onTransformEnd?: () => void;
+}> = ({ imageElement, isSelected, onSelect, onChange, onDragEnd, onTransformEnd }) => {
   const [image] = useImage(imageElement.url, 'anonymous');
   const imageRef = React.useRef<any>(null);
 
@@ -41,6 +43,7 @@ const ImageElement: React.FC<{
           x: node.x() - imageElement.width / 2,
           y: node.y() - imageElement.height / 2,
         });
+        if (onDragEnd) onDragEnd();
       }}
       onTransformEnd={(e) => {
         const node = imageRef.current;
@@ -66,6 +69,7 @@ const ImageElement: React.FC<{
           height: newHeight,
           rotation: node.rotation(),
         });
+        if (onTransformEnd) onTransformEnd();
       }}
     />
   );
@@ -93,13 +97,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   const [containerSize, setContainerSize] = React.useState({ width: 800, height: 600 });
   // Support for S3 URLs
   const [baseImageUrl, setBaseImageUrl] = React.useState('/media/images/8-spot-red-base-image.png');
-  const [svgImageUrl, setSvgImageUrl] = React.useState('/media/images/borders_v7-11.svg');
   // Use 'anonymous' only for external URLs (S3), not for local files
   const [baseImage] = useImage(baseImageUrl, baseImageUrl.startsWith('http') ? 'anonymous' : undefined);
-  const [svgImage] = useImage(svgImageUrl, svgImageUrl.startsWith('http') ? 'anonymous' : undefined);
   const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fill?: string, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
-  const [svgElements, setSvgElements] = React.useState<Array<{id: string, x: number, y: number, width: number, height: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [curvedTextElements, setCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string, fontSize?: number, fill?: string, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [imageElements, setImageElements] = React.useState<Array<{id: string, url: string, x: number, y: number, width: number, height: number, rotation?: number}>>([]);
   const [designableArea, setDesignableArea] = React.useState({
@@ -116,6 +117,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   const [isSaving, setIsSaving] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [templates, setTemplates] = React.useState<Array<{id: string, name: string}>>([]);
+  const [floatingToolbarPos, setFloatingToolbarPos] = React.useState<{ x: number; y: number } | null>(null);
   const transformerRef = React.useRef<any>(null);
 
   // Font Management - POC with priority fonts from VISION.md
@@ -206,9 +208,21 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       if (selectedNode) {
         transformerRef.current.nodes([selectedNode]);
         transformerRef.current.getLayer().batchDraw();
+        
+        // Calculate floating toolbar position
+        const box = transformerRef.current.getClientRect();
+        const stageBox = stage.container().getBoundingClientRect();
+        
+        // Position toolbar above the transformer with some padding
+        setFloatingToolbarPos({
+          x: stageBox.left + (box.x + box.width / 2) * scale,
+          y: stageBox.top + (box.y - 50) * scale // 50px above the element
+        });
       }
+    } else {
+      setFloatingToolbarPos(null);
     }
-  }, [selectedId]);
+  }, [selectedId, scale]);
 
   const addText = () => {
     const newText = {
@@ -246,35 +260,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
     setCurvedTextElements(prev => [...prev, newCurvedText]);
   };
 
-  const addGradientText = () => {
-    const newGradientText = {
-      id: `gradient-text-${Date.now()}`,
-      text: 'Gold Gradient Text',
-      x: designableArea.x + designableArea.width / 2 - 80, // Center of designable area
-      y: designableArea.y + designableArea.height / 2 - 12, // Center vertically (minus half font size)
-      fontFamily: 'Arial',
-      fontSize: 24,
-      rotation: 0,
-      scaleX: 1,
-      scaleY: 1
-    };
-    setGradientTextElements(prev => [...prev, newGradientText]);
-  };
 
-  const addSvg = () => {
-    const svgSize = 60; // Size for the SVG element
-    const newSvg = {
-      id: `svg-${Date.now()}`,
-      x: designableArea.x + designableArea.width / 2 - svgSize / 2, // Center of designable area
-      y: designableArea.y + designableArea.height / 2 - svgSize / 2, // Center vertically
-      width: svgSize,
-      height: svgSize,
-      rotation: 0,
-      scaleX: 1,
-      scaleY: 1
-    };
-    setSvgElements(prev => [...prev, newSvg]);
-  };
 
   const handleStageClick = (e: any) => {
     if (e.target === e.target.getStage()) {
@@ -283,16 +269,76 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
     }
   };
 
-  // Convert mouse coordinates to canvas coordinates when scaled
-  const getCanvasCoordinates = (clientX: number, clientY: number) => {
-    if (!stageRef.current) return { x: clientX, y: clientY };
+  // Duplicate element function
+  const duplicateElement = () => {
+    if (!selectedId) return;
     
-    const stage = stageRef.current;
-    const rect = stage.container().getBoundingClientRect();
-    const x = (clientX - rect.left) / scale;
-    const y = (clientY - rect.top) / scale;
+    // Find the element to duplicate
+    const textEl = textElements.find(el => el.id === selectedId);
+    if (textEl) {
+      const newEl = {
+        ...textEl,
+        id: `text-${Date.now()}`,
+        x: textEl.x + 20,
+        y: textEl.y + 20
+      };
+      setTextElements(prev => [...prev, newEl]);
+      setSelectedId(newEl.id);
+      return;
+    }
     
-    return { x, y };
+    const curvedEl = curvedTextElements.find(el => el.id === selectedId);
+    if (curvedEl) {
+      const newEl = {
+        ...curvedEl,
+        id: `curved-text-${Date.now()}`,
+        x: curvedEl.x + 20,
+        topY: curvedEl.topY + 20
+      };
+      setCurvedTextElements(prev => [...prev, newEl]);
+      setSelectedId(newEl.id);
+      return;
+    }
+    
+    const gradientEl = gradientTextElements.find(el => el.id === selectedId);
+    if (gradientEl) {
+      const newEl = {
+        ...gradientEl,
+        id: `gradient-text-${Date.now()}`,
+        x: gradientEl.x + 20,
+        y: gradientEl.y + 20
+      };
+      setGradientTextElements(prev => [...prev, newEl]);
+      setSelectedId(newEl.id);
+      return;
+    }
+    
+    const imgEl = imageElements.find(el => el.id === selectedId);
+    if (imgEl) {
+      const newEl = {
+        ...imgEl,
+        id: `image-${Date.now()}`,
+        x: imgEl.x + 20,
+        y: imgEl.y + 20
+      };
+      setImageElements(prev => [...prev, newEl]);
+      setSelectedId(newEl.id);
+    }
+  };
+
+
+  // Update floating toolbar position
+  const updateToolbarPosition = () => {
+    if (selectedId && transformerRef.current && stageRef.current) {
+      const stage = stageRef.current;
+      const box = transformerRef.current.getClientRect();
+      const stageBox = stage.container().getBoundingClientRect();
+      
+      setFloatingToolbarPos({
+        x: stageBox.left + (box.x + box.width / 2) * scale,
+        y: stageBox.top + (box.y - 50) * scale
+      });
+    }
   };
 
   const handleTextEdit = (id: string, newText: string) => {
@@ -326,9 +372,32 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   const handleDiameterChange = (newRadius: number) => {
     if (selectedId) {
       setCurvedTextElements(prev => 
-        prev.map(el => 
-          el.id === selectedId ? { ...el, radius: newRadius } : el
-        )
+        prev.map(el => {
+          if (el.id === selectedId) {
+            // When changing radius, we want to keep the top edge of the text fixed
+            // For normal text: the top edge is at topY
+            // For flipped text: the top edge is at (topY - 2*oldRadius)
+            // We need to adjust topY to maintain the visual top position
+            
+            if (el.flipped) {
+              // For flipped text, the visual top is at (topY - 2*radius)
+              // We want to keep this constant, so:
+              // oldVisualTop = topY - 2*oldRadius
+              // newVisualTop = newTopY - 2*newRadius
+              // Since we want oldVisualTop = newVisualTop:
+              // topY - 2*oldRadius = newTopY - 2*newRadius
+              // newTopY = topY + 2*(newRadius - oldRadius)
+              const oldRadius = el.radius;
+              const newTopY = el.topY + 2 * (newRadius - oldRadius);
+              return { ...el, radius: newRadius, topY: newTopY };
+            } else {
+              // For normal text, topY already represents the top edge
+              // so we don't need to adjust it
+              return { ...el, radius: newRadius };
+            }
+          }
+          return el;
+        })
       );
     }
   };
@@ -449,6 +518,29 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
     }, 50); // Small delay to ensure font size is applied
   };
 
+  const handleColorChange = (color: string) => {
+    if (!selectedId) return;
+    
+    // Update the appropriate element state
+    // Check if it's a curved text element
+    const curvedElement = curvedTextElements.find(el => el.id === selectedId);
+    if (curvedElement) {
+      setCurvedTextElements(prev => 
+        prev.map(el => el.id === selectedId ? { ...el, fill: color } : el)
+      );
+    }
+    
+    // Check if it's a regular text element
+    const textElement = textElements.find(el => el.id === selectedId);
+    if (textElement) {
+      setTextElements(prev => 
+        prev.map(el => el.id === selectedId ? { ...el, fill: color } : el)
+      );
+    }
+    
+    // Note: Gradient text elements don't use the fill property
+  };
+
   // Canvas state serialization functions
   const getCanvasState = () => {
     return {
@@ -459,12 +551,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
         textElements,
         curvedTextElements,
         gradientTextElements,
-        svgElements,
         imageElements
       },
       assets: {
         baseImage: baseImageUrl,
-        svgAssets: [svgImageUrl]
       }
     };
   };
@@ -482,7 +572,6 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       if (state.elements.textElements) setTextElements(state.elements.textElements);
       if (state.elements.curvedTextElements) setCurvedTextElements(state.elements.curvedTextElements);
       if (state.elements.gradientTextElements) setGradientTextElements(state.elements.gradientTextElements);
-      if (state.elements.svgElements) setSvgElements(state.elements.svgElements);
       if (state.elements.imageElements) setImageElements(state.elements.imageElements);
     }
     
@@ -490,9 +579,6 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
     if (state.assets) {
       if (state.assets.baseImage) {
         setBaseImageUrl(state.assets.baseImage);
-      }
-      if (state.assets.svgAssets && state.assets.svgAssets.length > 0) {
-        setSvgImageUrl(state.assets.svgAssets[0]);
       }
     }
   };
@@ -743,6 +829,44 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
     return () => window.removeEventListener('saveDesign', handleSave);
   }, []);
 
+  // Delete element function
+  const deleteSelectedElement = () => {
+    if (!selectedId) return;
+    
+    // Find and remove the element from appropriate state
+    setTextElements(prev => prev.filter(el => el.id !== selectedId));
+    setCurvedTextElements(prev => prev.filter(el => el.id !== selectedId));
+    setGradientTextElements(prev => prev.filter(el => el.id !== selectedId));
+    setImageElements(prev => prev.filter(el => el.id !== selectedId));
+    
+    // Clear selection and force transformer to detach
+    setSelectedId(null);
+    if (transformerRef.current) {
+      transformerRef.current.nodes([]);
+      transformerRef.current.getLayer()?.batchDraw();
+    }
+  };
+
+  // Keyboard shortcuts
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Delete key to remove selected element
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId && !editingId) {
+        e.preventDefault();
+        deleteSelectedElement();
+      }
+      
+      // Ctrl+D or Cmd+D to duplicate
+      if (e.key === 'd' && (e.ctrlKey || e.metaKey) && selectedId && !editingId) {
+        e.preventDefault();
+        duplicateElement();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedId, editingId]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ padding: '10px', flexShrink: 0, backgroundColor: '#f7f8fa', borderBottom: '1px solid #ddd', maxHeight: '300px', overflowY: 'auto' }}>
@@ -751,12 +875,6 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
         </button>
         <button onClick={addCurvedText} style={{ padding: '8px 16px', fontSize: '14px', marginRight: '10px' }}>
           Add Curved Text
-        </button>
-        <button onClick={addGradientText} style={{ padding: '8px 16px', fontSize: '14px', marginRight: '10px' }}>
-          Add Gradient Text
-        </button>
-        <button onClick={addSvg} style={{ padding: '8px 16px', fontSize: '14px', marginRight: '10px' }}>
-          Add SVG
         </button>
         
         {/* Add Image Button with file input */}
@@ -1084,26 +1202,183 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
               {designableArea.cornerRadius === Math.min(designableArea.width, designableArea.height) / 2 ? '(Circle)' : '(Rectangle)'}
             </span>
           </div>
-          <div style={{ display: 'flex', gap: '15px', marginTop: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <label>
-              Background Color: 
-              <select
-                value={backgroundColor}
-                onChange={(e) => setBackgroundColor(e.target.value)}
-                style={{ marginLeft: '5px', padding: '2px 5px', fontSize: '14px' }}
-              >
-                <option value="transparent">Transparent</option>
-                <option value="red">Red</option>
-                <option value="white">White</option>
-                <option value="blue">Blue</option>
-                <option value="green">Green</option>
-                <option value="purple">Purple</option>
-                <option value="linear-gradient">Linear Gradient</option>
-                <option value="radial-gradient">Radial Gradient</option>
-              </select>
+          <div style={{ marginTop: '10px' }}>
+            <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>
+              Background Color:
             </label>
+            <div style={{ 
+              display: 'flex', 
+              gap: '6px', 
+              flexWrap: 'wrap',
+              maxWidth: '400px'
+            }}>
+              {/* Transparent option */}
+              <button
+                onClick={() => setBackgroundColor('transparent')}
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  backgroundColor: '#f0f0f0',
+                  backgroundImage: 'linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc), linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc)',
+                  backgroundSize: '10px 10px',
+                  backgroundPosition: '0 0, 5px 5px',
+                  border: backgroundColor === 'transparent' ? '3px solid #0066ff' : '2px solid #ccc',
+                  cursor: 'pointer',
+                  padding: 0,
+                  transition: 'all 0.2s',
+                }}
+                title="Transparent"
+                onMouseEnter={(e) => {
+                  if (backgroundColor !== 'transparent') {
+                    e.currentTarget.style.transform = 'scale(1.1)';
+                    e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+              />
+              
+              {/* Color swatches */}
+              {[
+                { name: 'White', hex: '#ffffff' },
+                { name: 'Red', hex: '#c8102e' },
+                { name: 'Blue', hex: '#0057b8' },
+                { name: 'Green', hex: '#009639' },
+                { name: 'Black', hex: '#000000' },
+                { name: 'Purple', hex: '#5f259f' },
+                { name: 'Yellow', hex: '#fff110' },
+                { name: 'Grey', hex: '#a2aaad' },
+                { name: 'Orange', hex: '#ff8200' },
+                { name: 'Ivory', hex: '#f1e6b2' },
+                { name: 'Light Blue', hex: '#71c5e8' },
+                { name: 'Pink', hex: '#f8a3bc' },
+                { name: 'Brown', hex: '#9e652e' }
+              ].map((color) => (
+                <button
+                  key={color.hex}
+                  onClick={() => setBackgroundColor(color.hex)}
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    backgroundColor: color.hex,
+                    border: backgroundColor === color.hex ? '3px solid #0066ff' : '2px solid #ccc',
+                    cursor: 'pointer',
+                    padding: 0,
+                    transition: 'all 0.2s',
+                    boxShadow: color.hex === '#ffffff' ? 'inset 0 0 0 1px #ddd' : 'none'
+                  }}
+                  title={color.name}
+                  onMouseEnter={(e) => {
+                    if (backgroundColor !== color.hex) {
+                      e.currentTarget.style.transform = 'scale(1.1)';
+                      e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.boxShadow = color.hex === '#ffffff' ? 'inset 0 0 0 1px #ddd' : 'none';
+                  }}
+                />
+              ))}
+              
+              {/* Gradient options */}
+              <button
+                onClick={() => setBackgroundColor('linear-gradient')}
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #c8102e 0%, #ffaaaa 100%)',
+                  border: backgroundColor === 'linear-gradient' ? '3px solid #0066ff' : '2px solid #ccc',
+                  cursor: 'pointer',
+                  padding: 0,
+                  transition: 'all 0.2s',
+                }}
+                title="Linear Gradient"
+                onMouseEnter={(e) => {
+                  if (backgroundColor !== 'linear-gradient') {
+                    e.currentTarget.style.transform = 'scale(1.1)';
+                    e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+              />
+              <button
+                onClick={() => setBackgroundColor('radial-gradient')}
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  background: 'radial-gradient(circle at center, #c8102e 0%, #ffaaaa 100%)',
+                  border: backgroundColor === 'radial-gradient' ? '3px solid #0066ff' : '2px solid #ccc',
+                  cursor: 'pointer',
+                  padding: 0,
+                  transition: 'all 0.2s',
+                }}
+                title="Radial Gradient"
+                onMouseEnter={(e) => {
+                  if (backgroundColor !== 'radial-gradient') {
+                    e.currentTarget.style.transform = 'scale(1.1)';
+                    e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+              />
+            </div>
           </div>
         </div>
+        
+        {/* Element Actions Toolbar - Shows when element is selected */}
+        {selectedId && (
+          <div style={{ 
+            marginTop: '10px', 
+            padding: '10px', 
+            backgroundColor: '#fff3cd', 
+            border: '1px solid #ffeaa7', 
+            borderRadius: '4px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          }}>
+            <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#856404' }}>
+              Selected Element:
+            </span>
+            <button
+              onClick={deleteSelectedElement}
+              style={{
+                padding: '6px 12px',
+                fontSize: '14px',
+                backgroundColor: '#dc3545',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}
+            >
+              🗑️ Delete
+            </button>
+            <span style={{ 
+              fontSize: '12px', 
+              color: '#6c757d', 
+              marginLeft: 'auto' 
+            }}>
+              Tip: Press Delete or Backspace key to remove
+            </span>
+          </div>
+        )}
         
         {/* Canvas Size Debug Info */}
         <div style={{ marginTop: '10px', padding: '5px', fontSize: '12px', color: '#6c757d', fontFamily: 'monospace' }}>
@@ -1154,9 +1429,19 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
           }}>
             <strong>Debug Info for Selected Circle:</strong><br/>
             Radius: {curvedTextElements.find(el => el.id === selectedId)?.radius}<br/>
-            Top Y (fixed): {curvedTextElements.find(el => el.id === selectedId)?.topY}<br/>
+            Top Y (stored): {curvedTextElements.find(el => el.id === selectedId)?.topY}<br/>
+            Visual Top Y: {(() => {
+              const el = curvedTextElements.find(el => el.id === selectedId);
+              if (!el) return 0;
+              return el.flipped ? el.topY - 2 * el.radius : el.topY;
+            })()}<br/>
             Center X: {curvedTextElements.find(el => el.id === selectedId)?.x}<br/>
-            Center Y (calculated): {(curvedTextElements.find(el => el.id === selectedId)?.topY || 0) + (curvedTextElements.find(el => el.id === selectedId)?.radius || 0)}<br/>
+            Center Y (calculated): {(() => {
+              const el = curvedTextElements.find(el => el.id === selectedId);
+              if (!el) return 0;
+              return el.flipped ? el.topY - el.radius : el.topY + el.radius;
+            })()}<br/>
+            Flipped: {curvedTextElements.find(el => el.id === selectedId)?.flipped ? 'Yes' : 'No'}<br/>
           </div>
         )}
         
@@ -1218,6 +1503,106 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 {loadedFonts.size} of {priorityFonts.length} fonts loaded
               </span>
             </div>
+            
+            {/* Color Palette */}
+            {(
+              <div style={{ marginTop: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>
+                  Text Color:
+                </label>
+                <div style={{ 
+                  display: 'flex', 
+                  gap: '6px', 
+                  flexWrap: 'wrap',
+                  maxWidth: '400px'
+                }}>
+                  {[
+                    { name: 'White', hex: '#ffffff' },
+                    { name: 'Red', hex: '#c8102e' },
+                    { name: 'Blue', hex: '#0057b8' },
+                    { name: 'Green', hex: '#009639' },
+                    { name: 'Black', hex: '#000000' },
+                    { name: 'Purple', hex: '#5f259f' },
+                    { name: 'Yellow', hex: '#fff110' },
+                    { name: 'Grey', hex: '#a2aaad' },
+                    { name: 'Orange', hex: '#ff8200' },
+                    { name: 'Ivory', hex: '#f1e6b2' },
+                    { name: 'Light Blue', hex: '#71c5e8' },
+                    { name: 'Pink', hex: '#f8a3bc' },
+                    { name: 'Brown', hex: '#9e652e' }
+                  ].map((color) => {
+                    const currentColor = 
+                      textElements.find(el => el.id === selectedId)?.fill ||
+                      curvedTextElements.find(el => el.id === selectedId)?.fill ||
+                      '#000000';
+                    
+                    return (
+                      <button
+                        key={color.hex}
+                        onClick={() => handleColorChange(color.hex)}
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '50%',
+                          backgroundColor: color.hex,
+                          border: currentColor === color.hex ? '3px solid #0066ff' : '2px solid #ccc',
+                          cursor: 'pointer',
+                          padding: 0,
+                          transition: 'all 0.2s',
+                          boxShadow: color.hex === '#ffffff' ? 'inset 0 0 0 1px #ddd' : 'none'
+                        }}
+                        title={color.name}
+                        onMouseEnter={(e) => {
+                          if (currentColor !== color.hex) {
+                            e.currentTarget.style.transform = 'scale(1.1)';
+                            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.boxShadow = color.hex === '#ffffff' ? 'inset 0 0 0 1px #ddd' : 'none';
+                        }}
+                      />
+                    );
+                  })}
+                  
+                  {/* Gold Gradient option */}
+                  {(() => {
+                    const currentColor = 
+                      textElements.find(el => el.id === selectedId)?.fill ||
+                      curvedTextElements.find(el => el.id === selectedId)?.fill ||
+                      '#000000';
+                    
+                    return (
+                      <button
+                        onClick={() => handleColorChange('gold-gradient')}
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #B8860B 100%)',
+                          border: currentColor === 'gold-gradient' ? '3px solid #0066ff' : '2px solid #ccc',
+                          cursor: 'pointer',
+                          padding: 0,
+                          transition: 'all 0.2s',
+                        }}
+                        title="Gold Gradient"
+                        onMouseEnter={(e) => {
+                          if (currentColor !== 'gold-gradient') {
+                            e.currentTarget.style.transform = 'scale(1.1)';
+                            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.boxShadow = 'none';
+                        }}
+                      />
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1355,7 +1740,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 y={textEl.y}
                 fontSize={textEl.fontSize || 24}
                 fontFamily={textEl.fontFamily}
-                fill={textEl.fill || "black"}
+                fill={textEl.fill === 'gold-gradient' ? undefined : (textEl.fill || "black")}
+                fillLinearGradientStartPoint={textEl.fill === 'gold-gradient' ? { x: 0, y: 0 } : undefined}
+                fillLinearGradientEndPoint={textEl.fill === 'gold-gradient' ? { x: 0, y: textEl.fontSize || 24 } : undefined}
+                fillLinearGradientColorStops={textEl.fill === 'gold-gradient' ? [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'] : undefined}
                 rotation={textEl.rotation || 0}
                 scaleX={textEl.scaleX || 1}
                 scaleY={textEl.scaleY || 1}
@@ -1374,6 +1762,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                         : el
                     )
                   );
+                  setTimeout(updateToolbarPosition, 0);
                 }}
                 onTransformEnd={(e) => {
                   const node = e.target;
@@ -1391,6 +1780,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                         : el
                     )
                   );
+                  setTimeout(updateToolbarPosition, 0);
                 }}
               />
             ))}
@@ -1424,6 +1814,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                         : el
                     )
                   );
+                  setTimeout(updateToolbarPosition, 0);
                 }}
                 onTransformEnd={(e) => {
                   const node = e.target;
@@ -1441,73 +1832,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                         : el
                     )
                   );
-                }}
-              />
-            ))}
-            {svgElements.map((svgEl) => (
-              <Image
-                key={svgEl.id}
-                id={svgEl.id}
-                image={svgImage}
-                x={svgEl.x + svgEl.width / 2}
-                y={svgEl.y + svgEl.height / 2}
-                width={svgEl.width}
-                height={svgEl.height}
-                offsetX={svgEl.width / 2}
-                offsetY={svgEl.height / 2}
-                rotation={svgEl.rotation || 0}
-                scaleX={svgEl.scaleX || 1}
-                scaleY={svgEl.scaleY || 1}
-                draggable
-                onClick={() => setSelectedId(svgEl.id)}
-                onTap={() => setSelectedId(svgEl.id)}
-                onDragEnd={(e) => {
-                  const node = e.target;
-                  setSvgElements(prev => 
-                    prev.map(el => 
-                      el.id === svgEl.id 
-                        ? { 
-                            ...el, 
-                            x: node.x() - svgEl.width / 2,
-                            y: node.y() - svgEl.height / 2
-                          }
-                        : el
-                    )
-                  );
-                }}
-                onTransformEnd={(e) => {
-                  const node = e.target;
-                  const scaleX = node.scaleX();
-                  const scaleY = node.scaleY();
-                  
-                  // Calculate new dimensions
-                  const newWidth = Math.max(5, svgEl.width * scaleX);
-                  const newHeight = Math.max(5, svgEl.height * scaleY);
-                  
-                  // Reset scale to 1
-                  node.scaleX(1);
-                  node.scaleY(1);
-                  
-                  // Update offsets for new size
-                  node.offsetX(newWidth / 2);
-                  node.offsetY(newHeight / 2);
-                  
-                  setSvgElements(prev =>
-                    prev.map(el =>
-                      el.id === svgEl.id
-                        ? {
-                            ...el,
-                            x: node.x() - newWidth / 2,
-                            y: node.y() - newHeight / 2,
-                            width: newWidth,
-                            height: newHeight,
-                            rotation: node.rotation(),
-                            scaleX: 1,
-                            scaleY: 1
-                          }
-                        : el
-                    )
-                  );
+                  setTimeout(updateToolbarPosition, 0);
                 }}
               />
             ))}
@@ -1524,6 +1849,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                     )
                   );
                 }}
+                onDragEnd={() => setTimeout(updateToolbarPosition, 0)}
+                onTransformEnd={() => setTimeout(updateToolbarPosition, 0)}
               />
             ))}
             {curvedTextElements.map((curvedEl) => {
@@ -1590,6 +1917,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                         : el
                     )
                   );
+                  setTimeout(updateToolbarPosition, 0);
                 }}
                 onTransformEnd={(e) => {
                   const node = e.target;
@@ -1610,6 +1938,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                         : el
                     )
                   );
+                  setTimeout(updateToolbarPosition, 0);
                 }}
               >
                 <TextPath
@@ -1617,7 +1946,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                   data={pathData}
                   fontSize={curvedEl.fontSize || 20}
                   fontFamily={curvedEl.fontFamily}
-                  fill={curvedEl.fill || "black"}
+                  fill={curvedEl.fill === 'gold-gradient' ? undefined : (curvedEl.fill || "black")}
+                  fillLinearGradientStartPoint={curvedEl.fill === 'gold-gradient' ? { x: 0, y: 0 } : undefined}
+                  fillLinearGradientEndPoint={curvedEl.fill === 'gold-gradient' ? { x: 0, y: curvedEl.fontSize || 20 } : undefined}
+                  fillLinearGradientColorStops={curvedEl.fill === 'gold-gradient' ? [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'] : undefined}
                   align="center"
                 />
               </Group>
@@ -1674,6 +2006,72 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
         </Stage>
         </div>
       </div>
+      
+      {/* Floating Toolbar - positioned absolutely */}
+      {floatingToolbarPos && selectedId && !editingId && (
+        <div
+          style={{
+            position: 'fixed',
+            left: floatingToolbarPos.x,
+            top: floatingToolbarPos.y,
+            transform: 'translateX(-50%)',
+            background: 'white',
+            border: '1px solid #ccc',
+            borderRadius: '6px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            padding: '4px',
+            display: 'flex',
+            gap: '4px',
+            zIndex: 1000,
+          }}
+        >
+          <button
+            onClick={duplicateElement}
+            style={{
+              width: '32px',
+              height: '32px',
+              padding: '4px',
+              border: 'none',
+              borderRadius: '4px',
+              background: 'white',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '16px',
+              transition: 'background-color 0.2s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0f0f0'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+            title="Duplicate (Ctrl+D)"
+          >
+            📋
+          </button>
+          <div style={{ width: '1px', background: '#ddd', margin: '4px 0' }} />
+          <button
+            onClick={deleteSelectedElement}
+            style={{
+              width: '32px',
+              height: '32px',
+              padding: '4px',
+              border: 'none',
+              borderRadius: '4px',
+              background: 'white',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '16px',
+              transition: 'background-color 0.2s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#ffebee'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+            title="Delete (Delete key)"
+          >
+            🗑️
+          </button>
+        </div>
+      )}
     </div>
   );
 };
