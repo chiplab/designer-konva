@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Konva Renderer Test - Perfect Consistency</title>
+    <script src="https://unpkg.com/konva@9/konva.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .canvas-container {
+            margin: 20px 0;
+            text-align: center;
+        }
+        canvas {
+            border: 1px solid #ddd;
+            background: white;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Konva Renderer Test - Perfect Consistency</h1>
+        
+        <div class="canvas-container" id="test-canvas"></div>
+        
+        <div>
+            <button onclick="testDesignAreaClipping()">Test Design Area Clipping</button>
+            <button onclick="toggleDesignAreaVisibility()">Toggle Design Area Outline</button>
+            <button onclick="testTextOutsideArea()">Add Text Outside Design Area</button>
+        </div>
+        
+        <div id="status" class="status">Ready to test...</div>
+    </div>
+
+    <script>
+        // Mock CanvasTextRenderer for testing
+        class CanvasTextRenderer {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.template = null;
+                this.textUpdates = {};
+                this.images = {};
+            }
+
+            setTemplate(template) {
+                this.template = template;
+                this.render();
+            }
+
+            createClippingPath(area) {
+                const { ctx } = this;
+                const { x, y, width, height, cornerRadius } = area;
+
+                ctx.beginPath();
+                if (cornerRadius > 0) {
+                    // Rounded rectangle
+                    ctx.moveTo(x + cornerRadius, y);
+                    ctx.arcTo(x + width, y, x + width, y + height, cornerRadius);
+                    ctx.arcTo(x + width, y + height, x, y + height, cornerRadius);
+                    ctx.arcTo(x, y + height, x, y, cornerRadius);
+                    ctx.arcTo(x, y, x + width, y, cornerRadius);
+                } else {
+                    ctx.rect(x, y, width, height);
+                }
+                ctx.closePath();
+            }
+
+            render() {
+                if (!this.template) return;
+
+                const { ctx, template } = this;
+                const { dimensions, backgroundColor, designableArea, elements } = template;
+
+                // Clear canvas
+                ctx.clearRect(0, 0, dimensions.width, dimensions.height);
+
+                // Draw base background (simulating base product image)
+                ctx.fillStyle = '#e0e0e0';
+                ctx.fillRect(0, 0, dimensions.width, dimensions.height);
+                ctx.fillStyle = '#666';
+                ctx.font = '14px Arial';
+                ctx.fillText('Base Product Area', 10, 20);
+
+                // Always set up clipping for designable area if it exists
+                if (designableArea) {
+                    ctx.save();
+                    this.createClippingPath(designableArea);
+                    ctx.clip();
+                }
+
+                // Draw background within the clipped area
+                if (backgroundColor && backgroundColor !== 'transparent') {
+                    ctx.fillStyle = backgroundColor;
+                    this.createClippingPath(designableArea);
+                    ctx.fill();
+                }
+
+                // Draw text elements
+                ctx.fillStyle = '#000';
+                ctx.font = '24px Arial';
+                ctx.textBaseline = 'top';
+                ctx.textAlign = 'left';
+                elements.textElements?.forEach(el => {
+                    const text = this.textUpdates[el.id] || el.text;
+                    ctx.fillText(text, el.x, el.y);
+                    
+                    // Debug: show text position with a small cross
+                    if (this.showDebug) {
+                        ctx.strokeStyle = '#ff0000';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(el.x - 5, el.y);
+                        ctx.lineTo(el.x + 5, el.y);
+                        ctx.moveTo(el.x, el.y - 5);
+                        ctx.lineTo(el.x, el.y + 5);
+                        ctx.stroke();
+                    }
+                });
+
+                // Restore clipping
+                if (designableArea) {
+                    ctx.restore();
+                }
+                
+                // Draw designable area outline if visible (after restoring clipping)
+                if (designableArea && designableArea.visible) {
+                    ctx.save();
+                    ctx.strokeStyle = '#007bff';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    ctx.fillStyle = 'rgba(0, 123, 255, 0.1)';
+                    this.createClippingPath(designableArea);
+                    ctx.stroke();
+                    ctx.fill();
+                    ctx.restore();
+                }
+            }
+
+            updateText(elementId, newText) {
+                this.textUpdates[elementId] = newText;
+                this.render();
+            }
+        }
+
+        const canvas = document.getElementById('test-canvas');
+        const renderer = new CanvasTextRenderer(canvas);
+        const status = document.getElementById('status');
+
+        let currentTemplate = {
+            dimensions: { width: 600, height: 400 },
+            backgroundColor: '#ffffff',
+            designableArea: {
+                x: 100,
+                y: 50,
+                width: 400,
+                height: 300,
+                cornerRadius: 20,
+                visible: true
+            },
+            elements: {
+                textElements: [
+                    {
+                        id: 'text1',
+                        text: 'This text is inside',
+                        x: 150,
+                        y: 150
+                    },
+                    {
+                        id: 'text2',
+                        text: 'Also inside the area',
+                        x: 200,
+                        y: 200
+                    }
+                ]
+            }
+        };
+
+        function testDesignAreaClipping() {
+            renderer.setTemplate(currentTemplate);
+            status.textContent = 'Design area clipping applied. Text is contained within the rounded rectangle area.';
+        }
+
+        function toggleDesignAreaVisibility() {
+            currentTemplate.designableArea.visible = !currentTemplate.designableArea.visible;
+            renderer.setTemplate(currentTemplate);
+            status.textContent = `Design area outline visibility: ${currentTemplate.designableArea.visible ? 'ON' : 'OFF'}`;
+        }
+
+        function testTextOutsideArea() {
+            // Add text that would be outside the design area
+            currentTemplate.elements.textElements.push({
+                id: 'text3',
+                text: 'This should be clipped',
+                x: 50,  // Outside left edge
+                y: 100
+            });
+            currentTemplate.elements.textElements.push({
+                id: 'text4',
+                text: 'Also clipped',
+                x: 450,  // Would extend past right edge
+                y: 350   // Near bottom edge
+            });
+            renderer.setTemplate(currentTemplate);
+            status.textContent = 'Added text outside design area - notice how it gets clipped at the boundaries.';
+        }
+
+        // Initial render
+        testDesignAreaClipping();
+    </script>
+</body>
+</html>

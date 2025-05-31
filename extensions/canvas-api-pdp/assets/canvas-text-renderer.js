@@ -1,18 +1,29 @@
 /**
- * Lightweight Canvas Text Renderer for Product Customization
- * This module renders Konva-created templates using only Canvas API
- * Bundle size target: ~15KB vs Konva's ~400KB
+ * Konva-based Template Renderer for Product Customization
+ * This module renders templates using Konva for 100% consistency with the designer
+ * Lazy-loaded to minimize impact on page performance
  */
 
 class CanvasTextRenderer {
-  constructor(canvas, options = {}) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
+  constructor(canvasContainer, options = {}) {
+    this.container = typeof canvasContainer === 'string' 
+      ? document.getElementById(canvasContainer) 
+      : canvasContainer;
     this.template = null;
     this.textUpdates = {};
+    this.stage = null;
+    this.layer = null;
+    this.backgroundLayer = null;
+    this.designLayer = null;
+    this.elements = {};
     this.images = {};
     this.apiUrl = options.apiUrl || '/apps/designer';
     this.onReady = options.onReady || (() => {});
+    
+    // Ensure Konva is loaded
+    if (typeof Konva === 'undefined') {
+      console.error('Konva is not loaded. Please include Konva before initializing CanvasTextRenderer.');
+    }
   }
 
   async loadTemplate(templateId) {
@@ -21,9 +32,8 @@ class CanvasTextRenderer {
       const data = await response.json();
       this.template = data.template;
       
-      // Set canvas dimensions
-      this.canvas.width = this.template.dimensions.width;
-      this.canvas.height = this.template.dimensions.height;
+      // Initialize Konva stage
+      this.initializeStage();
       
       // Preload images
       await this.preloadImages();
@@ -34,6 +44,24 @@ class CanvasTextRenderer {
     } catch (error) {
       console.error('Failed to load template:', error);
     }
+  }
+
+  initializeStage() {
+    const { dimensions } = this.template;
+    
+    // Create Konva stage
+    this.stage = new Konva.Stage({
+      container: this.container,
+      width: dimensions.width,
+      height: dimensions.height
+    });
+    
+    // Create layers
+    this.backgroundLayer = new Konva.Layer();
+    this.designLayer = new Konva.Layer();
+    
+    this.stage.add(this.backgroundLayer);
+    this.stage.add(this.designLayer);
   }
 
   async preloadImages() {
@@ -50,10 +78,8 @@ class CanvasTextRenderer {
     // Load base image
     if (this.template.assets?.baseImage) {
       try {
-        // Convert local paths to app proxy URLs
         let imageUrl = this.template.assets.baseImage;
         if (imageUrl.startsWith('/media/')) {
-          // Route through app proxy to handle CORS
           imageUrl = `${this.apiUrl}/assets${imageUrl}`;
         }
         this.images.base = await loadImage(imageUrl);
@@ -61,207 +87,293 @@ class CanvasTextRenderer {
         console.warn('Failed to load base image:', error);
       }
     }
+
+    // Load additional images from imageElements
+    if (this.template.elements?.imageElements) {
+      for (const imgEl of this.template.elements.imageElements) {
+        try {
+          let imageUrl = imgEl.url;
+          if (imageUrl.startsWith('/media/')) {
+            imageUrl = `${this.apiUrl}/assets${imageUrl}`;
+          }
+          this.images[imgEl.id] = await loadImage(imageUrl);
+        } catch (error) {
+          console.warn(`Failed to load image ${imgEl.id}:`, error);
+        }
+      }
+    }
   }
 
   updateText(elementId, newText) {
     this.textUpdates[elementId] = newText;
-    this.render();
+    
+    // Find and update the Konva text node
+    const textNode = this.stage.findOne(`#${elementId}`);
+    if (textNode) {
+      textNode.text(newText);
+      this.designLayer.batchDraw();
+    }
   }
 
   render() {
     if (!this.template) return;
 
-    const { ctx, template } = this;
-    const { dimensions, backgroundColor, designableArea, elements } = template;
+    const { backgroundColor, designableArea, elements } = this.template;
 
-    // Clear canvas
-    ctx.clearRect(0, 0, dimensions.width, dimensions.height);
+    // Clear layers
+    this.backgroundLayer.destroyChildren();
+    this.designLayer.destroyChildren();
 
-    // Draw base image
+    // Draw base image on background layer
     if (this.images.base) {
-      ctx.drawImage(this.images.base, 0, 0, dimensions.width, dimensions.height);
+      const baseImage = new Konva.Image({
+        image: this.images.base,
+        x: 0,
+        y: 0,
+        width: this.template.dimensions.width,
+        height: this.template.dimensions.height
+      });
+      this.backgroundLayer.add(baseImage);
     }
 
-    // Set up clipping for designable area
-    if (designableArea && !designableArea.visible) {
-      ctx.save();
-      this.createClippingPath(designableArea);
-      ctx.clip();
-    }
-
-    // Draw background if set
-    if (backgroundColor && backgroundColor !== 'transparent') {
-      this.drawBackground(backgroundColor, designableArea || dimensions);
-    }
-
-    // Draw text elements
-    elements.textElements?.forEach(el => {
-      const text = this.textUpdates[el.id] || el.text;
-      this.drawText({ ...el, text });
+    // Create clipping group for design area
+    const clipGroup = new Konva.Group({
+      clip: designableArea ? {
+        x: designableArea.x,
+        y: designableArea.y,
+        width: designableArea.width,
+        height: designableArea.height
+      } : undefined
     });
 
-    // Draw gradient text elements
-    elements.gradientTextElements?.forEach(el => {
-      const text = this.textUpdates[el.id] || el.text;
-      this.drawGradientText({ ...el, text });
-    });
-
-    // Draw curved text elements
-    elements.curvedTextElements?.forEach(el => {
-      const text = this.textUpdates[el.id] || el.text;
-      this.drawCurvedText({ ...el, text });
-    });
-
-    // Restore clipping
-    if (designableArea && !designableArea.visible) {
-      ctx.restore();
-    }
-  }
-
-  createClippingPath(area) {
-    const { ctx } = this;
-    const { x, y, width, height, cornerRadius } = area;
-
-    ctx.beginPath();
-    if (cornerRadius > 0) {
-      // Rounded rectangle
-      ctx.moveTo(x + cornerRadius, y);
-      ctx.arcTo(x + width, y, x + width, y + height, cornerRadius);
-      ctx.arcTo(x + width, y + height, x, y + height, cornerRadius);
-      ctx.arcTo(x, y + height, x, y, cornerRadius);
-      ctx.arcTo(x, y, x + width, y, cornerRadius);
-    } else {
-      ctx.rect(x, y, width, height);
-    }
-    ctx.closePath();
-  }
-
-  drawBackground(backgroundColor, area) {
-    const { ctx } = this;
-
-    if (backgroundColor.includes('gradient')) {
-      // Handle gradients later if needed
-      ctx.fillStyle = '#ffffff';
-    } else {
-      ctx.fillStyle = backgroundColor;
+    // If corner radius is needed, we'll use a custom clip function
+    if (designableArea && designableArea.cornerRadius > 0) {
+      clipGroup.clipFunc((ctx) => {
+        const { x, y, width, height, cornerRadius } = designableArea;
+        ctx.beginPath();
+        ctx.moveTo(x + cornerRadius, y);
+        ctx.arcTo(x + width, y, x + width, y + height, cornerRadius);
+        ctx.arcTo(x + width, y + height, x, y + height, cornerRadius);
+        ctx.arcTo(x, y + height, x, y, cornerRadius);
+        ctx.arcTo(x, y, x + width, y, cornerRadius);
+        ctx.closePath();
+      });
     }
 
-    this.createClippingPath(area);
-    ctx.fill();
-  }
-
-  drawText(element) {
-    const { ctx } = this;
-    const { text, x, y, fontFamily = 'Arial', fontSize = 24 } = element;
-
-    ctx.save();
-    ctx.font = `${fontSize}px ${fontFamily}`;
-    ctx.fillStyle = element.fill || 'black';
-    ctx.textBaseline = 'top';
-    ctx.fillText(text, x, y);
-    ctx.restore();
-  }
-
-  drawGradientText(element) {
-    const { ctx } = this;
-    const { text, x, y, fontFamily = 'Arial', fontSize = 24 } = element;
-
-    // Create gradient (matching Konva's gold gradient)
-    const gradient = ctx.createLinearGradient(x, y, x, y + fontSize);
-    gradient.addColorStop(0, '#FFD700');
-    gradient.addColorStop(0.5, '#FFA500');
-    gradient.addColorStop(1, '#B8860B');
-
-    ctx.save();
-    ctx.font = `${fontSize}px ${fontFamily}`;
-    ctx.fillStyle = gradient;
-    ctx.textBaseline = 'top';
-    ctx.fillText(text, x, y);
-    ctx.restore();
-  }
-
-  drawCurvedText(element) {
-    const { ctx } = this;
-    const { text, x, topY, radius, flipped, fontFamily = 'Arial', fontSize = 20 } = element;
-
-    // Calculate center Y based on whether text is flipped
-    const centerY = flipped 
-      ? topY - radius  // Bottom edge stays at topY
-      : topY + radius; // Top edge stays at topY
-
-    ctx.save();
-    ctx.translate(x, centerY);
-    
-    // Set up text properties to match Konva
-    ctx.font = `${fontSize}px ${fontFamily}`;
-    ctx.fillStyle = element.fill || 'black';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    // Measure the actual text width
-    const measuredWidth = ctx.measureText(text).width;
-    
-    // Use a more accurate angle calculation
-    // Konva seems to use a tighter spacing than text.length * 12
-    const angleSpan = measuredWidth / radius;
-    
-    // Create the path for the text - matching Konva exactly
-    let startAngle;
-    if (flipped) {
-      // Bottom arc - text reads left to right along bottom
-      startAngle = Math.PI/2 + angleSpan/2;
-    } else {
-      // Top arc - text reads left to right along top
-      startAngle = -Math.PI/2 - angleSpan/2;
-    }
-
-    // Measure individual character widths for accurate positioning
-    const chars = text.split('');
-    const charWidths = chars.map(char => ctx.measureText(char).width);
-    
-    // Calculate positions for each character
-    let currentDistance = 0;
-    
-    chars.forEach((char, i) => {
-      ctx.save();
+    // Draw background in clipped area
+    if (backgroundColor && backgroundColor !== 'transparent' && designableArea) {
+      let bgRect;
       
-      // Calculate the angle for the center of this character
-      const charCenterDistance = currentDistance + charWidths[i] / 2;
-      const charAngle = charCenterDistance / radius;
-      
-      let angle;
-      if (flipped) {
-        // For flipped text, go clockwise from top
-        angle = startAngle - charAngle;
+      if (backgroundColor === 'linear-gradient') {
+        bgRect = new Konva.Rect({
+          x: designableArea.x,
+          y: designableArea.y,
+          width: designableArea.width,
+          height: designableArea.height,
+          cornerRadius: designableArea.cornerRadius,
+          fillLinearGradientStartPoint: { x: 0, y: 0 },
+          fillLinearGradientEndPoint: { x: designableArea.width, y: 0 },
+          fillLinearGradientColorStops: [0, '#c8102e', 1, '#ffaaaa']
+        });
+      } else if (backgroundColor === 'radial-gradient') {
+        bgRect = new Konva.Rect({
+          x: designableArea.x,
+          y: designableArea.y,
+          width: designableArea.width,
+          height: designableArea.height,
+          cornerRadius: designableArea.cornerRadius,
+          fillRadialGradientStartPoint: { x: designableArea.width / 2, y: designableArea.height / 2 },
+          fillRadialGradientEndPoint: { x: designableArea.width / 2, y: designableArea.height / 2 },
+          fillRadialGradientStartRadius: 0,
+          fillRadialGradientEndRadius: Math.min(designableArea.width, designableArea.height) / 2,
+          fillRadialGradientColorStops: [0, '#c8102e', 1, '#ffaaaa']
+        });
       } else {
-        // For normal text, go clockwise from top
-        angle = startAngle + charAngle;
+        bgRect = new Konva.Rect({
+          x: designableArea.x,
+          y: designableArea.y,
+          width: designableArea.width,
+          height: designableArea.height,
+          cornerRadius: designableArea.cornerRadius,
+          fill: backgroundColor
+        });
       }
       
-      // Calculate position
-      const charX = Math.cos(angle) * radius;
-      const charY = Math.sin(angle) * radius;
-      
-      // Move to character position
-      ctx.translate(charX, charY);
-      
-      // Rotate to follow the curve
-      ctx.rotate(angle + Math.PI/2);
-      
-      // Draw character
-      ctx.fillText(char, 0, 0);
-      
-      ctx.restore();
-      
-      // Move to next character position
-      currentDistance += charWidths[i];
+      clipGroup.add(bgRect);
+    }
+
+    // Render images first (so text appears on top)
+    elements.imageElements?.forEach(el => {
+      if (this.images[el.id]) {
+        const img = new Konva.Image({
+          id: el.id,
+          image: this.images[el.id],
+          x: el.x,
+          y: el.y,
+          width: el.width,
+          height: el.height,
+          rotation: el.rotation || 0,
+          scaleX: el.scaleX || 1,
+          scaleY: el.scaleY || 1
+        });
+        clipGroup.add(img);
+      }
     });
 
-    ctx.restore();
+    // Render regular text elements
+    elements.textElements?.forEach(el => {
+      const text = this.textUpdates[el.id] || el.text;
+      let textConfig = {
+        id: el.id,
+        text: text,
+        x: el.x,
+        y: el.y,
+        fontSize: el.fontSize || 24,
+        fontFamily: el.fontFamily || 'Arial',
+        rotation: el.rotation || 0,
+        scaleX: el.scaleX || 1,
+        scaleY: el.scaleY || 1
+      };
+
+      // Handle fill
+      if (el.fill === 'gold-gradient') {
+        textConfig.fillLinearGradientStartPoint = { x: 0, y: 0 };
+        textConfig.fillLinearGradientEndPoint = { x: 0, y: el.fontSize || 24 };
+        textConfig.fillLinearGradientColorStops = [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'];
+      } else {
+        textConfig.fill = el.fill || 'black';
+      }
+
+      // Handle stroke
+      if (el.stroke && el.stroke !== 'transparent') {
+        textConfig.stroke = el.stroke;
+        textConfig.strokeWidth = el.strokeWidth || 2;
+        textConfig.fillAfterStrokeEnabled = true;
+      }
+
+      const textNode = new Konva.Text(textConfig);
+      clipGroup.add(textNode);
+    });
+
+    // Render gradient text elements
+    elements.gradientTextElements?.forEach(el => {
+      const text = this.textUpdates[el.id] || el.text;
+      const textNode = new Konva.Text({
+        id: el.id,
+        text: text,
+        x: el.x,
+        y: el.y,
+        fontSize: el.fontSize || 24,
+        fontFamily: el.fontFamily || 'Arial',
+        rotation: el.rotation || 0,
+        scaleX: el.scaleX || 1,
+        scaleY: el.scaleY || 1,
+        fillLinearGradientStartPoint: { x: 0, y: 0 },
+        fillLinearGradientEndPoint: { x: 0, y: el.fontSize || 24 },
+        fillLinearGradientColorStops: [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B']
+      });
+      clipGroup.add(textNode);
+    });
+
+    // Render curved text elements
+    elements.curvedTextElements?.forEach(el => {
+      const text = this.textUpdates[el.id] || el.text;
+      
+      // Calculate center Y based on whether text is flipped
+      const centerY = el.flipped 
+        ? el.topY - el.radius
+        : el.topY + el.radius;
+      
+      // Create group for curved text
+      const group = new Konva.Group({
+        id: el.id,
+        x: el.x,
+        y: centerY,
+        rotation: el.rotation || 0,
+        scaleX: el.scaleX || 1,
+        scaleY: el.scaleY || 1
+      });
+
+      // Calculate text path
+      const fontSize = el.fontSize || 20;
+      const textLength = text.length * fontSize * 0.6;
+      const angleSpan = Math.min(textLength / el.radius, Math.PI * 1.5);
+      
+      let startAngle, endAngle, sweepFlag;
+      if (el.flipped) {
+        startAngle = Math.PI/2 + angleSpan/2;
+        endAngle = Math.PI/2 - angleSpan/2;
+        sweepFlag = 0;
+      } else {
+        startAngle = -Math.PI/2 - angleSpan/2;
+        endAngle = -Math.PI/2 + angleSpan/2;
+        sweepFlag = 1;
+      }
+      
+      const startX = Math.cos(startAngle) * el.radius;
+      const startY = Math.sin(startAngle) * el.radius;
+      const endX = Math.cos(endAngle) * el.radius;
+      const endY = Math.sin(endAngle) * el.radius;
+      
+      const largeArcFlag = angleSpan > Math.PI ? 1 : 0;
+      const pathData = `M ${startX},${startY} A ${el.radius},${el.radius} 0 ${largeArcFlag},${sweepFlag} ${endX},${endY}`;
+
+      let textPathConfig = {
+        text: text,
+        data: pathData,
+        fontSize: fontSize,
+        fontFamily: el.fontFamily || 'Arial',
+        align: 'center'
+      };
+
+      // Handle fill
+      if (el.fill === 'gold-gradient') {
+        textPathConfig.fillLinearGradientStartPoint = { x: 0, y: 0 };
+        textPathConfig.fillLinearGradientEndPoint = { x: 0, y: fontSize };
+        textPathConfig.fillLinearGradientColorStops = [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'];
+      } else {
+        textPathConfig.fill = el.fill || 'black';
+      }
+
+      // Handle stroke
+      if (el.stroke && el.stroke !== 'transparent') {
+        textPathConfig.stroke = el.stroke;
+        textPathConfig.strokeWidth = el.strokeWidth || 2;
+        textPathConfig.fillAfterStrokeEnabled = true;
+      }
+
+      const textPath = new Konva.TextPath(textPathConfig);
+      group.add(textPath);
+      clipGroup.add(group);
+    });
+
+    // Add clip group to design layer
+    this.designLayer.add(clipGroup);
+
+    // Draw designable area outline if visible
+    if (designableArea && designableArea.visible) {
+      const outline = new Konva.Rect({
+        x: designableArea.x,
+        y: designableArea.y,
+        width: designableArea.width,
+        height: designableArea.height,
+        cornerRadius: designableArea.cornerRadius,
+        stroke: '#007bff',
+        strokeWidth: 2,
+        dash: [5, 5],
+        fill: 'rgba(0, 123, 255, 0.1)',
+        listening: false
+      });
+      this.designLayer.add(outline);
+    }
+
+    // Draw layers
+    this.backgroundLayer.batchDraw();
+    this.designLayer.batchDraw();
   }
 
   getDataURL() {
-    return this.canvas.toDataURL('image/png');
+    return this.stage.toDataURL({ pixelRatio: 1 });
   }
 
   getAllTextElements() {
@@ -295,6 +407,12 @@ class CanvasTextRenderer {
     });
 
     return allElements;
+  }
+
+  destroy() {
+    if (this.stage) {
+      this.stage.destroy();
+    }
   }
 }
 

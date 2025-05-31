@@ -40,7 +40,7 @@ class ProductCustomizerModal {
           
           <div class="pcm-content">
             <div class="pcm-preview">
-              <canvas id="customizer-canvas"></canvas>
+              <div id="customizer-canvas"></div>
               <div class="pcm-loading">Loading preview...</div>
             </div>
             
@@ -167,6 +167,12 @@ class ProductCustomizerModal {
           background: white;
           border-radius: 4px;
         }
+        
+        #customizer-canvas canvas {
+          max-width: 100% !important;
+          height: auto !important;
+          display: block;
+        }
 
         .pcm-loading {
           position: absolute;
@@ -289,18 +295,33 @@ class ProductCustomizerModal {
     this.isOpen = true;
     document.body.style.overflow = 'hidden';
     
+    // Show loading state
+    this.modal.querySelector('.pcm-preview').classList.add('loading');
+    
+    // Load Konva if not already loaded
+    if (typeof Konva === 'undefined') {
+      await this.loadKonva();
+    }
+    
     // Initialize renderer
-    const canvas = document.getElementById('customizer-canvas');
-    this.renderer = new CanvasTextRenderer(canvas, {
+    const canvasContainer = document.getElementById('customizer-canvas');
+    this.renderer = new CanvasTextRenderer(canvasContainer, {
       apiUrl: this.options.apiUrl,
       onReady: () => this.onRendererReady()
     });
     
-    // Show loading state
-    this.modal.querySelector('.pcm-preview').classList.add('loading');
-    
     // Load template
     await this.renderer.loadTemplate(this.options.templateId);
+  }
+  
+  async loadKonva() {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/konva@9/konva.min.js';
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
   }
 
   onRendererReady() {
@@ -344,6 +365,12 @@ class ProductCustomizerModal {
     this.modal.classList.remove('open');
     this.isOpen = false;
     document.body.style.overflow = '';
+    
+    // Clean up renderer
+    if (this.renderer) {
+      this.renderer.destroy();
+      this.renderer = null;
+    }
   }
 
   async save() {
