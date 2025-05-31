@@ -17,6 +17,7 @@ class ProductCustomizerModal {
     this.renderer = null;
     this.isOpen = false;
     this.customizationData = null;
+    this.updateTimer = null;
   }
 
   init() {
@@ -40,7 +41,8 @@ class ProductCustomizerModal {
           
           <div class="pcm-content">
             <div class="pcm-preview">
-              <div id="customizer-canvas"></div>
+              <div id="customizer-canvas" style="display: none;"></div>
+              <img id="preview-image" style="max-width: 100%; height: auto; display: none;" />
               <div class="pcm-loading">Loading preview...</div>
             </div>
             
@@ -160,18 +162,17 @@ class ProductCustomizerModal {
         }
 
         #customizer-canvas {
+          display: none;
+        }
+        
+        #preview-image {
           max-width: 100%;
           height: auto;
           display: block;
           margin: 0 auto;
           background: white;
           border-radius: 4px;
-        }
-        
-        #customizer-canvas canvas {
-          max-width: 100% !important;
-          height: auto !important;
-          display: block;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
 
         .pcm-loading {
@@ -187,7 +188,7 @@ class ProductCustomizerModal {
           display: block;
         }
 
-        .pcm-preview.loading #customizer-canvas {
+        .pcm-preview.loading #preview-image {
           opacity: 0.3;
         }
 
@@ -330,6 +331,36 @@ class ProductCustomizerModal {
     
     // Create text input fields
     this.createTextInputs();
+    
+    // Generate initial preview
+    this.updatePreview();
+  }
+  
+  updatePreview() {
+    const previewImage = document.getElementById('preview-image');
+    if (!this.renderer || !previewImage) return;
+    
+    // Generate preview at 50% resolution
+    const dataUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+    previewImage.src = dataUrl;
+    previewImage.style.display = 'block';
+  }
+  
+  debouncedUpdatePreview() {
+    // Clear existing timer
+    if (this.updateTimer) {
+      clearTimeout(this.updateTimer);
+    }
+    
+    // Show loading state
+    this.modal.querySelector('.pcm-preview').classList.add('loading');
+    
+    // Set new timer
+    this.updateTimer = setTimeout(() => {
+      this.updatePreview();
+      // Hide loading state after update
+      this.modal.querySelector('.pcm-preview').classList.remove('loading');
+    }, 500); // 500ms delay for better performance
   }
 
   createTextInputs() {
@@ -357,6 +388,7 @@ class ProductCustomizerModal {
     textInputsContainer.querySelectorAll('input').forEach(input => {
       input.addEventListener('input', (e) => {
         this.renderer.updateText(e.target.dataset.elementId, e.target.value);
+        this.debouncedUpdatePreview();
       });
     });
   }
@@ -365,6 +397,12 @@ class ProductCustomizerModal {
     this.modal.classList.remove('open');
     this.isOpen = false;
     document.body.style.overflow = '';
+    
+    // Clear any pending update timer
+    if (this.updateTimer) {
+      clearTimeout(this.updateTimer);
+      this.updateTimer = null;
+    }
     
     // Clean up renderer
     if (this.renderer) {
@@ -380,7 +418,8 @@ class ProductCustomizerModal {
       templateId: this.options.templateId,
       variantId: this.options.variantId,
       textUpdates: {},
-      preview: this.renderer.getDataURL()
+      preview: this.renderer.getDesignAreaPreview(0.5), // Just the design area at 50% resolution
+      fullPreview: this.renderer.getDataURL({ pixelRatio: 0.5 }) // Full preview at 50% resolution
     };
     
     textElements.forEach(el => {

@@ -84,3 +84,30 @@ this.designLayer = new Konva.Layer();     // Clipped design content
 - Constructor now takes container element, not canvas
 - Added `destroy()` method for cleanup
 - Stage dimensions available via `renderer.stage.width()`
+
+## New Features (Latest Update)
+
+### Design Area Preview Export
+Added methods to export just the design area at different resolutions:
+
+```javascript
+// Get just the design area at 50% resolution
+const designPreview = renderer.getDesignAreaPreview(0.5);
+
+// Get full canvas at custom resolution
+const fullPreview = renderer.getDataURL({ pixelRatio: 0.5 });
+
+// Get just design area with custom options
+const customPreview = renderer.getDataURL({
+  designAreaOnly: true,
+  pixelRatio: 0.75
+});
+```
+
+This is particularly useful for:
+- Generating smaller preview images for cart/checkout
+- Reducing bandwidth when saving customizations
+- Showing just the customized design without the base product
+- Creating thumbnails at various resolutions
+
+The modal now saves both a design-only preview and full preview at 50% resolution, significantly reducing file sizes while maintaining visual quality.

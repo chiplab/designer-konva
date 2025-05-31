@@ -21,6 +21,7 @@
   <div id="test-controls" style="margin-top: 20px;">
     <button id="load-template-btn" class="button">Load Template</button>
     <button id="test-text-update-btn" class="button" style="display: none;">Update Text</button>
+    <button id="test-preview-btn" class="button" style="display: none;">Get Design Preview</button>
     <button id="open-modal-btn" class="button" style="display: none;">Open Customizer Modal</button>
   </div>
   {% else %}
@@ -44,6 +45,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const canvasContainer = document.getElementById('test-canvas');
   const loadBtn = document.getElementById('load-template-btn');
   const updateBtn = document.getElementById('test-text-update-btn');
+  const previewBtn = document.getElementById('test-preview-btn');
   const modalBtn = document.getElementById('open-modal-btn');
   const output = document.getElementById('test-output');
   
@@ -82,6 +84,7 @@ document.addEventListener('DOMContentLoaded', function() {
           }
           
           updateBtn.style.display = 'inline-block';
+          previewBtn.style.display = 'inline-block';
           modalBtn.style.display = 'inline-block';
         }
       });
@@ -104,6 +107,27 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     output.innerHTML += '<br>Text updated!';
+  });
+  
+  previewBtn.addEventListener('click', function() {
+    if (!renderer) return;
+    
+    output.innerHTML += '<br><strong>Preview Images:</strong><br>';
+    
+    // Get design area preview at 50% resolution
+    const designPreview = renderer.getDesignAreaPreview(0.5);
+    output.innerHTML += 'Design Area Only (50% resolution):<br>';
+    output.innerHTML += '<img src="' + designPreview + '" style="max-width: 200px; border: 1px solid #ddd; margin: 5px;"><br>';
+    
+    // Get full preview at different resolutions
+    const fullPreview = renderer.getDataURL({ pixelRatio: 0.5 });
+    output.innerHTML += 'Full Canvas (50% resolution):<br>';
+    output.innerHTML += '<img src="' + fullPreview + '" style="max-width: 200px; border: 1px solid #ddd; margin: 5px;"><br>';
+    
+    // Show file sizes
+    const designSize = Math.round(designPreview.length * 0.75 / 1024); // Rough estimate
+    const fullSize = Math.round(fullPreview.length * 0.75 / 1024);
+    output.innerHTML += '<br>Approximate sizes: Design ~' + designSize + 'KB, Full ~' + fullSize + 'KB<br>';
   });
   
   modalBtn.addEventListener('click', function() {

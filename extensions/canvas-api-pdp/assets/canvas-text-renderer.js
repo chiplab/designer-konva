@@ -372,8 +372,36 @@ class CanvasTextRenderer {
     this.designLayer.batchDraw();
   }
 
-  getDataURL() {
-    return this.stage.toDataURL({ pixelRatio: 1 });
+  getDataURL(options = {}) {
+    // Default options
+    const defaultOptions = {
+      pixelRatio: 1,
+      designAreaOnly: false
+    };
+    const opts = { ...defaultOptions, ...options };
+    
+    if (opts.designAreaOnly && this.template?.designableArea) {
+      // Return just the design area
+      const { x, y, width, height } = this.template.designableArea;
+      return this.stage.toDataURL({
+        x: x,
+        y: y,
+        width: width,
+        height: height,
+        pixelRatio: opts.pixelRatio
+      });
+    }
+    
+    // Return full stage
+    return this.stage.toDataURL({ pixelRatio: opts.pixelRatio });
+  }
+  
+  // Convenience method to get just the design area at lower resolution
+  getDesignAreaPreview(pixelRatio = 0.5) {
+    return this.getDataURL({
+      designAreaOnly: true,
+      pixelRatio: pixelRatio
+    });
   }
 
   getAllTextElements() {
