@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://add-interpreted-sociology-sign.trycloudflare.com"
+application_url = "https://micro-took-fiji-examines.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://add-interpreted-sociology-sign.trycloudflare.com/auth/callback",
-  "https://add-interpreted-sociology-sign.trycloudflare.com/auth/shopify/callback",
-  "https://add-interpreted-sociology-sign.trycloudflare.com/api/auth/callback"
+  "https://micro-took-fiji-examines.trycloudflare.com/auth/callback",
+  "https://micro-took-fiji-examines.trycloudflare.com/auth/shopify/callback",
+  "https://micro-took-fiji-examines.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://add-interpreted-sociology-sign.trycloudflare.com/api"
+url = "https://micro-took-fiji-examines.trycloudflare.com/api"
 subpath = "designer"
 prefix = "apps"
 

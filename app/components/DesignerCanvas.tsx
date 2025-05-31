@@ -18,7 +18,7 @@ const ImageElement: React.FC<{
   onChange: (attrs: any) => void;
   onDragEnd?: () => void;
   onTransformEnd?: () => void;
-}> = ({ imageElement, isSelected, onSelect, onChange, onDragEnd, onTransformEnd }) => {
+}> = ({ imageElement, onSelect, onChange, onDragEnd, onTransformEnd }) => {
   const [image] = useImage(imageElement.url, 'anonymous');
   const imageRef = React.useRef<any>(null);
 
@@ -45,7 +45,7 @@ const ImageElement: React.FC<{
         });
         if (onDragEnd) onDragEnd();
       }}
-      onTransformEnd={(e) => {
+      onTransformEnd={() => {
         const node = imageRef.current;
         const scaleX = node.scaleX();
         const scaleY = node.scaleY();
@@ -99,9 +99,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   const [baseImageUrl, setBaseImageUrl] = React.useState('/media/images/8-spot-red-base-image.png');
   // Use 'anonymous' only for external URLs (S3), not for local files
   const [baseImage] = useImage(baseImageUrl, baseImageUrl.startsWith('http') ? 'anonymous' : undefined);
-  const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fill?: string, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
+  const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
-  const [curvedTextElements, setCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string, fontSize?: number, fill?: string, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
+  const [curvedTextElements, setCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string, fontSize?: number, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [imageElements, setImageElements] = React.useState<Array<{id: string, url: string, x: number, y: number, width: number, height: number, rotation?: number}>>([]);
   const [designableArea, setDesignableArea] = React.useState({
     width: 744,
@@ -119,6 +119,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   const [floatingToolbarPos, setFloatingToolbarPos] = React.useState<{ x: number; y: number } | null>(null);
   const transformerRef = React.useRef<any>(null);
   const [showColorPicker, setShowColorPicker] = React.useState(false);
+  const [showBackgroundColorPicker, setShowBackgroundColorPicker] = React.useState(false);
+  const [showDesignAreaControls, setShowDesignAreaControls] = React.useState(false);
+  const [showStrokeColorPicker, setShowStrokeColorPicker] = React.useState(false);
 
   // Font Management - POC with priority fonts from VISION.md
   const priorityFonts = ['Arial', 'Impact', 'Roboto', 'Oswald', 'Bebas Neue'];
@@ -222,6 +225,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
     } else {
       setFloatingToolbarPos(null);
       setShowColorPicker(false); // Close color picker when deselecting
+      setShowBackgroundColorPicker(false); // Close background color picker when deselecting
+      setShowDesignAreaControls(false); // Close design area controls when deselecting
+      setShowStrokeColorPicker(false); // Close stroke color picker when deselecting
       // Detach transformer when nothing is selected
       if (transformerRef.current) {
         transformerRef.current.nodes([]);
@@ -284,6 +290,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
     if (shouldDeselect) {
       setSelectedId(null);
       setShowColorPicker(false);
+      setShowBackgroundColorPicker(false);
+      setShowDesignAreaControls(false);
+      setShowStrokeColorPicker(false);
       // Immediately detach transformer
       if (transformerRef.current) {
         transformerRef.current.nodes([]);
@@ -535,6 +544,29 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
     }
     
     // Note: Gradient text elements don't use the fill property
+  };
+
+  const handleStrokeColorChange = (color: string) => {
+    if (!selectedId) return;
+    
+    // Update the appropriate element state
+    // Check if it's a curved text element
+    const curvedElement = curvedTextElements.find(el => el.id === selectedId);
+    if (curvedElement) {
+      setCurvedTextElements(prev => 
+        prev.map(el => el.id === selectedId ? { ...el, stroke: color, strokeWidth: el.strokeWidth || 2 } : el)
+      );
+    }
+    
+    // Check if it's a regular text element
+    const textElement = textElements.find(el => el.id === selectedId);
+    if (textElement) {
+      setTextElements(prev => 
+        prev.map(el => el.id === selectedId ? { ...el, stroke: color, strokeWidth: el.strokeWidth || 2 } : el)
+      );
+    }
+    
+    // Note: Gradient text elements don't use stroke
   };
 
   // Canvas state serialization functions
@@ -846,12 +878,6 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   // Keyboard shortcuts
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Delete key to remove selected element
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
-        e.preventDefault();
-        deleteSelectedElement();
-      }
-      
       // Ctrl+D or Cmd+D to duplicate
       if (e.key === 'd' && (e.ctrlKey || e.metaKey) && selectedId) {
         e.preventDefault();
@@ -881,6 +907,63 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [showColorPicker]);
+
+  // Close background color picker when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      // Check if click is outside background color picker
+      const target = e.target as HTMLElement;
+      const bgColorPicker = target.closest('[data-bg-color-picker]');
+      const bgColorButton = target.closest('[data-bg-color-button]');
+      
+      if (!bgColorPicker && !bgColorButton && showBackgroundColorPicker) {
+        setShowBackgroundColorPicker(false);
+      }
+    };
+
+    if (showBackgroundColorPicker) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [showBackgroundColorPicker]);
+
+  // Close design area controls when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      // Check if click is outside design area controls
+      const target = e.target as HTMLElement;
+      const designControls = target.closest('[data-design-controls]');
+      const designButton = target.closest('[data-design-button]');
+      
+      if (!designControls && !designButton && showDesignAreaControls) {
+        setShowDesignAreaControls(false);
+      }
+    };
+
+    if (showDesignAreaControls) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [showDesignAreaControls]);
+
+  // Close stroke color picker when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      // Check if click is outside stroke color picker
+      const target = e.target as HTMLElement;
+      const strokeColorPicker = target.closest('[data-stroke-color-picker]');
+      const strokeColorButton = target.closest('[data-stroke-color-button]');
+      
+      if (!strokeColorPicker && !strokeColorButton && showStrokeColorPicker) {
+        setShowStrokeColorPicker(false);
+      }
+    };
+
+    if (showStrokeColorPicker) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [showStrokeColorPicker]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1038,233 +1121,74 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
           {isLoading && <span style={{ fontSize: '14px', color: '#666' }}>Loading...</span>}
         </div>
         
-        {/* Asset Management Controls */}
-        <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f0f4f8', border: '1px solid #dae1e7', borderRadius: '4px' }}>
-          <strong>Asset Management (S3):</strong>
-          <div style={{ display: 'flex', gap: '15px', marginTop: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <label>
-              Base Image: 
-              <select
-                value={baseImageUrl}
-                onChange={(e) => setBaseImageUrl(e.target.value)}
-                style={{ marginLeft: '5px', padding: '4px 8px', fontSize: '14px' }}
-              >
-                <option value="/media/images/8-spot-red-base-image.png">Local: Red Base</option>
-                <option value="/media/images/8-spot-black-base.png">Local: Black Base</option>
-                <option value="/media/images/8-spot-blue-base.png">Local: Blue Base</option>
-                <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-red-base-image.png">S3: Red Base</option>
-                <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-black-base.png">S3: Black Base</option>
-                <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-blue-base.png">S3: Blue Base</option>
-              </select>
-            </label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  const formData = new FormData();
-                  formData.append('file', file);
-                  formData.append('assetType', 'image');
-                  
-                  try {
-                    const response = await fetch('/api/assets/upload', {
-                      method: 'POST',
-                      body: formData,
-                    });
-                    const result = await response.json();
-                    if (result.success) {
-                      setBaseImageUrl(result.asset.url);
-                      alert('Image uploaded to S3 successfully!');
-                    } else {
-                      console.error('Upload failed:', result);
-                      alert(`Upload failed: ${result.error}\n${result.details || ''}\n${result.hint || ''}`);
-                    }
-                  } catch (error) {
-                    console.error('Upload error:', error);
-                    alert('Failed to upload image: ' + (error instanceof Error ? error.message : 'Unknown error'));
-                  }
-                }
+        {/* Background Color Control in Top Nav */}
+        <div style={{ display: 'inline-block', marginLeft: '20px', position: 'relative' }}>
+          <button
+            data-bg-color-button="true"
+            onClick={() => setShowBackgroundColorPicker(!showBackgroundColorPicker)}
+            style={{
+              padding: '8px 16px',
+              fontSize: '14px',
+              borderRadius: '4px',
+              border: '1px solid #ddd',
+              background: 'white',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+          >
+            <span style={{ fontSize: '12px', color: '#666' }}>Background:</span>
+            <div
+              style={{
+                width: '20px',
+                height: '20px',
+                borderRadius: '3px',
+                backgroundColor: backgroundColor === 'transparent' ? '#f0f0f0' : backgroundColor,
+                backgroundImage: backgroundColor === 'transparent' 
+                  ? 'linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc), linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc)'
+                  : backgroundColor === 'linear-gradient'
+                  ? 'linear-gradient(135deg, #c8102e 0%, #ffaaaa 100%)'
+                  : backgroundColor === 'radial-gradient'
+                  ? 'radial-gradient(circle at center, #c8102e 0%, #ffaaaa 100%)'
+                  : undefined,
+                backgroundSize: backgroundColor === 'transparent' ? '6px 6px' : undefined,
+                backgroundPosition: backgroundColor === 'transparent' ? '0 0, 3px 3px' : undefined,
+                border: '1px solid #ccc',
+                boxShadow: backgroundColor === '#ffffff' ? 'inset 0 0 0 1px #ddd' : 'none'
               }}
-              style={{ fontSize: '14px' }}
             />
-            <span style={{ fontSize: '12px', color: '#6c757d' }}>
-              {baseImageUrl.startsWith('http') ? '☁️ S3' : '💾 Local'}
-            </span>
-          </div>
-        </div>
-        
-        {/* Designable Area Controls */}
-        <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f8f9fa', border: '1px solid #dee2e6', borderRadius: '4px' }}>
-          <strong>Design Area Controls:</strong>
-          <div style={{ display: 'flex', gap: '15px', marginTop: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <label>
-              Center X: 
-              <input
-                type="range"
-                min="200"
-                max={dimensions.width - 200}
-                value={designableArea.x + designableArea.width / 2}
-                onChange={(e) => {
-                  const newCenterX = parseInt(e.target.value);
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
-                    x: newCenterX - prev.width / 2
-                  }));
-                }}
-                style={{ marginLeft: '5px', width: '100px' }}
-              />
-              <span style={{ marginLeft: '5px', minWidth: '40px', display: 'inline-block' }}>{Math.round(designableArea.x + designableArea.width / 2)}px</span>
-            </label>
-            <label>
-              Center Y: 
-              <input
-                type="range"
-                min="200"
-                max={dimensions.height - 200}
-                value={designableArea.y + designableArea.height / 2}
-                onChange={(e) => {
-                  const newCenterY = parseInt(e.target.value);
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
-                    y: newCenterY - prev.height / 2
-                  }));
-                }}
-                style={{ marginLeft: '5px', width: '100px' }}
-              />
-              <span style={{ marginLeft: '5px', minWidth: '40px', display: 'inline-block' }}>{Math.round(designableArea.y + designableArea.height / 2)}px</span>
-            </label>
-            <label>
-              Width: 
-              <input
-                type="range"
-                min="100"
-                max="1000"
-                value={designableArea.width}
-                onChange={(e) => {
-                  const newWidth = parseInt(e.target.value);
-                  const centerX = designableArea.x + designableArea.width / 2;
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
-                    width: newWidth,
-                    x: centerX - newWidth / 2, // Keep center fixed
-                    cornerRadius: Math.min(prev.cornerRadius, newWidth / 2)
-                  }));
-                }}
-                style={{ marginLeft: '5px', width: '100px' }}
-              />
-              <button
-                onClick={() => {
-                  const newWidth = Math.max(100, designableArea.width - 1);
-                  const centerX = designableArea.x + designableArea.width / 2;
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
-                    width: newWidth,
-                    x: centerX - newWidth / 2,
-                    cornerRadius: Math.min(prev.cornerRadius, newWidth / 2)
-                  }));
-                }}
-                style={{ marginLeft: '3px', padding: '2px 6px', fontSize: '12px', cursor: 'pointer' }}
-              >
-                -
-              </button>
-              <button
-                onClick={() => {
-                  const newWidth = Math.min(1000, designableArea.width + 1);
-                  const centerX = designableArea.x + designableArea.width / 2;
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
-                    width: newWidth,
-                    x: centerX - newWidth / 2,
-                    cornerRadius: Math.min(prev.cornerRadius, newWidth / 2)
-                  }));
-                }}
-                style={{ marginLeft: '2px', padding: '2px 6px', fontSize: '12px', cursor: 'pointer' }}
-              >
-                +
-              </button>
-              <span style={{ marginLeft: '5px', minWidth: '40px', display: 'inline-block' }}>{designableArea.width}px</span>
-            </label>
-            <label>
-              Height: 
-              <input
-                type="range"
-                min="100"
-                max="1000"
-                value={designableArea.height}
-                onChange={(e) => {
-                  const newHeight = parseInt(e.target.value);
-                  const centerY = designableArea.y + designableArea.height / 2;
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
-                    height: newHeight,
-                    y: centerY - newHeight / 2, // Keep center fixed
-                    cornerRadius: Math.min(prev.cornerRadius, newHeight / 2)
-                  }));
-                }}
-                style={{ marginLeft: '5px', width: '100px' }}
-              />
-              <button
-                onClick={() => {
-                  const newHeight = Math.max(100, designableArea.height - 1);
-                  const centerY = designableArea.y + designableArea.height / 2;
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
-                    height: newHeight,
-                    y: centerY - newHeight / 2,
-                    cornerRadius: Math.min(prev.cornerRadius, newHeight / 2)
-                  }));
-                }}
-                style={{ marginLeft: '3px', padding: '2px 6px', fontSize: '12px', cursor: 'pointer' }}
-              >
-                -
-              </button>
-              <button
-                onClick={() => {
-                  const newHeight = Math.min(1000, designableArea.height + 1);
-                  const centerY = designableArea.y + designableArea.height / 2;
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
-                    height: newHeight,
-                    y: centerY - newHeight / 2,
-                    cornerRadius: Math.min(prev.cornerRadius, newHeight / 2)
-                  }));
-                }}
-                style={{ marginLeft: '2px', padding: '2px 6px', fontSize: '12px', cursor: 'pointer' }}
-              >
-                +
-              </button>
-              <span style={{ marginLeft: '5px', minWidth: '40px', display: 'inline-block' }}>{designableArea.height}px</span>
-            </label>
-            <label>
-              Corner Radius: 
-              <input
-                type="range"
-                min="0"
-                max={Math.min(designableArea.width, designableArea.height) / 2}
-                value={designableArea.cornerRadius}
-                onChange={(e) => setDesignableArea(prev => ({ ...prev, cornerRadius: parseInt(e.target.value) }))}
-                style={{ marginLeft: '5px', width: '100px' }}
-              />
-              <span style={{ marginLeft: '5px', minWidth: '40px', display: 'inline-block' }}>{designableArea.cornerRadius}px</span>
-            </label>
-            <span style={{ fontSize: '12px', color: '#6c757d' }}>
-              {designableArea.cornerRadius === Math.min(designableArea.width, designableArea.height) / 2 ? '(Circle)' : '(Rectangle)'}
-            </span>
-          </div>
-          <div style={{ marginTop: '10px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 'bold' }}>
-              Background Color:
-            </label>
-            <div style={{ 
-              display: 'flex', 
-              gap: '6px', 
-              flexWrap: 'wrap',
-              maxWidth: '400px'
-            }}>
+          </button>
+          
+          {/* Background Color Picker Popup */}
+          {showBackgroundColorPicker && (
+            <div
+              data-bg-color-picker="true"
+              style={{
+                position: 'absolute',
+                top: '40px',
+                left: 0,
+                background: 'white',
+                border: '1px solid #ccc',
+                borderRadius: '6px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                padding: '8px',
+                display: 'flex',
+                gap: '6px',
+                flexWrap: 'wrap',
+                width: '280px',
+                zIndex: 1001,
+              }}
+            >
               {/* Transparent option */}
               <button
-                onClick={() => setBackgroundColor('transparent')}
+                onClick={() => {
+                  setBackgroundColor('transparent');
+                  setShowBackgroundColorPicker(false);
+                }}
                 style={{
                   width: '28px',
                   height: '28px',
@@ -1309,7 +1233,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
               ].map((color) => (
                 <button
                   key={color.hex}
-                  onClick={() => setBackgroundColor(color.hex)}
+                  onClick={() => {
+                    setBackgroundColor(color.hex);
+                    setShowBackgroundColorPicker(false);
+                  }}
                   style={{
                     width: '28px',
                     height: '28px',
@@ -1337,7 +1264,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
               
               {/* Gradient options */}
               <button
-                onClick={() => setBackgroundColor('linear-gradient')}
+                onClick={() => {
+                  setBackgroundColor('linear-gradient');
+                  setShowBackgroundColorPicker(false);
+                }}
                 style={{
                   width: '28px',
                   height: '28px',
@@ -1361,7 +1291,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 }}
               />
               <button
-                onClick={() => setBackgroundColor('radial-gradient')}
+                onClick={() => {
+                  setBackgroundColor('radial-gradient');
+                  setShowBackgroundColorPicker(false);
+                }}
                 style={{
                   width: '28px',
                   height: '28px',
@@ -1385,50 +1318,298 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 }}
               />
             </div>
-          </div>
+          )}
         </div>
         
-        {/* Element Actions Toolbar - Shows when element is selected */}
-        {selectedId && (
-          <div style={{ 
-            marginTop: '10px', 
-            padding: '10px', 
-            backgroundColor: '#fff3cd', 
-            border: '1px solid #ffeaa7', 
-            borderRadius: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px'
-          }}>
-            <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#856404' }}>
-              Selected Element:
-            </span>
-            <button
-              onClick={deleteSelectedElement}
+        {/* Design Area Controls Dropdown in Top Nav */}
+        <div style={{ display: 'inline-block', marginLeft: '20px', position: 'relative' }}>
+          <button
+            data-design-button="true"
+            onClick={() => setShowDesignAreaControls(!showDesignAreaControls)}
+            style={{
+              padding: '8px 16px',
+              fontSize: '14px',
+              borderRadius: '4px',
+              border: '1px solid #ddd',
+              background: 'white',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+          >
+            <span style={{ fontSize: '14px' }}>Design Area</span>
+            <span style={{ fontSize: '10px' }}>{showDesignAreaControls ? '▲' : '▼'}</span>
+          </button>
+          
+          {/* Design Area Controls Dropdown */}
+          {showDesignAreaControls && (
+            <div
+              data-design-controls="true"
               style={{
-                padding: '6px 12px',
-                fontSize: '14px',
-                backgroundColor: '#dc3545',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px'
+                position: 'absolute',
+                top: '40px',
+                left: 0,
+                background: 'white',
+                border: '1px solid #ccc',
+                borderRadius: '6px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                padding: '16px',
+                zIndex: 1001,
+                minWidth: '300px',
               }}
             >
-              🗑️ Delete
-            </button>
-            <span style={{ 
-              fontSize: '12px', 
-              color: '#6c757d', 
-              marginLeft: 'auto' 
-            }}>
-              Tip: Press Delete or Backspace key to remove
-            </span>
-          </div>
-        )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Center X Control */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>
+                    Center X: {Math.round(designableArea.x + designableArea.width / 2)}px
+                  </label>
+                  <input
+                    type="range"
+                    min="200"
+                    max={dimensions.width - 200}
+                    value={designableArea.x + designableArea.width / 2}
+                    onChange={(e) => {
+                      const newCenterX = parseInt(e.target.value);
+                      setDesignableArea(prev => ({ 
+                        ...prev, 
+                        x: newCenterX - prev.width / 2
+                      }));
+                    }}
+                    style={{ width: '100%', cursor: 'pointer' }}
+                  />
+                </div>
+                
+                {/* Center Y Control */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>
+                    Center Y: {Math.round(designableArea.y + designableArea.height / 2)}px
+                  </label>
+                  <input
+                    type="range"
+                    min="200"
+                    max={dimensions.height - 200}
+                    value={designableArea.y + designableArea.height / 2}
+                    onChange={(e) => {
+                      const newCenterY = parseInt(e.target.value);
+                      setDesignableArea(prev => ({ 
+                        ...prev, 
+                        y: newCenterY - prev.height / 2
+                      }));
+                    }}
+                    style={{ width: '100%', cursor: 'pointer' }}
+                  />
+                </div>
+                
+                {/* Width Control */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>
+                    Width: {designableArea.width}px
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      onClick={() => {
+                        const newWidth = Math.max(100, designableArea.width - 10);
+                        const centerX = designableArea.x + designableArea.width / 2;
+                        setDesignableArea(prev => ({ 
+                          ...prev, 
+                          width: newWidth,
+                          x: centerX - newWidth / 2,
+                          cornerRadius: Math.min(prev.cornerRadius, newWidth / 2)
+                        }));
+                      }}
+                      style={{ padding: '2px 8px', fontSize: '14px', cursor: 'pointer' }}
+                    >
+                      -
+                    </button>
+                    <input
+                      type="range"
+                      min="100"
+                      max="1000"
+                      value={designableArea.width}
+                      onChange={(e) => {
+                        const newWidth = parseInt(e.target.value);
+                        const centerX = designableArea.x + designableArea.width / 2;
+                        setDesignableArea(prev => ({ 
+                          ...prev, 
+                          width: newWidth,
+                          x: centerX - newWidth / 2,
+                          cornerRadius: Math.min(prev.cornerRadius, newWidth / 2)
+                        }));
+                      }}
+                      style={{ flex: 1, cursor: 'pointer' }}
+                    />
+                    <button
+                      onClick={() => {
+                        const newWidth = Math.min(1000, designableArea.width + 10);
+                        const centerX = designableArea.x + designableArea.width / 2;
+                        setDesignableArea(prev => ({ 
+                          ...prev, 
+                          width: newWidth,
+                          x: centerX - newWidth / 2,
+                          cornerRadius: Math.min(prev.cornerRadius, newWidth / 2)
+                        }));
+                      }}
+                      style={{ padding: '2px 8px', fontSize: '14px', cursor: 'pointer' }}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Height Control */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>
+                    Height: {designableArea.height}px
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      onClick={() => {
+                        const newHeight = Math.max(100, designableArea.height - 10);
+                        const centerY = designableArea.y + designableArea.height / 2;
+                        setDesignableArea(prev => ({ 
+                          ...prev, 
+                          height: newHeight,
+                          y: centerY - newHeight / 2,
+                          cornerRadius: Math.min(prev.cornerRadius, newHeight / 2)
+                        }));
+                      }}
+                      style={{ padding: '2px 8px', fontSize: '14px', cursor: 'pointer' }}
+                    >
+                      -
+                    </button>
+                    <input
+                      type="range"
+                      min="100"
+                      max="1000"
+                      value={designableArea.height}
+                      onChange={(e) => {
+                        const newHeight = parseInt(e.target.value);
+                        const centerY = designableArea.y + designableArea.height / 2;
+                        setDesignableArea(prev => ({ 
+                          ...prev, 
+                          height: newHeight,
+                          y: centerY - newHeight / 2,
+                          cornerRadius: Math.min(prev.cornerRadius, newHeight / 2)
+                        }));
+                      }}
+                      style={{ flex: 1, cursor: 'pointer' }}
+                    />
+                    <button
+                      onClick={() => {
+                        const newHeight = Math.min(1000, designableArea.height + 10);
+                        const centerY = designableArea.y + designableArea.height / 2;
+                        setDesignableArea(prev => ({ 
+                          ...prev, 
+                          height: newHeight,
+                          y: centerY - newHeight / 2,
+                          cornerRadius: Math.min(prev.cornerRadius, newHeight / 2)
+                        }));
+                      }}
+                      style={{ padding: '2px 8px', fontSize: '14px', cursor: 'pointer' }}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Corner Radius Control */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>
+                    Corner Radius: {designableArea.cornerRadius}px
+                    <span style={{ marginLeft: '8px', fontSize: '11px', color: '#999' }}>
+                      {designableArea.cornerRadius === Math.min(designableArea.width, designableArea.height) / 2 ? '(Circle)' : '(Rectangle)'}
+                    </span>
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max={Math.min(designableArea.width, designableArea.height) / 2}
+                    value={designableArea.cornerRadius}
+                    onChange={(e) => setDesignableArea(prev => ({ ...prev, cornerRadius: parseInt(e.target.value) }))}
+                    style={{ width: '100%', cursor: 'pointer' }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        
+        {/* Base Image Controls in Top Nav */}
+        <div style={{ display: 'inline-block', marginLeft: '20px' }}>
+          <select
+            value={baseImageUrl}
+            onChange={(e) => setBaseImageUrl(e.target.value)}
+            style={{ 
+              padding: '8px 16px', 
+              fontSize: '14px',
+              marginRight: '10px',
+              borderRadius: '4px',
+              border: '1px solid #ddd',
+              cursor: 'pointer',
+              background: 'white',
+            }}
+          >
+            <option value="/media/images/8-spot-red-base-image.png">Red Base</option>
+            <option value="/media/images/8-spot-black-base.png">Black Base</option>
+            <option value="/media/images/8-spot-blue-base.png">Blue Base</option>
+            <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-red-base-image.png">Red Base (S3)</option>
+            <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-black-base.png">Black Base (S3)</option>
+            <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-blue-base.png">Blue Base (S3)</option>
+          </select>
+          
+          <label style={{ 
+            padding: '8px 16px', 
+            fontSize: '14px', 
+            backgroundColor: '#f0f0f0',
+            border: '1px solid #ccc',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            display: 'inline-block',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e8e8e8'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f0f0f0'}
+          >
+            Upload Base Image
+            <input
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  const formData = new FormData();
+                  formData.append('file', file);
+                  formData.append('assetType', 'image');
+                  
+                  try {
+                    const response = await fetch('/api/assets/upload', {
+                      method: 'POST',
+                      body: formData,
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                      setBaseImageUrl(result.asset.url);
+                      alert('Base image uploaded successfully!');
+                    } else {
+                      console.error('Upload failed:', result);
+                      alert(`Upload failed: ${result.error}\n${result.details || ''}\n${result.hint || ''}`);
+                    }
+                  } catch (error) {
+                    console.error('Upload error:', error);
+                    alert('Failed to upload image: ' + (error instanceof Error ? error.message : 'Unknown error'));
+                  }
+                }
+              }}
+            />
+          </label>
+        </div>
+        
         
         {/* Canvas Size Debug Info */}
         <div style={{ marginTop: '10px', padding: '5px', fontSize: '12px', color: '#6c757d', fontFamily: 'monospace' }}>
@@ -1525,6 +1706,25 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
               />
             )}
             
+            {/* Render images first so text appears on top */}
+            {imageElements.map((imgEl) => (
+              <ImageElement
+                key={imgEl.id}
+                imageElement={imgEl}
+                isSelected={selectedId === imgEl.id}
+                onSelect={() => setSelectedId(imgEl.id)}
+                onChange={(newAttrs) => {
+                  setImageElements(prev =>
+                    prev.map(el =>
+                      el.id === imgEl.id ? { ...el, ...newAttrs } : el
+                    )
+                  );
+                }}
+                onDragEnd={() => setTimeout(updateToolbarPosition, 0)}
+                onTransformEnd={() => setTimeout(updateToolbarPosition, 0)}
+              />
+            ))}
+            
             {textElements.map((textEl) => (
               <Text
                 key={textEl.id}
@@ -1538,6 +1738,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 fillLinearGradientStartPoint={textEl.fill === 'gold-gradient' ? { x: 0, y: 0 } : undefined}
                 fillLinearGradientEndPoint={textEl.fill === 'gold-gradient' ? { x: 0, y: textEl.fontSize || 24 } : undefined}
                 fillLinearGradientColorStops={textEl.fill === 'gold-gradient' ? [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'] : undefined}
+                stroke={textEl.stroke && textEl.stroke !== 'transparent' ? textEl.stroke : undefined}
+                strokeWidth={textEl.stroke && textEl.stroke !== 'transparent' ? (textEl.strokeWidth || 2) : 0}
+                fillAfterStrokeEnabled={true}
                 rotation={textEl.rotation || 0}
                 scaleX={textEl.scaleX || 1}
                 scaleY={textEl.scaleY || 1}
@@ -1626,23 +1829,6 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 }}
               />
             ))}
-            {imageElements.map((imgEl) => (
-              <ImageElement
-                key={imgEl.id}
-                imageElement={imgEl}
-                isSelected={selectedId === imgEl.id}
-                onSelect={() => setSelectedId(imgEl.id)}
-                onChange={(newAttrs) => {
-                  setImageElements(prev =>
-                    prev.map(el =>
-                      el.id === imgEl.id ? { ...el, ...newAttrs } : el
-                    )
-                  );
-                }}
-                onDragEnd={() => setTimeout(updateToolbarPosition, 0)}
-                onTransformEnd={() => setTimeout(updateToolbarPosition, 0)}
-              />
-            ))}
             {curvedTextElements.map((curvedEl) => {
             // Calculate center Y based on whether text is flipped
             // For normal text: pin top edge, so center = topY + radius
@@ -1651,8 +1837,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
               ? curvedEl.topY - curvedEl.radius  // Bottom edge stays at topY
               : curvedEl.topY + curvedEl.radius; // Top edge stays at topY
             
-            // Create path for text
-            const textLength = curvedEl.text.length * 12; // Approximate text length
+            // Create path for text - scale with font size
+            const fontSize = curvedEl.fontSize || 20;
+            const textLength = curvedEl.text.length * fontSize * 0.6; // Scale text length with font size
             const angleSpan = Math.min(textLength / curvedEl.radius, Math.PI * 1.5); // Max 270 degrees
             
             let startAngle, endAngle, sweepFlag;
@@ -1738,6 +1925,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                   fillLinearGradientStartPoint={curvedEl.fill === 'gold-gradient' ? { x: 0, y: 0 } : undefined}
                   fillLinearGradientEndPoint={curvedEl.fill === 'gold-gradient' ? { x: 0, y: curvedEl.fontSize || 20 } : undefined}
                   fillLinearGradientColorStops={curvedEl.fill === 'gold-gradient' ? [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'] : undefined}
+                  stroke={curvedEl.stroke && curvedEl.stroke !== 'transparent' ? curvedEl.stroke : undefined}
+                  strokeWidth={curvedEl.stroke && curvedEl.stroke !== 'transparent' ? (curvedEl.strokeWidth || 2) : 0}
+                  fillAfterStrokeEnabled={true}
                   align="center"
                 />
               </Group>
@@ -1855,7 +2045,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
             }}
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#ffebee'}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
-            title="Delete (Delete key)"
+            title="Delete"
           >
             🗑️
           </button>
@@ -2043,6 +2233,148 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                     />
                   </div>
                 )}
+              </div>
+              
+              {/* Stroke Color Control */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '12px', color: '#666' }}>Stroke:</span>
+                <div style={{ position: 'relative' }}>
+                  <button
+                    data-stroke-color-button="true"
+                    onClick={() => setShowStrokeColorPicker(!showStrokeColorPicker)}
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '50%',
+                      backgroundColor: (() => {
+                        const stroke = textElements.find(el => el.id === selectedId)?.stroke ||
+                          curvedTextElements.find(el => el.id === selectedId)?.stroke ||
+                          'transparent';
+                        return stroke === 'transparent' ? '#f0f0f0' : stroke;
+                      })(),
+                      backgroundImage: (() => {
+                        const stroke = textElements.find(el => el.id === selectedId)?.stroke ||
+                          curvedTextElements.find(el => el.id === selectedId)?.stroke ||
+                          'transparent';
+                        if (stroke === 'transparent') {
+                          return 'linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc), linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc)';
+                        }
+                        return undefined;
+                      })(),
+                      backgroundSize: '6px 6px',
+                      backgroundPosition: '0 0, 3px 3px',
+                      border: '2px solid #ccc',
+                      cursor: 'pointer',
+                      padding: 0,
+                      transition: 'all 0.2s',
+                      boxShadow: showStrokeColorPicker ? '0 0 0 2px #0066ff' : 'none'
+                    }}
+                    title="Stroke Color"
+                  />
+                  
+                  {/* Stroke Color Picker Popup */}
+                  {showStrokeColorPicker && (
+                    <div
+                      data-stroke-color-picker="true"
+                      style={{
+                      position: 'absolute',
+                      top: '36px',
+                      right: 0,
+                      background: 'white',
+                      border: '1px solid #ccc',
+                      borderRadius: '6px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                      padding: '8px',
+                      display: 'flex',
+                      gap: '6px',
+                      flexWrap: 'wrap',
+                      width: '200px',
+                      zIndex: 1001,
+                    }}>
+                      {/* None/Transparent option */}
+                      <button
+                        onClick={() => {
+                          handleStrokeColorChange('transparent');
+                          setShowStrokeColorPicker(false);
+                        }}
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          backgroundColor: '#f0f0f0',
+                          backgroundImage: 'linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc), linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc)',
+                          backgroundSize: '8px 8px',
+                          backgroundPosition: '0 0, 4px 4px',
+                          border: (textElements.find(el => el.id === selectedId)?.stroke || curvedTextElements.find(el => el.id === selectedId)?.stroke || 'transparent') === 'transparent' ? '2px solid #0066ff' : '1px solid #ccc',
+                          cursor: 'pointer',
+                          padding: 0,
+                          transition: 'all 0.2s',
+                        }}
+                        title="No Stroke"
+                        onMouseEnter={(e) => {
+                          const currentStroke = textElements.find(el => el.id === selectedId)?.stroke || curvedTextElements.find(el => el.id === selectedId)?.stroke || 'transparent';
+                          if (currentStroke !== 'transparent') {
+                            e.currentTarget.style.transform = 'scale(1.1)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                        }}
+                      />
+                      
+                      {[
+                        { name: 'White', hex: '#ffffff' },
+                        { name: 'Red', hex: '#c8102e' },
+                        { name: 'Blue', hex: '#0057b8' },
+                        { name: 'Green', hex: '#009639' },
+                        { name: 'Black', hex: '#000000' },
+                        { name: 'Purple', hex: '#5f259f' },
+                        { name: 'Yellow', hex: '#fff110' },
+                        { name: 'Grey', hex: '#a2aaad' },
+                        { name: 'Orange', hex: '#ff8200' },
+                        { name: 'Ivory', hex: '#f1e6b2' },
+                        { name: 'Light Blue', hex: '#71c5e8' },
+                        { name: 'Pink', hex: '#f8a3bc' },
+                        { name: 'Brown', hex: '#9e652e' }
+                      ].map((color) => {
+                        const currentStroke = 
+                          textElements.find(el => el.id === selectedId)?.stroke ||
+                          curvedTextElements.find(el => el.id === selectedId)?.stroke ||
+                          'transparent';
+                        
+                        return (
+                          <button
+                            key={color.hex}
+                            onClick={() => {
+                              handleStrokeColorChange(color.hex);
+                              setShowStrokeColorPicker(false);
+                            }}
+                            style={{
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '50%',
+                              backgroundColor: color.hex,
+                              border: currentStroke === color.hex ? '2px solid #0066ff' : '1px solid #ccc',
+                              cursor: 'pointer',
+                              padding: 0,
+                              transition: 'all 0.2s',
+                              boxShadow: color.hex === '#ffffff' ? 'inset 0 0 0 1px #ddd' : 'none'
+                            }}
+                            title={color.name}
+                            onMouseEnter={(e) => {
+                              if (currentStroke !== color.hex) {
+                                e.currentTarget.style.transform = 'scale(1.1)';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'scale(1)';
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </>
           )}
