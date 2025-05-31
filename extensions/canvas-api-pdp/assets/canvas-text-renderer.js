@@ -4,7 +4,8 @@
  * Lazy-loaded to minimize impact on page performance
  */
 
-class CanvasTextRenderer {
+if (typeof CanvasTextRenderer === 'undefined') {
+  class CanvasTextRenderer {
   constructor(canvasContainer, options = {}) {
     this.container = typeof canvasContainer === 'string' 
       ? document.getElementById(canvasContainer) 
@@ -107,12 +108,9 @@ class CanvasTextRenderer {
   updateText(elementId, newText) {
     this.textUpdates[elementId] = newText;
     
-    // Find and update the Konva text node
-    const textNode = this.stage.findOne(`#${elementId}`);
-    if (textNode) {
-      textNode.text(newText);
-      this.designLayer.batchDraw();
-    }
+    // Instead of updating the existing element, we need to re-render
+    // because curved text paths need to be recalculated based on text length
+    this.render();
   }
 
   render() {
@@ -442,7 +440,8 @@ class CanvasTextRenderer {
       this.stage.destroy();
     }
   }
-}
+  }
 
-// Export for use in theme
-window.CanvasTextRenderer = CanvasTextRenderer;
+  // Export for use in theme
+  window.CanvasTextRenderer = CanvasTextRenderer;
+}

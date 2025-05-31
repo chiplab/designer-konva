@@ -3,7 +3,8 @@
  * Provides a slide-out modal interface for simple text customization
  */
 
-class ProductCustomizerModal {
+if (typeof ProductCustomizerModal === 'undefined') {
+  class ProductCustomizerModal {
   constructor(options = {}) {
     this.options = {
       variantId: options.variantId,
@@ -450,7 +451,8 @@ class ProductCustomizerModal {
     // Navigate to full designer
     window.location.href = `/apps/designer/customizer/full?state=${stateParam}`;
   }
-}
+  }
 
-// Export for use in theme
-window.ProductCustomizerModal = ProductCustomizerModal;
+  // Export for use in theme
+  window.ProductCustomizerModal = ProductCustomizerModal;
+}

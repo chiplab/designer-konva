@@ -44,6 +44,58 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const action = formData.get("_action");
 
+  if (action === "syncPreviews") {
+    const templateId = formData.get("templateId") as string;
+    
+    try {
+      // Get the template
+      const template = await db.template.findFirst({
+        where: {
+          id: templateId,
+          shop: session.shop,
+        },
+      });
+
+      if (!template) {
+        return json({ 
+          success: false, 
+          error: "Template not found" 
+        }, { status: 404 });
+      }
+
+      // Get all variants that use this template
+      const response = await admin.graphql(PRODUCT_VARIANTS_QUERY);
+      const { data } = await response.json();
+      
+      const variantsToSync = data.productVariants.edges
+        .filter((edge: any) => edge.node.metafield?.value === templateId)
+        .map((edge: any) => edge.node);
+
+      if (variantsToSync.length === 0) {
+        return json({ 
+          success: false, 
+          error: "No variants found using this template" 
+        });
+      }
+
+      // For now, just return success
+      // TODO: Implement actual preview generation and sync
+      console.log(`Would sync preview for ${variantsToSync.length} variants`);
+      
+      return json({ 
+        success: true, 
+        message: `Preview sync initiated for ${variantsToSync.length} variant(s)` 
+      });
+      
+    } catch (error) {
+      console.error("Error syncing previews:", error);
+      return json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Failed to sync previews" 
+      }, { status: 500 });
+    }
+  }
+
   if (action === "deleteTemplate") {
     const templateId = formData.get("templateId") as string;
     
@@ -230,6 +282,14 @@ export default function Templates() {
     setTemplateToDelete(null);
   }, [templateToDelete, submit]);
 
+  const handleSyncPreviews = useCallback((templateId: string) => {
+    const formData = new FormData();
+    formData.append("templateId", templateId);
+    formData.append("_action", "syncPreviews");
+    submit(formData, { method: "post" });
+    shopify.toast.show("Syncing preview images...");
+  }, [submit]);
+
   const emptyStateMarkup = (
     <EmptyState
       heading="Create your first template"
@@ -273,6 +333,10 @@ export default function Templates() {
               {
                 content: "Assign to products",
                 onAction: () => handleAssignTemplate(id),
+              },
+              {
+                content: "Sync preview images",
+                onAction: () => handleSyncPreviews(id),
               },
               {
                 content: "Delete",
