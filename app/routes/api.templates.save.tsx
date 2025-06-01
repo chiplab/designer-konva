@@ -3,9 +3,10 @@ import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { uploadBase64ImageToS3, generateTemplateThumbnailKey } from "../services/s3.server";
+import { syncTemplateThumbnailToVariants } from "../services/template-sync.server";
 
 export async function action({ request }: ActionFunctionArgs) {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   
   if (request.method !== "POST") {
     return json({ error: "Method not allowed" }, { status: 405 });
@@ -85,12 +86,26 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
+    // Sync thumbnail to any bound product variants
+    let syncResult = null;
+    if (thumbnail) {
+      try {
+        console.log(`Attempting to sync thumbnail for template ${template.id} to product variants...`);
+        syncResult = await syncTemplateThumbnailToVariants(admin, template.id, thumbnail);
+        console.log(`Sync result:`, syncResult);
+      } catch (syncError) {
+        console.error("Error syncing thumbnail to variants:", syncError);
+        // Don't fail the save operation if sync fails
+      }
+    }
+
     return json({ 
       success: true, 
       template: {
         ...template,
         thumbnail: thumbnailUrl,
-      }
+      },
+      syncResult
     });
   } catch (error) {
     console.error("Error saving template:", error);

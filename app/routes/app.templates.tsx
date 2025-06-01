@@ -39,6 +39,27 @@ const METAFIELD_SET_MUTATION = `#graphql
   }
 `;
 
+const PRODUCT_VARIANTS_QUERY = `#graphql
+  query GetProductVariantsWithMetafields {
+    productVariants(first: 100) {
+      edges {
+        node {
+          id
+          title
+          displayName
+          product {
+            id
+            title
+          }
+          metafield(namespace: "custom_designer", key: "template_id") {
+            value
+          }
+        }
+      }
+    }
+  }
+`;
+
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
@@ -63,28 +84,33 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }, { status: 404 });
       }
 
-      // Get all variants that use this template
-      const response = await admin.graphql(PRODUCT_VARIANTS_QUERY);
-      const { data } = await response.json();
-      
-      const variantsToSync = data.productVariants.edges
-        .filter((edge: any) => edge.node.metafield?.value === templateId)
-        .map((edge: any) => edge.node);
-
-      if (variantsToSync.length === 0) {
+      if (!template.thumbnail) {
         return json({ 
           success: false, 
-          error: "No variants found using this template" 
+          error: "Template has no thumbnail to sync" 
         });
       }
 
-      // For now, just return success
-      // TODO: Implement actual preview generation and sync
-      console.log(`Would sync preview for ${variantsToSync.length} variants`);
+      // Import the sync service
+      const { syncTemplateThumbnailToVariants } = await import("../services/template-sync.server");
+      
+      // Sync the thumbnail to variants
+      const syncResult = await syncTemplateThumbnailToVariants(admin, templateId, template.thumbnail);
+      
+      if (!syncResult.success && syncResult.errors.length > 0) {
+        return json({ 
+          success: false, 
+          error: syncResult.errors[0],
+          errors: syncResult.errors
+        }, { status: 500 });
+      }
       
       return json({ 
         success: true, 
-        message: `Preview sync initiated for ${variantsToSync.length} variant(s)` 
+        message: syncResult.totalCount === 0 
+          ? "No variants found using this template"
+          : `Successfully synced ${syncResult.syncedCount} of ${syncResult.totalCount} variant(s)`,
+        errors: syncResult.errors.length > 0 ? syncResult.errors : undefined
       });
       
     } catch (error) {
@@ -287,7 +313,10 @@ export default function Templates() {
     formData.append("templateId", templateId);
     formData.append("_action", "syncPreviews");
     submit(formData, { method: "post" });
-    shopify.toast.show("Syncing preview images...");
+    // @ts-ignore - shopify is globally available in embedded apps
+    if (typeof shopify !== 'undefined' && shopify.toast) {
+      shopify.toast.show("Syncing preview images...");
+    }
   }, [submit]);
 
   const emptyStateMarkup = (
@@ -335,7 +364,7 @@ export default function Templates() {
                 onAction: () => handleAssignTemplate(id),
               },
               {
-                content: "Sync preview images",
+                content: "Re-sync preview images",
                 onAction: () => handleSyncPreviews(id),
               },
               {

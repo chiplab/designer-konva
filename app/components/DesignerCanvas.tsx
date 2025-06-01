@@ -116,6 +116,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   const [isSaving, setIsSaving] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [templates, setTemplates] = React.useState<Array<{id: string, name: string}>>([]);
+  const [notification, setNotification] = React.useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [floatingToolbarPos, setFloatingToolbarPos] = React.useState<{ x: number; y: number } | null>(null);
   const transformerRef = React.useRef<any>(null);
   const [showColorPicker, setShowColorPicker] = React.useState(false);
@@ -763,17 +764,30 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       
       if (result.success) {
         if (result.warning) {
-          alert(`Template saved but with warning: ${result.warning}`);
+          setNotification({ 
+            message: `Template saved but with warning: ${result.warning}`, 
+            type: 'info' 
+          });
         } else {
-          alert('Template saved successfully!');
+          setNotification({ 
+            message: 'Template saved and synced successfully!', 
+            type: 'success' 
+          });
         }
         loadTemplatesList(); // Refresh templates list
+        // Auto-hide notification after 3 seconds
+        setTimeout(() => setNotification(null), 3000);
       } else {
         throw new Error(result.error || 'Failed to save template');
       }
     } catch (error) {
       console.error('Error saving template:', error);
-      alert('Failed to save template: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      setNotification({ 
+        message: 'Failed to save template: ' + (error instanceof Error ? error.message : 'Unknown error'), 
+        type: 'error' 
+      });
+      // Auto-hide error notification after 5 seconds
+      setTimeout(() => setNotification(null), 5000);
     } finally {
       setIsSaving(false);
     }
@@ -791,13 +805,21 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       if (result.template) {
         const canvasData = JSON.parse(result.template.canvasData);
         loadCanvasState(canvasData);
-        alert('Template loaded successfully!');
+        setNotification({ 
+          message: 'Template loaded successfully!', 
+          type: 'success' 
+        });
+        setTimeout(() => setNotification(null), 3000);
       } else {
         throw new Error(result.error || 'Failed to load template');
       }
     } catch (error) {
       console.error('Error loading template:', error);
-      alert('Failed to load template: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      setNotification({ 
+        message: 'Failed to load template: ' + (error instanceof Error ? error.message : 'Unknown error'), 
+        type: 'error' 
+      });
+      setTimeout(() => setNotification(null), 5000);
     } finally {
       setIsLoading(false);
     }
@@ -967,6 +989,48 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Notification Banner */}
+      {notification && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: notification.type === 'success' ? '#108043' : notification.type === 'error' ? '#d82c0d' : '#005fb3',
+          color: 'white',
+          padding: '12px 24px',
+          borderRadius: '4px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+          zIndex: 2000,
+          fontSize: '14px',
+          fontWeight: 500,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          animation: 'slideDown 0.3s ease-out'
+        }}>
+          <span>{notification.type === 'success' ? '✓' : notification.type === 'error' ? '✕' : 'ℹ'}</span>
+          {notification.message}
+          <button 
+            onClick={() => setNotification(null)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'white',
+              cursor: 'pointer',
+              padding: '4px',
+              marginLeft: '8px',
+              fontSize: '16px',
+              opacity: 0.8,
+              transition: 'opacity 0.2s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.8'}
+          >
+            ×
+          </button>
+        </div>
+      )}
       <div style={{ padding: '10px', flexShrink: 0, backgroundColor: '#f7f8fa', borderBottom: '1px solid #ddd', maxHeight: '300px', overflowY: 'auto' }}>
         <button onClick={addText} style={{ padding: '8px 16px', fontSize: '14px', marginRight: '10px' }}>
           Add Text
@@ -1052,11 +1116,19 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                     };
                     img.src = result.asset.url;
                   } else {
-                    alert(`Upload failed: ${result.error}`);
+                    setNotification({ 
+                      message: `Upload failed: ${result.error}`, 
+                      type: 'error' 
+                    });
+                    setTimeout(() => setNotification(null), 5000);
                   }
                 } catch (error) {
                   console.error('Upload error:', error);
-                  alert('Failed to upload image');
+                  setNotification({ 
+                    message: 'Failed to upload image', 
+                    type: 'error' 
+                  });
+                  setTimeout(() => setNotification(null), 5000);
                 }
               }
             }}
@@ -1595,14 +1667,26 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                     const result = await response.json();
                     if (result.success) {
                       setBaseImageUrl(result.asset.url);
-                      alert('Base image uploaded successfully!');
+                      setNotification({ 
+                        message: 'Base image uploaded successfully!', 
+                        type: 'success' 
+                      });
+                      setTimeout(() => setNotification(null), 3000);
                     } else {
                       console.error('Upload failed:', result);
-                      alert(`Upload failed: ${result.error}\n${result.details || ''}\n${result.hint || ''}`);
+                      setNotification({ 
+                        message: `Upload failed: ${result.error}`, 
+                        type: 'error' 
+                      });
+                      setTimeout(() => setNotification(null), 5000);
                     }
                   } catch (error) {
                     console.error('Upload error:', error);
-                    alert('Failed to upload image: ' + (error instanceof Error ? error.message : 'Unknown error'));
+                    setNotification({ 
+                      message: 'Failed to upload image: ' + (error instanceof Error ? error.message : 'Unknown error'), 
+                      type: 'error' 
+                    });
+                    setTimeout(() => setNotification(null), 5000);
                   }
                 }
               }}
@@ -2489,6 +2573,20 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
           />
         </div>
       )}
+      
+      {/* CSS Animation for notification */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes slideDown {
+          from {
+            transform: translateX(-50%) translateY(-20px);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+          }
+        }
+      `}} />
     </div>
   );
 };

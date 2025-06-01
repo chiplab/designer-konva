@@ -27,11 +27,20 @@
       const customizeBtn = document.getElementById('customize-product-btn');
       if (!customizeBtn) return;
       
+      // Get the variant's featured image if available
+      let productImageUrl = null;
+      {% if product.selected_or_first_available_variant.featured_image %}
+        productImageUrl = '{{ product.selected_or_first_available_variant.featured_image | image_url: width: 1000 }}';
+      {% elsif product.featured_image %}
+        productImageUrl = '{{ product.featured_image | image_url: width: 1000 }}';
+      {% endif %}
+      
       // Initialize customizer modal
       const customizer = new ProductCustomizerModal({
         variantId: customizeBtn.dataset.variantId,
         templateId: customizeBtn.dataset.templateId,
         apiUrl: '/apps/designer',
+        productImageUrl: productImageUrl,
         onSave: function(customization) {
           // Add customization to cart
           const formData = {

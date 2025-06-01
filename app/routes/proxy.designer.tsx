@@ -321,14 +321,21 @@ const App = () => {
       const result = await response.json();
       
       if (result.success) {
-        alert('Template saved successfully!');
+        // Show a more informative message with sync status
+        const message = result.warning 
+          ? `Template saved but with warning: ${result.warning}`
+          : 'Template saved and synced successfully to your Shopify store!';
+        alert(message);
         loadTemplatesList(); // Refresh templates list
       } else {
         throw new Error(result.error || 'Failed to save template');
       }
     } catch (error) {
       console.error('Error saving template:', error);
-      alert('Failed to save template: ' + error.message);
+      const errorMessage = error instanceof Error 
+        ? `Failed to save template: ${error.message}. Please check your connection and try again.`
+        : 'Failed to save template. Please check your connection and try again.';
+      alert(errorMessage);
     } finally {
       setIsSaving(false);
     }

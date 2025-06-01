@@ -22,14 +22,16 @@ Replace standard Shopify product images with customizable template previews that
 ### 1. Server-Side Preview Generation ✅
 - [x] Create `api.template.preview.tsx` endpoint
 - [x] Create `preview-generator.server.ts` service
-- [ ] Implement full Konva server-side rendering
-- [ ] Generate preview with placeholder text
+- [x] Implement full Konva server-side rendering
+- [x] Generate preview with placeholder text
+- [x] Add "Customizable" badge to preview images
+- [x] Export design area only at 2x resolution
 
 ### 2. Shopify Integration ✅
 - [x] Add "Sync preview images" action to templates page
-- [ ] Upload generated images to Shopify
-- [ ] Set as variant featured image
-- [ ] Store original image reference in metafields
+- [x] Implement staged upload to Shopify
+- [x] Create product images and associate with variants
+- [x] Add comprehensive error handling and logging
 
 ### 3. Theme Integration ✅
 - [x] Create `product_preview.liquid` block

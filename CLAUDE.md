@@ -227,6 +227,7 @@ interface CanvasState {
      - Creates new template if no templateId provided
      - Updates existing template if templateId is in form data
      - Verifies shop ownership before updates
+     - **Automatically syncs thumbnails to bound product variants**
    - `api.templates.$id.tsx`: GET endpoint to load specific template
    - `api.templates.tsx`: GET endpoint to list all shop templates
 
@@ -266,6 +267,35 @@ interface CanvasState {
 - Use localStorage for temporary saves before authentication
 - Sync to database after successful authentication
 - Provide visual feedback for save status
+
+## Automatic Template Thumbnail Syncing
+
+### Overview
+The system automatically syncs template thumbnails to Shopify product variant images, ensuring preview consistency across the store.
+
+### Implementation
+
+1. **Template Sync Service** (`app/services/template-sync.server.ts`):
+   - Finds all variants using a specific template via metafields
+   - Uploads thumbnail to Shopify as variant image
+   - Handles errors gracefully without failing save operations
+   - Returns detailed sync results
+
+2. **Automatic Sync on Save**:
+   - When a template is saved, thumbnails automatically sync to all bound variants
+   - Non-blocking operation - template saves succeed even if sync fails
+   - Logs detailed sync results for debugging
+
+3. **Manual Re-sync**:
+   - "Re-sync preview images" action in template list
+   - Updates all variants with latest template thumbnail
+   - Shows success/error messages via toast notifications
+
+### Benefits
+- Product pages show actual template preview as variant image
+- Customers see accurate representation before customizing
+- Reduces need for manual image management
+- Maintains consistency across product catalog
 
 ## Template-Variant Binding System
 
@@ -343,16 +373,36 @@ query GetProductVariantsWithMetafields {
 4. **View**: Check bindings in Product Bindings page
 5. **Customize**: Load template when customer clicks "Customize" (future theme extension)
 
-### Future Theme Extension Integration
+### Theme Extension Integration
 
-The metafield enables theme integration:
-```liquid
-{% if product.selected_variant.metafields.custom_designer.template_id %}
-  <button data-template-id="{{ product.selected_variant.metafields.custom_designer.template_id }}">
-    Customize This Product
-  </button>
-{% endif %}
-```
+The system includes a fully functional theme extension for product customization:
+
+1. **Product Customizer Block** (`extensions/canvas-api-pdp/blocks/product_customizer.liquid`):
+   - Adds customization button to product pages
+   - Only shows for variants with assigned templates
+   - Integrates seamlessly with any Shopify theme
+
+2. **Product Customizer Modal** (`extensions/canvas-api-pdp/assets/product-customizer-modal.js`):
+   - **Position-aware slide-out panel**: Detects product info section and slides over it
+   - **Smart positioning**: On desktop, covers only the product title/description area
+   - **Product image integration**: Replaces main product image with live preview
+   - **Simplified customization**: Text-only editing for quick personalization
+   - **Advanced editor link**: Button to open full designer for complex edits
+   - **Responsive design**: Full-screen on mobile, contained overlay on desktop
+   
+3. **Canvas Text Renderer** (`extensions/canvas-api-pdp/assets/canvas-text-renderer.js`):
+   - Lightweight Konva-based renderer for text customization
+   - Loads templates via API and allows text updates
+   - Generates preview images for cart line items
+
+### Product Customizer Modal Features
+
+The modal provides a streamlined customization experience:
+- **Automatic preview updates**: Shows variant's synced template thumbnail
+- **Live product image replacement**: Updates main product image during customization
+- **Text-only interface**: Simple text inputs for each editable element
+- **Add to cart integration**: Saves customization data as line item properties
+- **Position detection**: Automatically positions over product info section
 
 ### Implementation Notes
 
