@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://belkin-mongolia-yards-movement.trycloudflare.com"
+application_url = "https://liked-er-oman-blowing.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://belkin-mongolia-yards-movement.trycloudflare.com/auth/callback",
-  "https://belkin-mongolia-yards-movement.trycloudflare.com/auth/shopify/callback",
-  "https://belkin-mongolia-yards-movement.trycloudflare.com/api/auth/callback"
+  "https://liked-er-oman-blowing.trycloudflare.com/auth/callback",
+  "https://liked-er-oman-blowing.trycloudflare.com/auth/shopify/callback",
+  "https://liked-er-oman-blowing.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://belkin-mongolia-yards-movement.trycloudflare.com/api"
+url = "https://liked-er-oman-blowing.trycloudflare.com/api"
 subpath = "designer"
 prefix = "apps"
 

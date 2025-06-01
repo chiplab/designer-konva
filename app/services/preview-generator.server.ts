@@ -1,10 +1,25 @@
-import Konva from "konva";
+import type { Stage } from "konva/lib/Stage";
+import type { Layer } from "konva/lib/Layer";
 import { loadImage } from "canvas";
 
-// Set up Konva for server-side rendering
-(global as any).window = {
-  devicePixelRatio: 1
-};
+// Only set up mock window when actually generating preview
+function setupServerSideKonva() {
+  if (!(global as any).window) {
+    (global as any).window = {
+      devicePixelRatio: 1,
+      matchMedia: () => ({
+        matches: false,
+        media: '',
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      })
+    };
+  }
+}
 
 /**
  * Generates a preview image from template data using server-side Konva
@@ -12,6 +27,12 @@ import { loadImage } from "canvas";
  */
 export async function generatePreviewImage(canvasData: any): Promise<string> {
   try {
+    // Set up server-side environment before importing Konva
+    setupServerSideKonva();
+    
+    // Dynamic import to ensure window is set up first
+    const Konva = (await import("konva")).default;
+    
     const { dimensions, backgroundColor, designableArea, elements, assets } = canvasData;
     
     // Validate required data
