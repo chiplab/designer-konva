@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://liked-er-oman-blowing.trycloudflare.com"
+application_url = "https://wives-apparent-bend-mothers.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://liked-er-oman-blowing.trycloudflare.com/auth/callback",
-  "https://liked-er-oman-blowing.trycloudflare.com/auth/shopify/callback",
-  "https://liked-er-oman-blowing.trycloudflare.com/api/auth/callback"
+  "https://wives-apparent-bend-mothers.trycloudflare.com/auth/callback",
+  "https://wives-apparent-bend-mothers.trycloudflare.com/auth/shopify/callback",
+  "https://wives-apparent-bend-mothers.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://liked-er-oman-blowing.trycloudflare.com/api"
+url = "https://wives-apparent-bend-mothers.trycloudflare.com/api"
 subpath = "designer"
 prefix = "apps"
 

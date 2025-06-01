@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import { uploadImageToShopify, updateVariantImage } from "./preview-generator.server";
+import { uploadImageToShopify, updateVariantImage } from "./shopify-image.server";
 
 const PRODUCT_VARIANTS_QUERY = `#graphql
   query GetProductVariantsWithMetafields {
