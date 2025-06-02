@@ -2399,6 +2399,19 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                       )
                     );
                   }
+                  
+                  // Force transformer to update after font weight change
+                  // Small delay to allow React to re-render with new font weight
+                  setTimeout(() => {
+                    if (transformerRef.current && selectedId) {
+                      const stage = transformerRef.current.getStage();
+                      const selectedNode = stage.findOne('#' + selectedId);
+                      if (selectedNode) {
+                        transformerRef.current.nodes([selectedNode]);
+                        transformerRef.current.getLayer().batchDraw();
+                      }
+                    }
+                  }, 50);
                 }}
                 style={{
                   width: '36px',
