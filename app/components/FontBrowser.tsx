@@ -110,7 +110,7 @@ export default function FontBrowser({
       observer.disconnect();
       fontRefs.current.clear();
       setVisibleFonts(new Set());
-      setLoadedFonts(new Set());
+      // Don't clear loadedFonts - keep them cached!
     };
   }, [isOpen]);
 

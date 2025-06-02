@@ -6,6 +6,9 @@ export class FontLoader {
   private loadingFonts: Map<string, Promise<void>> = new Map();
 
   private constructor() {
+    // Fonts are cached permanently for the session - once loaded, always available!
+    // This follows VistaPrint's "greedy caching" approach for better performance.
+    
     // Check for system fonts that don't need loading
     const systemFonts = ['Arial', 'Times New Roman', 'Georgia', 'Courier New'];
     systemFonts.forEach(font => {
@@ -141,6 +144,18 @@ export class FontLoader {
   // For debugging
   getLoadedFonts(): string[] {
     return Array.from(this.loadedFonts);
+  }
+
+  // Preload ALL fonts (useful for power users or on fast connections)
+  async preloadAllFonts(): Promise<void> {
+    console.log('Preloading all fonts...');
+    const promises = CURATED_FONTS.map(fontDef => {
+      const weights = Object.keys(fontDef.weights).map(w => parseInt(w));
+      return Promise.all(weights.map(weight => this.loadFont(fontDef, weight)));
+    });
+    
+    await Promise.all(promises);
+    console.log(`All ${CURATED_FONTS.length} fonts loaded!`);
   }
 
   // Load font by family name (useful for loading from saved templates)
