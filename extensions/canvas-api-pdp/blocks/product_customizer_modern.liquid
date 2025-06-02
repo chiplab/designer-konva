@@ -1,20 +1,20 @@
 {% comment %}
-  Product Customizer Integration
-  This snippet adds a customization button to products that have a template assigned
+  Product Customizer Block for Modern Themes
+  This block integrates with the new Horizons 2025 themes
 {% endcomment %}
 
 {% if product.selected_or_first_available_variant.metafields.custom_designer.template_id %}
-  <div class="product-customizer-container">
+  <div class="product-customizer-wrapper" data-product-customizer>
     <button 
       id="customize-product-btn" 
-      class="product-customizer-button"
+      class="product-customizer-button button button--secondary"
       data-variant-id="{{ product.selected_or_first_available_variant.id }}"
       data-template-id="{{ product.selected_or_first_available_variant.metafields.custom_designer.template_id }}"
     >
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" class="icon icon--edit">
         <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/>
       </svg>
-      Customize This Product
+      {{ block.settings.button_text | default: 'Customize This Product' }}
     </button>
   </div>
 
@@ -48,6 +48,7 @@
           templateId: customizeBtn.dataset.templateId,
           apiUrl: '/apps/designer',
           productImageUrl: productImageUrl,
+          useModernTheme: true, // Flag for modern theme support
           onSave: function(customization) {
             // Add customization to cart
             const formData = {
@@ -74,12 +75,21 @@
             })
             .then(response => response.json())
             .then(data => {
-              // Show success message or redirect to cart
-              window.location.href = '/cart';
+              // Trigger cart update event for modern themes
+              document.dispatchEvent(new CustomEvent('cart:updated', { detail: data }));
+              
+              // Show success notification or redirect based on settings
+              if ('{{ block.settings.redirect_to_cart }}' === 'true') {
+                window.location.href = '/cart';
+              } else {
+                // Trigger theme's cart drawer if available
+                const cartDrawerOpen = new CustomEvent('cart:open');
+                document.dispatchEvent(cartDrawerOpen);
+              }
             })
             .catch(error => {
               console.error('Error adding to cart:', error);
-              alert('Failed to add customized product to cart. Please try again.');
+              alert('{{ block.settings.error_message | default: "Failed to add customized product to cart. Please try again." }}');
             });
           }
         });
@@ -98,29 +108,47 @@
   </script>
 
   <style>
+    .product-customizer-wrapper {
+      margin-top: 1rem;
+    }
+    
     .product-customizer-button {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 12px 24px;
-      background: #000;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      font-size: 16px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background 0.2s;
-      margin-top: 16px;
+      width: 100%;
+      justify-content: center;
     }
     
-    .product-customizer-button:hover {
-      background: #333;
-    }
-    
-    .product-customizer-button svg {
-      width: 20px;
-      height: 20px;
+    .product-customizer-button .icon {
+      margin-right: 0.5rem;
     }
   </style>
 {% endif %}
+
+{% schema %}
+{
+  "name": "Product Customizer",
+  "target": "section",
+  "enabled_on": {
+    "templates": ["product"]
+  },
+  "settings": [
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Button Text",
+      "default": "Customize This Product"
+    },
+    {
+      "type": "checkbox",
+      "id": "redirect_to_cart",
+      "label": "Redirect to cart after adding",
+      "default": false
+    },
+    {
+      "type": "text",
+      "id": "error_message",
+      "label": "Error Message",
+      "default": "Failed to add customized product to cart. Please try again."
+    }
+  ]
+}
+{% endschema %}

@@ -69,8 +69,17 @@ if (typeof ProductCustomizerModal === 'undefined') {
       </div>
     `;
 
-    // Add modal to page
-    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    // Find the product details container
+    const productDetails = document.querySelector('.product-details');
+    
+    if (productDetails && window.innerWidth > 749) {
+      // For desktop, inject into product details
+      productDetails.insertAdjacentHTML('beforeend', modalHTML);
+    } else {
+      // For mobile or if product details not found, add to body
+      document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+    
     this.modal = document.getElementById('productCustomizerModal');
 
     // Add styles
@@ -107,54 +116,54 @@ if (typeof ProductCustomizerModal === 'undefined') {
         }
 
         .pcm-panel {
-          position: fixed;
-          right: 0;
-          top: 0;
+          position: absolute;
           width: 100%;
           height: 100%;
           background: white;
-          box-shadow: -4px 0 15px rgba(0, 0, 0, 0.15);
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
           transform: translateX(100%);
           transition: transform 0.3s ease-out;
           overflow-y: auto;
-          z-index: 999999;
-          border-left: 1px solid #e5e5e5;
+          z-index: 100;
+          border: 1px solid #e5e5e5;
+          border-radius: 8px;
         }
         
-        /* Target the product info wrapper specifically */
-        @supports (container-type: inline-size) {
-          /* Modern theme selectors */
-          [data-product-info],
-          .product-info,
-          product-info,
-          /* Legacy theme selectors */
-          .product__info-wrapper,
-          .product__info,
-          .product-single__info-wrapper {
-            container-type: inline-size;
-          }
+        /* Make product details container relative for absolute positioning */
+        .product-details {
+          position: relative !important;
         }
         
-        /* Calculate position based on product info section */
-        /* Modern themes */
-        [data-product-info] ~ .product-customizer-modal .pcm-panel,
-        .product-info ~ .product-customizer-modal .pcm-panel,
-        product-info ~ .product-customizer-modal .pcm-panel,
-        /* Legacy themes */
-        .product__info-wrapper ~ .product-customizer-modal .pcm-panel,
-        .product__info ~ .product-customizer-modal .pcm-panel,
-        .product-single__info-wrapper ~ .product-customizer-modal .pcm-panel {
-          width: 40%;
-          min-width: 400px;
-          max-width: 600px;
+        /* When modal is injected into product details */
+        .product-details .product-customizer-modal {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          z-index: 99;
         }
         
-        /* Find and position relative to product info */
-        @media (min-width: 750px) {
+        /* Full width panel within product details */
+        .product-details .pcm-panel {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          max-width: none;
+          border-radius: 8px;
+        }
+        
+        @media (max-width: 749px) {
           .pcm-panel {
-            width: calc(50% - 20px);
-            max-width: 600px;
-            right: 0;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            border-radius: 0;
           }
         }
 
@@ -207,6 +216,13 @@ if (typeof ProductCustomizerModal === 'undefined') {
           overflow-y: auto;
           margin-bottom: 20px;
           padding-right: 10px;
+          max-height: calc(100vh - 200px);
+        }
+        
+        @media (min-width: 750px) {
+          .product-details .pcm-text-inputs {
+            max-height: calc(100% - 100px);
+          }
         }
 
         .pcm-text-field {
@@ -308,23 +324,16 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Customize More button
     document.getElementById('customizeMore').addEventListener('click', () => this.openFullDesigner());
-    
-    // Resize handler to reposition modal
-    this.resizeHandler = () => {
-      if (this.isOpen) {
-        this.positionModal();
-      }
-    };
-    window.addEventListener('resize', this.resizeHandler);
   }
 
   async open() {
-    // Try to position the modal relative to product info section
-    this.positionModal();
-    
     this.modal.classList.add('open');
     this.isOpen = true;
-    document.body.style.overflow = 'hidden';
+    
+    // Only prevent body scroll on mobile
+    if (window.innerWidth <= 749) {
+      document.body.style.overflow = 'hidden';
+    }
     
     // Store original product image so we can restore it later
     this.storeOriginalProductImage();
@@ -352,47 +361,169 @@ if (typeof ProductCustomizerModal === 'undefined') {
   }
   
   storeOriginalProductImage() {
-    // Find all product images on the page and store their original sources
-    // Updated selectors for Horizons 2025 themes (like Tinker) and legacy themes
-    const productImages = document.querySelectorAll(
-      // Horizons 2025 / Modern theme selectors
-      '[data-media-type="image"] img, ' +
-      '[data-product-media] img, ' +
-      '.product-media img, ' +
-      '.media img, ' +
-      // Legacy theme selectors
-      '.product__media img, ' +
-      '.product-photo-container img, ' +
-      '[data-product-featured-image], ' +
-      '.product__main-photos img, ' +
-      '.product-single__photo img'
+    // Find the main product section first (exclude recommendations)
+    const mainProductSection = document.querySelector(
+      // Modern theme patterns
+      '.product-information, ' +
+      '.product-details, ' +
+      '[data-product-info], ' +
+      '.product-info, ' +
+      // Standard patterns
+      'section.product:not(.product-recommendations), ' +
+      '[data-section-type="product"]:not([data-section-type="related-products"]), ' +
+      '.product-section:not(.product-recommendations), ' +
+      'main .product, ' +
+      '#MainContent .product, ' +
+      // Additional patterns
+      '.shopify-section.product-section, ' +
+      '.product-template, ' +
+      '#product-template, ' +
+      // More generic patterns
+      '[class*="product-info"], ' +
+      '[class*="product__info"]'
     );
     
-    this.originalProductImages = Array.from(productImages).map(img => ({
-      element: img,
-      originalSrc: img.src,
-      originalSrcset: img.srcset
-    }));
+    let mainProductImage = null;
+    
+    if (mainProductSection) {
+      // Search for the active/featured image ONLY within the main product section
+      mainProductImage = mainProductSection.querySelector(
+        // Modern theme selectors (Horizons 2025)
+        '.media-gallery img:first-of-type, ' +
+        '.product-media img:first-of-type, ' +
+        '.media img:first-of-type, ' +
+        '[data-media-type] img:first-of-type, ' +
+        // Active/selected images
+        '[data-media-type="image"][data-media-active="true"] img, ' +
+        '[data-product-media].is-active img, ' +
+        '.product-media.is-active img, ' +
+        '.media-gallery__image.is-active img, ' +
+        '.media.is-active img, ' +
+        // Featured/main images
+        '.product__media--featured img, ' +
+        '.product__main-photos .slick-current img, ' +
+        '.product-single__photo--main img, ' +
+        '[data-product-featured-image], ' +
+        // Gallery patterns
+        '.product-gallery img:first-of-type, ' +
+        '.product-images img:first-of-type'
+      );
+      
+      // If no active image, get the first visible product image in the section
+      if (!mainProductImage) {
+        mainProductImage = mainProductSection.querySelector(
+          'img:not([data-role="thumb"]):not(.thumbnail):not([width="100"]):not([width="150"]):first-of-type'
+        );
+      }
+    } else {
+      // Fallback: look for product images but exclude recommendation sections
+      // Get all images that are likely to be product images (based on size and position)
+      const allImagesOnPage = document.querySelectorAll('img');
+      
+      for (const img of allImagesOnPage) {
+        // Skip small images (likely thumbnails) - but only if dimensions are actually loaded
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          if (img.naturalWidth < 150 && img.naturalHeight < 150) {
+            continue;
+          }
+        }
+        // Also check rendered size if natural size not available
+        else if (img.width > 0 && img.height > 0) {
+          if (img.width < 150 && img.height < 150) {
+            continue;
+          }
+        }
+        
+        // Skip images in recommendation sections
+        const isInRecommendations = img.closest(
+          '.product-recommendations, ' +
+          '.related-products, ' +
+          '[data-section-type="related-products"], ' +
+          '[data-section-type="product-recommendations"], ' +
+          '.recommendation-products, ' +
+          '.recommended-products, ' +
+          '.recently-viewed, ' +
+          '.also-like, ' +
+          '.upsell'
+        );
+        
+        if (isInRecommendations) {
+          continue;
+        }
+        
+        // Skip images in header/footer
+        const isInHeaderFooter = img.closest('header, footer, nav');
+        if (isInHeaderFooter) {
+          continue;
+        }
+        
+        // If we get here, this is likely a main product image
+        mainProductImage = img;
+        break;
+      }
+    }
+    
+    if (mainProductImage) {
+      // Final check: make sure we're not selecting a recommendation product image
+      const isRecommendation = mainProductImage.closest(
+        '.product-recommendations, ' +
+        '.related-products, ' +
+        '[data-section-type="related-products"], ' +
+        '.recommendation-products, ' +
+        '.recommended-products'
+      );
+      
+      if (isRecommendation) {
+        this.originalProductImages = [];
+        return;
+      }
+      
+      this.originalProductImages = [{
+        element: mainProductImage,
+        originalSrc: mainProductImage.src,
+        originalSrcset: mainProductImage.srcset
+      }];
+    } else {
+      this.originalProductImages = [];
+    }
   }
   
   updateMainProductImage() {
-    if (!this.currentPreviewUrl) return;
+    if (!this.currentPreviewUrl || this.originalProductImages.length === 0) {
+      return;
+    }
     
-    // Update all product images to show the preview
-    this.originalProductImages.forEach(({element}) => {
-      element.src = this.currentPreviewUrl;
-      if (element.srcset) {
-        element.srcset = ''; // Clear srcset to prevent responsive image issues
+    // Update only the main product image to show the preview
+    const mainImage = this.originalProductImages[0];
+    if (mainImage && mainImage.element) {
+      // Double-check this isn't a recommendation image before updating
+      const isRecommendation = mainImage.element.closest('.product-recommendations, .related-products, [data-section-type="related-products"]');
+      if (isRecommendation) {
+        return;
       }
-    });
+      
+      mainImage.element.src = this.currentPreviewUrl;
+      if (mainImage.element.srcset) {
+        mainImage.element.srcset = ''; // Clear srcset to prevent responsive image issues
+      }
+      
+      // Add a data attribute to mark this as the customization preview
+      mainImage.element.setAttribute('data-customization-preview', 'true');
+      
+    }
   }
   
   restoreOriginalProductImages() {
-    // Restore all product images to their original sources
+    // Restore the main product image to its original source
     this.originalProductImages.forEach(({element, originalSrc, originalSrcset}) => {
-      element.src = originalSrc;
-      if (originalSrcset) {
-        element.srcset = originalSrcset;
+      if (element && document.contains(element)) {
+        // Only restore if element is still in the DOM
+        element.src = originalSrc;
+        if (originalSrcset) {
+          element.srcset = originalSrcset;
+        }
+        // Remove the customization preview marker
+        element.removeAttribute('data-customization-preview');
       }
     });
   }
@@ -438,10 +569,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
       }
       
       // If no image found, we'll show the canvas preview later
-      console.log('No product image found, will use canvas preview');
       this.hasProductImage = false;
     } catch (error) {
-      console.warn('Could not load variant image:', error);
+      // Could not load variant image
     }
   }
   
@@ -521,47 +651,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
     });
   }
 
-  positionModal() {
-    // Find the product info wrapper element
-    // Updated selectors for Horizons 2025 themes and legacy themes
-    const productInfo = document.querySelector(
-      // Horizons 2025 / Modern theme selectors
-      '[data-product-info], ' +
-      '.product-info, ' +
-      'product-info, ' + // Web component
-      // Legacy theme selectors
-      '.product__info-wrapper, ' +
-      '.product__info, ' +
-      '.product-single__info-wrapper'
-    );
-    
-    if (productInfo) {
-      // Get the position and dimensions of the product info section
-      const rect = productInfo.getBoundingClientRect();
-      const panel = this.modal.querySelector('.pcm-panel');
-      
-      // Position the panel to cover just the product info area
-      if (window.innerWidth > 749) {
-        // Set horizontal position and width
-        panel.style.width = `${rect.width}px`;
-        panel.style.left = `${rect.left}px`;
-        panel.style.right = 'auto';
-        
-        // Set vertical position and height to match the product info section
-        panel.style.top = `${rect.top + window.scrollY}px`;
-        panel.style.height = `${rect.height}px`;
-        panel.style.maxHeight = `${rect.height}px`;
-      } else {
-        // Reset to full viewport on mobile
-        panel.style.width = '100%';
-        panel.style.left = '';
-        panel.style.right = '0';
-        panel.style.top = '0';
-        panel.style.height = '100%';
-        panel.style.maxHeight = '';
-      }
-    }
-  }
+  // Remove positionModal method as we're using CSS positioning within product-details
   
   close() {
     this.modal.classList.remove('open');
