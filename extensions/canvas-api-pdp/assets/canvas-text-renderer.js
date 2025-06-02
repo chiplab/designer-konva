@@ -20,11 +20,64 @@ if (typeof CanvasTextRenderer === 'undefined') {
     this.images = {};
     this.apiUrl = options.apiUrl || '/apps/designer';
     this.onReady = options.onReady || (() => {});
+    this.loadedFonts = new Set(['Arial', 'Times New Roman', 'Georgia', 'Courier New']); // System fonts
     
     // Ensure Konva is loaded
     if (typeof Konva === 'undefined') {
       console.error('Konva is not loaded. Please include Konva before initializing CanvasTextRenderer.');
     }
+  }
+  
+  async loadFont(fontFamily, fontUrl) {
+    if (this.loadedFonts.has(fontFamily)) return;
+    
+    try {
+      // Create @font-face rule
+      const style = document.createElement('style');
+      style.textContent = `
+        @font-face {
+          font-family: '${fontFamily}';
+          src: url('${fontUrl}') format('woff2');
+          font-weight: 400;
+          font-display: swap;
+        }
+      `;
+      document.head.appendChild(style);
+      
+      // Wait for font to load
+      if (document.fonts && document.fonts.load) {
+        await document.fonts.load(`16px "${fontFamily}"`);
+      }
+      
+      this.loadedFonts.add(fontFamily);
+    } catch (error) {
+      console.warn(`Failed to load font ${fontFamily}:`, error);
+    }
+  }
+
+  getFontUrl(fontFamily) {
+    // Map font families to their S3 URLs
+    const fontMap = {
+      'Roboto': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/roboto/roboto-regular.woff2',
+      'Open Sans': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/open-sans/open-sans-regular.woff2',
+      'Lato': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/lato/lato-regular.woff2',
+      'Montserrat': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/montserrat/montserrat-regular.woff2',
+      'Raleway': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/raleway/raleway-regular.woff2',
+      'Poppins': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/poppins/poppins-regular.woff2',
+      'Playfair Display': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/playfair-display/playfair-display-regular.woff2',
+      'Merriweather': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/merriweather/merriweather-regular.woff2',
+      'Oswald': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/oswald/oswald-regular.woff2',
+      'Bebas Neue': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/bebas-neue/bebas-neue-regular.woff2',
+      'Dancing Script': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/dancing-script/dancing-script-regular.woff2',
+      'Pacifico': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/pacifico/pacifico-regular.woff2',
+      'Alex Brush': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/alex-brush/alex-brush-regular.woff2',
+      'Great Vibes': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/great-vibes/great-vibes-regular.woff2',
+      'Caveat': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/caveat/caveat-regular.woff2',
+      'Roboto Mono': 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/roboto-mono/roboto-mono-regular.woff2',
+      // Add more fonts as needed
+    };
+    
+    return fontMap[fontFamily] || null;
   }
 
   async loadTemplate(templateId) {
@@ -36,6 +89,9 @@ if (typeof CanvasTextRenderer === 'undefined') {
       // Initialize Konva stage
       this.initializeStage();
       
+      // Load fonts used in the template
+      await this.loadTemplateFonts();
+      
       // Preload images
       await this.preloadImages();
       
@@ -45,6 +101,33 @@ if (typeof CanvasTextRenderer === 'undefined') {
     } catch (error) {
       console.error('Failed to load template:', error);
     }
+  }
+  
+  async loadTemplateFonts() {
+    const fontsToLoad = new Set();
+    
+    // Collect all unique fonts from text elements
+    if (this.template.elements) {
+      const { textElements, curvedTextElements, gradientTextElements } = this.template.elements;
+      
+      [textElements, curvedTextElements, gradientTextElements].forEach(elements => {
+        if (elements) {
+          elements.forEach(el => {
+            if (el.fontFamily) fontsToLoad.add(el.fontFamily);
+          });
+        }
+      });
+    }
+    
+    // Load each font
+    const fontPromises = Array.from(fontsToLoad).map(async fontFamily => {
+      const fontUrl = this.getFontUrl(fontFamily);
+      if (fontUrl) {
+        await this.loadFont(fontFamily, fontUrl);
+      }
+    });
+    
+    await Promise.all(fontPromises);
   }
 
   initializeStage() {

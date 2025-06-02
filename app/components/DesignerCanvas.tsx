@@ -1,6 +1,8 @@
 import React from 'react';
 import { Stage, Layer, Text, TextPath, Transformer, Group, Image, Rect } from 'react-konva';
 import useImage from 'use-image';
+import { CURATED_FONTS, getFontById, getFontsByCategory, DEFAULT_FONT } from '../constants/fonts';
+import { fontLoader } from '../services/font-loader';
 
 // Image element component
 const ImageElement: React.FC<{
@@ -124,27 +126,27 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   const [showDesignAreaControls, setShowDesignAreaControls] = React.useState(false);
   const [showStrokeColorPicker, setShowStrokeColorPicker] = React.useState(false);
 
-  // Font Management - POC with priority fonts from VISION.md
-  const priorityFonts = ['Arial', 'Impact', 'Roboto', 'Oswald', 'Bebas Neue'];
-  const [loadedFonts, setLoadedFonts] = React.useState(new Set(['Arial'])); // Arial is always available
+  // Font Management - Using curated fonts from S3
+  const [showFontPicker, setShowFontPicker] = React.useState(false);
+  
+  // Priority fonts for immediate loading
+  const priorityFontIds = ['arial', 'roboto', 'open-sans', 'montserrat', 'playfair-display'];
 
   const loadFont = async (fontFamily: string) => {
-    if (loadedFonts.has(fontFamily) || fontFamily === 'Arial') return;
-    
     try {
-      // Google Fonts API integration
-      const link = document.createElement('link');
-      link.href = `https://fonts.googleapis.com/css2?family=${fontFamily.replace(' ', '+')}:wght@400;700&display=swap`;
-      link.rel = 'stylesheet';
-      document.head.appendChild(link);
-      
-      // Wait for font to actually load
-      await document.fonts.load(`16px "${fontFamily}"`);
-      setLoadedFonts(prev => new Set([...prev, fontFamily]));
+      await fontLoader.loadFontByFamily(fontFamily);
     } catch (error) {
       console.warn(`Failed to load font: ${fontFamily}`, error);
     }
   };
+  
+  // Preload priority fonts on mount
+  React.useEffect(() => {
+    const loadPriorityFonts = async () => {
+      await fontLoader.preloadFonts(priorityFontIds);
+    };
+    loadPriorityFonts();
+  }, []);
 
   // Calculate scale factor for responsive canvas with padding
   const padding = 20; // Add some padding around the canvas
@@ -243,7 +245,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       text: 'Hello World',
       x: designableArea.x + designableArea.width / 2 - 50, // Center of designable area
       y: designableArea.y + designableArea.height / 2 - 12, // Center vertically (minus half font size)
-      fontFamily: 'Arial',
+      fontFamily: DEFAULT_FONT.family,
       fontSize: 24,
       fill: 'black',
       rotation: 0,
@@ -263,7 +265,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       topY: topY,
       radius: radius,
       flipped: false,
-      fontFamily: 'Arial',
+      fontFamily: DEFAULT_FONT.family,
       fontSize: 20,
       fill: 'black',
       rotation: 0,
@@ -460,22 +462,32 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       );
     }
     
+    // Wait for fonts to be ready
+    await document.fonts.ready;
+    
     // Force re-render and update transformer bounds after font loads
     setTimeout(() => {
+      if (stageRef.current) {
+        // Clear cache to force font reload
+        stageRef.current.clear();
+        
+        // Force all layers to redraw
+        stageRef.current.getLayers().forEach(layer => {
+          layer.clear();
+          layer.batchDraw();
+        });
+      }
+      
       if (transformerRef.current) {
         const stage = transformerRef.current.getStage();
         const selectedNode = stage?.findOne('#' + selectedId);
         if (selectedNode) {
-          // Re-render the layer first
-          selectedNode.getLayer()?.batchDraw();
-          
           // Force transformer to recalculate bounds for new font metrics
           transformerRef.current.nodes([selectedNode]);
           transformerRef.current.forceUpdate();
-          transformerRef.current.getLayer()?.batchDraw();
         }
       }
-    }, 100); // Small delay to ensure font is applied
+    }, 100); // Shorter delay since we're waiting for fonts.ready
   };
 
   const handleFontSizeChange = (fontSize: number) => {
@@ -588,7 +600,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
     };
   };
 
-  const loadCanvasState = (state: any) => {
+  const loadCanvasState = async (state: any) => {
     if (!state) return;
     
     // Load dimensions and background
@@ -602,6 +614,23 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       if (state.elements.curvedTextElements) setCurvedTextElements(state.elements.curvedTextElements);
       if (state.elements.gradientTextElements) setGradientTextElements(state.elements.gradientTextElements);
       if (state.elements.imageElements) setImageElements(state.elements.imageElements);
+      
+      // Load all fonts used in the template
+      const fontsToLoad = new Set<string>();
+      
+      state.elements.textElements?.forEach((el: any) => {
+        if (el.fontFamily) fontsToLoad.add(el.fontFamily);
+      });
+      state.elements.curvedTextElements?.forEach((el: any) => {
+        if (el.fontFamily) fontsToLoad.add(el.fontFamily);
+      });
+      state.elements.gradientTextElements?.forEach((el: any) => {
+        if (el.fontFamily) fontsToLoad.add(el.fontFamily);
+      });
+      
+      // Load all unique fonts
+      const fontLoadPromises = Array.from(fontsToLoad).map(fontFamily => loadFont(fontFamily));
+      await Promise.all(fontLoadPromises);
     }
     
     // Load assets (with fallback to local defaults)
@@ -804,7 +833,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       
       if (result.template) {
         const canvasData = JSON.parse(result.template.canvasData);
-        loadCanvasState(canvasData);
+        await loadCanvasState(canvasData);
         setNotification({ 
           message: 'Template loaded successfully!', 
           type: 'success' 
@@ -846,14 +875,17 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
 
   // Load initial template if provided
   React.useEffect(() => {
-    if (initialTemplate && initialTemplate.canvasData) {
-      try {
-        const canvasData = JSON.parse(initialTemplate.canvasData);
-        loadCanvasState(canvasData);
-      } catch (error) {
-        console.error('Error loading initial template:', error);
+    const loadInitialTemplate = async () => {
+      if (initialTemplate && initialTemplate.canvasData) {
+        try {
+          const canvasData = JSON.parse(initialTemplate.canvasData);
+          await loadCanvasState(canvasData);
+        } catch (error) {
+          console.error('Error loading initial template:', error);
+        }
       }
-    }
+    };
+    loadInitialTemplate();
   }, [initialTemplate]);
 
   // Apply text updates from modal state after template is loaded
@@ -948,6 +980,25 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [showBackgroundColorPicker]);
+
+  // Close font picker when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      // Check if click is outside font picker
+      const target = e.target as HTMLElement;
+      const fontPicker = target.closest('[data-font-picker]');
+      const fontButton = target.closest('[data-font-button]');
+      
+      if (!fontPicker && !fontButton && showFontPicker) {
+        setShowFontPicker(false);
+      }
+    };
+
+    if (showFontPicker) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [showFontPicker]);
 
   // Close design area controls when clicking outside
   React.useEffect(() => {
@@ -2139,30 +2190,149 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
             <>
               <div style={{ width: '1px', background: '#e0e0e0', height: '24px', margin: '0 4px' }} />
               
-              {/* Font Family Dropdown - no label */}
-              <select
-                value={
-                  textElements.find(el => el.id === selectedId)?.fontFamily ||
-                  gradientTextElements.find(el => el.id === selectedId)?.fontFamily ||
-                  curvedTextElements.find(el => el.id === selectedId)?.fontFamily ||
-                  'Arial'
-                }
-                onChange={(e) => handleFontChange(e.target.value)}
-                style={{ 
-                  padding: '4px 8px', 
-                  fontSize: '14px',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  background: 'white',
-                  cursor: 'pointer'
-                }}
-              >
-                {priorityFonts.map(font => (
-                  <option key={font} value={font}>
-                    {font} {loadedFonts.has(font) ? '✓' : '⏳'}
-                  </option>
-                ))}
-              </select>
+              {/* Font Picker Button */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  data-font-button="true"
+                  onClick={() => setShowFontPicker(!showFontPicker)}
+                  style={{
+                    padding: '4px 12px',
+                    fontSize: '14px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    background: 'white',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    minWidth: '140px',
+                    justifyContent: 'space-between',
+                    transition: 'all 0.2s',
+                    fontFamily: textElements.find(el => el.id === selectedId)?.fontFamily ||
+                      gradientTextElements.find(el => el.id === selectedId)?.fontFamily ||
+                      curvedTextElements.find(el => el.id === selectedId)?.fontFamily ||
+                      'Arial'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+                >
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {textElements.find(el => el.id === selectedId)?.fontFamily ||
+                      gradientTextElements.find(el => el.id === selectedId)?.fontFamily ||
+                      curvedTextElements.find(el => el.id === selectedId)?.fontFamily ||
+                      'Arial'}
+                  </span>
+                  <span style={{ fontSize: '12px' }}>▼</span>
+                </button>
+                
+                {/* Font Picker Dropdown */}
+                {showFontPicker && (
+                  <div
+                    data-font-picker="true"
+                    style={{
+                      position: 'absolute',
+                      top: '38px',
+                      left: 0,
+                      background: 'white',
+                      border: '1px solid #ddd',
+                      borderRadius: '6px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                      minWidth: '220px',
+                      maxHeight: '400px',
+                      overflowY: 'auto',
+                      zIndex: 1002,
+                    }}
+                  >
+                    {(['sans-serif', 'serif', 'display', 'script', 'monospace'] as const).map(category => {
+                      const fonts = getFontsByCategory(category);
+                      if (fonts.length === 0) return null;
+                      
+                      const categoryLabels = {
+                        'sans-serif': 'Sans Serif',
+                        'serif': 'Serif',
+                        'display': 'Display & Decorative',
+                        'script': 'Script & Handwriting',
+                        'monospace': 'Monospace'
+                      };
+                      
+                      return (
+                        <div key={category}>
+                          <div style={{
+                            padding: '8px 12px 4px',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                            color: '#666',
+                            borderBottom: '1px solid #eee',
+                            backgroundColor: '#f9f9f9'
+                          }}>
+                            {categoryLabels[category]}
+                          </div>
+                          {fonts.map(fontDef => (
+                            <button
+                              key={fontDef.id}
+                              onClick={() => {
+                                handleFontChange(fontDef.family);
+                                setShowFontPicker(false);
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '8px 12px',
+                                border: 'none',
+                                background: 'none',
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                                fontSize: '14px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                transition: 'background 0.2s',
+                                backgroundColor: (
+                                  textElements.find(el => el.id === selectedId)?.fontFamily === fontDef.family ||
+                                  gradientTextElements.find(el => el.id === selectedId)?.fontFamily === fontDef.family ||
+                                  curvedTextElements.find(el => el.id === selectedId)?.fontFamily === fontDef.family
+                                ) ? '#e3f2fd' : 'transparent'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (e.currentTarget.style.backgroundColor !== 'rgb(227, 242, 253)') {
+                                  e.currentTarget.style.backgroundColor = '#f5f5f5';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (e.currentTarget.style.backgroundColor === '#f5f5f5') {
+                                  e.currentTarget.style.backgroundColor = 'transparent';
+                                }
+                              }}
+                            >
+                              <img 
+                                src={fontDef.previewUrl} 
+                                alt={fontDef.displayName}
+                                style={{ 
+                                  height: '24px', 
+                                  maxWidth: '180px',
+                                  objectFit: 'contain',
+                                  objectPosition: 'left center'
+                                }}
+                                onError={(e) => {
+                                  // Fallback to text if preview image fails
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const span = document.createElement('span');
+                                  span.textContent = fontDef.displayName;
+                                  span.style.fontFamily = fontDef.family;
+                                  target.parentNode?.appendChild(span);
+                                }}
+                              />
+                              <span style={{ fontSize: '12px', color: '#999', marginLeft: 'auto' }}>
+                                {fontLoader.isFontLoaded(fontDef.family) ? '✓' : '⏳'}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
               
               {/* Font Size - with label */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
