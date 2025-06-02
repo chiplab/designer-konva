@@ -1,0 +1,199 @@
+{% comment %}
+  Product Customizer Integration - Modern Theme Support
+  This snippet adds a customization button to products that have a template assigned
+  Optimized for Horizons 2025 themes (like Tinker) while maintaining legacy support
+{% endcomment %}
+
+{% if product.selected_or_first_available_variant.metafields.custom_designer.template_id %}
+  <div class="product-customizer-container" data-product-customizer>
+    <button 
+      id="customize-product-btn" 
+      class="product-customizer-button button button--secondary"
+      type="button"
+      data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+      data-template-id="{{ product.selected_or_first_available_variant.metafields.custom_designer.template_id }}"
+    >
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/>
+      </svg>
+      <span>Customize This Product</span>
+    </button>
+  </div>
+
+  {% comment %} Load customizer modal script (Konva will be loaded on demand) {% endcomment %}
+  <script src="{{ 'canvas-text-renderer.js' | asset_url }}" defer></script>
+  <script src="{{ 'product-customizer-modal.js' | asset_url }}" defer></script>
+  
+  <script>
+    // Wait for both DOM and scripts to load
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initializeCustomizer);
+    } else {
+      // DOM is already loaded, wait a bit for scripts
+      setTimeout(initializeCustomizer, 100);
+    }
+    
+    function initializeCustomizer() {
+      const customizeBtn = document.getElementById('customize-product-btn');
+      if (!customizeBtn) return;
+      
+      // Wait for ProductCustomizerModal to be available
+      if (typeof ProductCustomizerModal === 'undefined') {
+        setTimeout(initializeCustomizer, 100);
+        return;
+      }
+      
+      // Get the variant's featured image if available
+      let productImageUrl = null;
+      {% if product.selected_or_first_available_variant.featured_image %}
+        productImageUrl = '{{ product.selected_or_first_available_variant.featured_image | image_url: width: 1000 }}';
+      {% elsif product.featured_image %}
+        productImageUrl = '{{ product.featured_image | image_url: width: 1000 }}';
+      {% endif %}
+      
+      // Initialize customizer modal
+      const customizer = new ProductCustomizerModal({
+        variantId: customizeBtn.dataset.variantId,
+        templateId: customizeBtn.dataset.templateId,
+        apiUrl: '/apps/designer',
+        productImageUrl: productImageUrl,
+        onSave: function(customization) {
+          // Add customization to cart
+          const formData = {
+            id: customization.variantId,
+            quantity: 1,
+            properties: {
+              '_customization_id': Date.now().toString(),
+              '_template_id': customization.templateId,
+              '_custom_preview': customization.preview,
+              ...Object.entries(customization.textUpdates).reduce((acc, [key, value]) => {
+                acc[`Text: ${key}`] = value;
+                return acc;
+              }, {})
+            }
+          };
+          
+          // Add to cart via Shopify AJAX API
+          fetch('/cart/add.js', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData)
+          })
+          .then(response => response.json())
+          .then(data => {
+            // Trigger cart update event for modern themes
+            if (window.Shopify && window.Shopify.theme && window.Shopify.theme.pubsub) {
+              window.Shopify.theme.pubsub.publish('cart:refresh');
+            }
+            
+            // Show success notification if theme supports it
+            if (window.theme && window.theme.cart && typeof window.theme.cart.notification === 'function') {
+              window.theme.cart.notification({
+                message: 'Customized product added to cart',
+                type: 'success'
+              });
+            } else {
+              // Fallback: redirect to cart
+              window.location.href = '/cart';
+            }
+          })
+          .catch(error => {
+            console.error('Error adding to cart:', error);
+            alert('Failed to add customized product to cart. Please try again.');
+          });
+        }
+      });
+      
+      customizer.init();
+      
+      // Open modal on button click
+      customizeBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        customizer.open();
+      });
+      
+      // Listen for variant changes
+      document.addEventListener('variant:change', function(event) {
+        const newVariant = event.detail.variant;
+        if (newVariant && newVariant.metafields?.custom_designer?.template_id) {
+          // Update button with new variant data
+          customizeBtn.dataset.variantId = newVariant.id;
+          customizeBtn.dataset.templateId = newVariant.metafields.custom_designer.template_id;
+          customizeBtn.style.display = 'inline-flex';
+          
+          // Update customizer options
+          customizer.options.variantId = newVariant.id;
+          customizer.options.templateId = newVariant.metafields.custom_designer.template_id;
+          
+          // Update product image URL if available
+          if (newVariant.featured_image) {
+            customizer.options.productImageUrl = newVariant.featured_image.src;
+          }
+        } else {
+          // Hide button if variant has no template
+          customizeBtn.style.display = 'none';
+        }
+      });
+    }
+  </script>
+
+  <style>
+    /* Modern theme integration styles */
+    .product-customizer-container {
+      margin-top: 1rem;
+      margin-bottom: 1rem;
+    }
+    
+    /* Default button styles if theme doesn't provide them */
+    .product-customizer-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      background: var(--color-button-secondary, #000);
+      color: var(--color-button-secondary-text, white);
+      border: 1px solid var(--color-button-secondary-border, transparent);
+      border-radius: var(--button-border-radius, 4px);
+      font-size: var(--font-size-button, 1rem);
+      font-weight: var(--font-weight-button, 500);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      line-height: 1;
+    }
+    
+    .product-customizer-button:hover {
+      background: var(--color-button-secondary-hover, #333);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    
+    .product-customizer-button:active {
+      transform: translateY(0);
+      box-shadow: none;
+    }
+    
+    .product-customizer-button svg {
+      width: 1.25rem;
+      height: 1.25rem;
+      flex-shrink: 0;
+    }
+    
+    /* Override if theme has specific button classes */
+    .button.product-customizer-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    /* Responsive adjustments */
+    @media screen and (max-width: 749px) {
+      .product-customizer-button {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  </style>
+{% endif %}

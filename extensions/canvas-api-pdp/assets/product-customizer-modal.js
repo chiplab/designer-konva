@@ -123,19 +123,27 @@ if (typeof ProductCustomizerModal === 'undefined') {
         
         /* Target the product info wrapper specifically */
         @supports (container-type: inline-size) {
+          /* Modern theme selectors */
+          [data-product-info],
+          .product-info,
+          product-info,
+          /* Legacy theme selectors */
           .product__info-wrapper,
           .product__info,
-          .product-single__info-wrapper,
-          [data-product-info] {
+          .product-single__info-wrapper {
             container-type: inline-size;
           }
         }
         
         /* Calculate position based on product info section */
+        /* Modern themes */
+        [data-product-info] ~ .product-customizer-modal .pcm-panel,
+        .product-info ~ .product-customizer-modal .pcm-panel,
+        product-info ~ .product-customizer-modal .pcm-panel,
+        /* Legacy themes */
         .product__info-wrapper ~ .product-customizer-modal .pcm-panel,
         .product__info ~ .product-customizer-modal .pcm-panel,
-        .product-single__info-wrapper ~ .product-customizer-modal .pcm-panel,
-        [data-product-info] ~ .product-customizer-modal .pcm-panel {
+        .product-single__info-wrapper ~ .product-customizer-modal .pcm-panel {
           width: 40%;
           min-width: 400px;
           max-width: 600px;
@@ -345,7 +353,14 @@ if (typeof ProductCustomizerModal === 'undefined') {
   
   storeOriginalProductImage() {
     // Find all product images on the page and store their original sources
+    // Updated selectors for Horizons 2025 themes (like Tinker) and legacy themes
     const productImages = document.querySelectorAll(
+      // Horizons 2025 / Modern theme selectors
+      '[data-media-type="image"] img, ' +
+      '[data-product-media] img, ' +
+      '.product-media img, ' +
+      '.media img, ' +
+      // Legacy theme selectors
       '.product__media img, ' +
       '.product-photo-container img, ' +
       '[data-product-featured-image], ' +
@@ -410,7 +425,10 @@ if (typeof ProductCustomizerModal === 'undefined') {
       }
       
       // Fallback: Try to get the current product image from the page
-      const productImages = document.querySelectorAll('[data-product-featured-image], .product__media img, .product-photo-container img');
+      const productImages = document.querySelectorAll(
+        '[data-media-type="image"] img, [data-product-media] img, ' +
+        '[data-product-featured-image], .product__media img, .product-photo-container img'
+      );
       if (productImages.length > 0) {
         previewImage.src = productImages[0].src;
         previewImage.style.display = 'block';
@@ -505,8 +523,16 @@ if (typeof ProductCustomizerModal === 'undefined') {
 
   positionModal() {
     // Find the product info wrapper element
+    // Updated selectors for Horizons 2025 themes and legacy themes
     const productInfo = document.querySelector(
-      '.product__info-wrapper, .product__info, .product-single__info-wrapper, [data-product-info]'
+      // Horizons 2025 / Modern theme selectors
+      '[data-product-info], ' +
+      '.product-info, ' +
+      'product-info, ' + // Web component
+      // Legacy theme selectors
+      '.product__info-wrapper, ' +
+      '.product__info, ' +
+      '.product-single__info-wrapper'
     );
     
     if (productInfo) {

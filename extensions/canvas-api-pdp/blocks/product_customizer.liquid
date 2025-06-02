@@ -4,7 +4,16 @@
 {% endcomment %}
 
 <div class="product-customizer-block">
-  {% render 'product-customizer' %}
+  {% comment %}
+    Use modern snippet for newer themes, legacy for older themes
+    The modern snippet has better support for Horizons 2025 themes
+  {% endcomment %}
+  {% assign use_modern = settings.use_modern_snippet | default: true %}
+  {% if use_modern %}
+    {% render 'product-customizer-modern', product: product %}
+  {% else %}
+    {% render 'product-customizer', product: product %}
+  {% endif %}
 </div>
 
 {% schema %}
@@ -13,6 +22,13 @@
   "target": "section",
   "templates": ["product"],
   "settings": [
+    {
+      "type": "checkbox",
+      "id": "use_modern_snippet",
+      "label": "Use modern theme support",
+      "info": "Enable this for Horizons 2025 themes like Tinker",
+      "default": true
+    },
     {
       "type": "checkbox",
       "id": "show_preview",
@@ -37,7 +53,7 @@
           "label": "Outline"
         }
       ],
-      "default": "primary"
+      "default": "secondary"
     }
   ]
 }

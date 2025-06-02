@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://wives-apparent-bend-mothers.trycloudflare.com"
+application_url = "https://meals-football-corporations-pubs.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://wives-apparent-bend-mothers.trycloudflare.com/auth/callback",
-  "https://wives-apparent-bend-mothers.trycloudflare.com/auth/shopify/callback",
-  "https://wives-apparent-bend-mothers.trycloudflare.com/api/auth/callback"
+  "https://meals-football-corporations-pubs.trycloudflare.com/auth/callback",
+  "https://meals-football-corporations-pubs.trycloudflare.com/auth/shopify/callback",
+  "https://meals-football-corporations-pubs.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://wives-apparent-bend-mothers.trycloudflare.com/api"
+url = "https://meals-football-corporations-pubs.trycloudflare.com/api"
 subpath = "designer"
 prefix = "apps"
 
