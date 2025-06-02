@@ -60,12 +60,14 @@ export default function FontBrowser({
   React.useEffect(() => {
     if (!isOpen) return;
 
-    observerRef.current = new IntersectionObserver(
+    // Create the observer
+    const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach(entry => {
           if (entry.isIntersecting) {
             const fontId = entry.target.getAttribute('data-font-id');
             if (fontId) {
+              console.log('Font becoming visible:', fontId);
               setVisibleFonts(prev => new Set(prev).add(fontId));
             }
           }
@@ -78,13 +80,24 @@ export default function FontBrowser({
       }
     );
 
-    // Observe all font items
-    fontRefs.current.forEach((element) => {
-      observerRef.current?.observe(element);
-    });
+    observerRef.current = observer;
+
+    // Check for fonts already in viewport after a short delay
+    setTimeout(() => {
+      fontRefs.current.forEach((element, fontId) => {
+        const rect = element.getBoundingClientRect();
+        const inViewport = rect.top < window.innerHeight && rect.bottom > 0;
+        if (inViewport) {
+          console.log('Font initially in viewport:', fontId);
+          setVisibleFonts(prev => new Set(prev).add(fontId));
+        }
+      });
+    }, 100);
 
     return () => {
-      observerRef.current?.disconnect();
+      observer.disconnect();
+      fontRefs.current.clear();
+      setVisibleFonts(new Set());
     };
   }, [isOpen]);
 
@@ -151,12 +164,30 @@ export default function FontBrowser({
     const isLoading = loadingFonts.has(font.id);
     const isSelected = font.family === currentFont;
     const isLoaded = fontLoader.isFontLoaded(font.family);
+    
+    // Debug logging
+    React.useEffect(() => {
+      if (!isRecent && isVisible) {
+        console.log(`Font ${font.id} is now visible`);
+      }
+    }, [isVisible, font.id, isRecent]);
 
     return (
       <div
         ref={(el) => {
           if (el && !isRecent) {
             fontRefs.current.set(font.id, el);
+            // Start observing this element if observer exists
+            if (observerRef.current) {
+              observerRef.current.observe(el);
+            }
+          } else if (!el && !isRecent) {
+            // Element is being removed, stop observing
+            const existingEl = fontRefs.current.get(font.id);
+            if (existingEl && observerRef.current) {
+              observerRef.current.unobserve(existingEl);
+            }
+            fontRefs.current.delete(font.id);
           }
         }}
         data-font-id={font.id}
@@ -228,7 +259,18 @@ export default function FontBrowser({
             {previewText}
           </div>
         ) : (
-          <div style={{ height: '29px', backgroundColor: '#f0f0f0', borderRadius: '4px' }} />
+          <div style={{ 
+            height: '29px', 
+            backgroundColor: '#f0f0f0', 
+            borderRadius: '4px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '12px',
+            color: '#999'
+          }}>
+            Loading preview...
+          </div>
         )}
       </div>
     );
