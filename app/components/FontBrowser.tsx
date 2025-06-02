@@ -41,8 +41,11 @@ export default function FontBrowser({
   const [recentFonts, setRecentFonts] = React.useState<string[]>([]);
   const [loadingFonts, setLoadingFonts] = React.useState<Set<string>>(new Set());
   const [visibleFonts, setVisibleFonts] = React.useState<Set<string>>(new Set());
+  const [loadedFonts, setLoadedFonts] = React.useState<Set<string>>(new Set());
   const observerRef = React.useRef<IntersectionObserver | null>(null);
   const fontRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
+  const loadQueueRef = React.useRef<string[]>([]);
+  const isLoadingRef = React.useRef(false);
 
   // Load recent fonts from localStorage
   React.useEffect(() => {
@@ -107,6 +110,7 @@ export default function FontBrowser({
       observer.disconnect();
       fontRefs.current.clear();
       setVisibleFonts(new Set());
+      setLoadedFonts(new Set());
     };
   }, [isOpen]);
 
@@ -172,9 +176,36 @@ export default function FontBrowser({
     const isVisible = isRecent || visibleFonts.has(font.id);
     const isLoading = loadingFonts.has(font.id);
     const isSelected = font.family === currentFont;
-    const isLoaded = fontLoader.isFontLoaded(font.family);
+    const isLoaded = loadedFonts.has(font.id) || fontLoader.isFontLoaded(font.family);
     
-    // Debug logging (removed to prevent infinite loop)
+    // Load font when it becomes visible
+    React.useEffect(() => {
+      if (isVisible && !isLoaded && !isLoading) {
+        console.log(`Loading font: ${font.family}`);
+        // Add to loading state
+        setLoadingFonts(prev => new Set(prev).add(font.id));
+        
+        // Load the font
+        fontLoader.loadFont(font).then(() => {
+          console.log(`Font loaded: ${font.family}`);
+          // Remove from loading state and add to loaded
+          setLoadingFonts(prev => {
+            const next = new Set(prev);
+            next.delete(font.id);
+            return next;
+          });
+          setLoadedFonts(prev => new Set(prev).add(font.id));
+        }).catch(error => {
+          console.error(`Failed to load font ${font.family}:`, error);
+          // Remove from loading state even on error
+          setLoadingFonts(prev => {
+            const next = new Set(prev);
+            next.delete(font.id);
+            return next;
+          });
+        });
+      }
+    }, [isVisible, isLoaded, isLoading, font]);
 
     return (
       <div
