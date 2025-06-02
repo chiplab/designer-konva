@@ -109,6 +109,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/raleway/raleway-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/raleway/raleway-bold.woff2'
       }
     },
     fallback: 'sans-serif'
@@ -139,6 +143,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/archivo/archivo-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/archivo/archivo-bold.woff2'
       }
     },
     fallback: 'sans-serif'
@@ -152,6 +160,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/archivo-narrow/archivo-narrow-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/archivo-narrow/archivo-narrow-bold.woff2'
       }
     },
     fallback: 'sans-serif'
@@ -165,6 +177,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/barlow-semi-condensed/barlow-semi-condensed-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/barlow-semi-condensed/barlow-semi-condensed-bold.woff2'
       }
     },
     fallback: 'sans-serif'
@@ -178,6 +194,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/alumni-sans/alumni-sans-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/alumni-sans/alumni-sans-bold.woff2'
       }
     },
     fallback: 'sans-serif'
@@ -191,6 +211,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/arimo/arimo-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/arimo/arimo-bold.woff2'
       }
     },
     fallback: 'sans-serif'
@@ -249,6 +273,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/merriweather/merriweather-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/merriweather/merriweather-bold.woff2'
       }
     },
     fallback: 'serif'
@@ -262,6 +290,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/lora/lora-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/lora/lora-bold.woff2'
       }
     },
     fallback: 'serif'
@@ -301,6 +333,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/bellota/bellota-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/bellota/bellota-bold.woff2'
       }
     },
     fallback: 'serif'
@@ -329,6 +365,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/oswald/oswald-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/oswald/oswald-bold.woff2'
       }
     },
     fallback: 'sans-serif'
@@ -543,6 +583,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/caveat/caveat-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/caveat/caveat-bold.woff2'
       }
     },
     fallback: 'cursive'
@@ -556,6 +600,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/kalam/kalam-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/kalam/kalam-bold.woff2'
       }
     },
     fallback: 'cursive'
@@ -582,6 +630,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/amatic-sc/amatic-sc-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/amatic-sc/amatic-sc-bold.woff2'
       }
     },
     fallback: 'cursive'
@@ -610,6 +662,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/roboto-mono/roboto-mono-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/roboto-mono/roboto-mono-bold.woff2'
       }
     },
     fallback: 'monospace'
@@ -623,6 +679,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/source-code-pro/source-code-pro-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/source-code-pro/source-code-pro-bold.woff2'
       }
     },
     fallback: 'monospace'
@@ -636,6 +696,10 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
       400: {
         style: 'normal',
         url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/ibm-plex-mono/ibm-plex-mono-regular.woff2'
+      },
+      700: {
+        style: 'normal',
+        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/ibm-plex-mono/ibm-plex-mono-bold.woff2'
       }
     },
     fallback: 'monospace'

@@ -237,6 +237,12 @@ s3://shopify-designs/fonts/{font-id}/
 3. **CORS Resolved**: Self-hosting on S3 eliminates cross-origin issues
 4. **Latin Subset**: Downloads proper Latin character set (U+0000-00FF)
 5. **Canvas Integration**: Full support in both designer and frontend renderer
+6. **True Bold Support**: 26 fonts now have proper bold (700) weights for authentic bold rendering
+   - Sans-serif: Roboto, Open Sans, Lato, Montserrat, Raleway, Poppins, Archivo, Archivo Narrow, Barlow Semi Condensed, Alumni Sans, Arimo
+   - Serif: Playfair Display, Merriweather, Lora, Bellota
+   - Display: Oswald
+   - Script: Dancing Script, Caveat, Kalam, Amatic SC
+   - Monospace: Roboto Mono, Source Code Pro, IBM Plex Mono
 
 ## Phase 2: Font Browser (Future Enhancement)
 
