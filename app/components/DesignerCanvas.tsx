@@ -101,9 +101,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
   const [baseImageUrl, setBaseImageUrl] = React.useState('/media/images/8-spot-red-base-image.png');
   // Use 'anonymous' only for external URLs (S3), not for local files
   const [baseImage] = useImage(baseImageUrl, baseImageUrl.startsWith('http') ? 'anonymous' : undefined);
-  const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
+  const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
-  const [curvedTextElements, setCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string, fontSize?: number, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
+  const [curvedTextElements, setCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [imageElements, setImageElements] = React.useState<Array<{id: string, url: string, x: number, y: number, width: number, height: number, rotation?: number}>>([]);
   const [designableArea, setDesignableArea] = React.useState({
     width: 744,
@@ -1869,6 +1869,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                 y={textEl.y}
                 fontSize={textEl.fontSize || 24}
                 fontFamily={textEl.fontFamily}
+                fontStyle={textEl.fontWeight === 'bold' ? 'bold' : 'normal'}
                 fill={textEl.fill === 'gold-gradient' ? undefined : (textEl.fill || "black")}
                 fillLinearGradientStartPoint={textEl.fill === 'gold-gradient' ? { x: 0, y: 0 } : undefined}
                 fillLinearGradientEndPoint={textEl.fill === 'gold-gradient' ? { x: 0, y: textEl.fontSize || 24 } : undefined}
@@ -2056,6 +2057,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                   data={pathData}
                   fontSize={curvedEl.fontSize || 20}
                   fontFamily={curvedEl.fontFamily}
+                  fontStyle={curvedEl.fontWeight === 'bold' ? 'bold' : 'normal'}
                   fill={curvedEl.fill === 'gold-gradient' ? undefined : (curvedEl.fill || "black")}
                   fillLinearGradientStartPoint={curvedEl.fill === 'gold-gradient' ? { x: 0, y: 0 } : undefined}
                   fillLinearGradientEndPoint={curvedEl.fill === 'gold-gradient' ? { x: 0, y: curvedEl.fontSize || 20 } : undefined}
@@ -2357,6 +2359,79 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                   }}
                 />
               </div>
+              
+              {/* Bold Button */}
+              <button
+                onClick={async () => {
+                  const isTextEl = textElements.find(el => el.id === selectedId);
+                  const isCurvedTextEl = curvedTextElements.find(el => el.id === selectedId);
+                  
+                  if (isTextEl) {
+                    const newWeight = isTextEl.fontWeight === 'bold' ? 'normal' : 'bold';
+                    // Load bold font weight if needed
+                    if (newWeight === 'bold') {
+                      const fontDef = CURATED_FONTS.find(f => f.family === isTextEl.fontFamily);
+                      if (fontDef && fontDef.weights[700]) {
+                        await fontLoader.loadFont(fontDef, 700);
+                      }
+                    }
+                    setTextElements(prev =>
+                      prev.map(el =>
+                        el.id === selectedId
+                          ? { ...el, fontWeight: newWeight }
+                          : el
+                      )
+                    );
+                  } else if (isCurvedTextEl) {
+                    const newWeight = isCurvedTextEl.fontWeight === 'bold' ? 'normal' : 'bold';
+                    // Load bold font weight if needed
+                    if (newWeight === 'bold') {
+                      const fontDef = CURATED_FONTS.find(f => f.family === isCurvedTextEl.fontFamily);
+                      if (fontDef && fontDef.weights[700]) {
+                        await fontLoader.loadFont(fontDef, 700);
+                      }
+                    }
+                    setCurvedTextElements(prev =>
+                      prev.map(el =>
+                        el.id === selectedId
+                          ? { ...el, fontWeight: newWeight }
+                          : el
+                      )
+                    );
+                  }
+                }}
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  padding: '6px',
+                  border: '1px solid #ddd',
+                  borderRadius: '6px',
+                  background: (
+                    textElements.find(el => el.id === selectedId)?.fontWeight === 'bold' ||
+                    curvedTextElements.find(el => el.id === selectedId)?.fontWeight === 'bold'
+                  ) ? '#e3f2fd' : 'white',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '18px',
+                  fontWeight: 'bold',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  if (e.currentTarget.style.backgroundColor !== 'rgb(227, 242, 253)') {
+                    e.currentTarget.style.backgroundColor = '#f5f5f5';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  const isBold = textElements.find(el => el.id === selectedId)?.fontWeight === 'bold' ||
+                    curvedTextElements.find(el => el.id === selectedId)?.fontWeight === 'bold';
+                  e.currentTarget.style.backgroundColor = isBold ? '#e3f2fd' : 'white';
+                }}
+                title="Bold"
+              >
+                B
+              </button>
               
               {/* Color Swatch */}
               <div style={{ position: 'relative' }}>
