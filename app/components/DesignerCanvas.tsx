@@ -3,6 +3,7 @@ import { Stage, Layer, Text, TextPath, Transformer, Group, Image, Rect } from 'r
 import useImage from 'use-image';
 import { CURATED_FONTS, getFontById, getFontsByCategory, DEFAULT_FONT } from '../constants/fonts';
 import { fontLoader } from '../services/font-loader';
+import FontBrowser from './FontBrowser';
 
 // Image element component
 const ImageElement: React.FC<{
@@ -128,6 +129,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
 
   // Font Management - Using curated fonts from S3
   const [showFontPicker, setShowFontPicker] = React.useState(false);
+  const [showFontBrowser, setShowFontBrowser] = React.useState(false);
   
   // Priority fonts for immediate loading
   const priorityFontIds = ['arial', 'roboto', 'open-sans', 'montserrat', 'playfair-display'];
@@ -2332,6 +2334,40 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
                         </div>
                       );
                     })}
+                    
+                    {/* Browse More Fonts Button */}
+                    <div style={{
+                      borderTop: '1px solid #eee',
+                      padding: '8px'
+                    }}>
+                      <button
+                        onClick={() => {
+                          setShowFontPicker(false);
+                          setShowFontBrowser(true);
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '12px',
+                          border: 'none',
+                          background: '#f0f0f0',
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                          fontSize: '14px',
+                          fontWeight: 500,
+                          color: '#0066ff',
+                          borderRadius: '6px',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#e0e0e0';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = '#f0f0f0';
+                        }}
+                      >
+                        Browse All Fonts...
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2831,6 +2867,20 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
           />
         </div>
       )}
+      
+      {/* Font Browser Modal */}
+      <FontBrowser
+        isOpen={showFontBrowser}
+        onClose={() => setShowFontBrowser(false)}
+        onSelectFont={handleFontChange}
+        currentFont={
+          textElements.find(el => el.id === selectedId)?.fontFamily ||
+          gradientTextElements.find(el => el.id === selectedId)?.fontFamily ||
+          curvedTextElements.find(el => el.id === selectedId)?.fontFamily ||
+          'Arial'
+        }
+        previewText="The quick brown fox jumps over the lazy dog"
+      />
       
       {/* CSS Animation for notification */}
       <style dangerouslySetInnerHTML={{__html: `
