@@ -67,7 +67,6 @@ const FONT_LIST = [
   { id: 'lobster', family: 'Lobster', displayName: 'Lobster', category: 'display' },
   { id: 'amaranth', family: 'Amaranth', displayName: 'Amaranth', category: 'display' },
   { id: 'bevan', family: 'Bevan', displayName: 'Bevan', category: 'display' },
-  { id: 'blazma', family: 'Blazma', displayName: 'Blazma', category: 'display' },
   // Script
   { id: 'alex-brush', family: 'Alex Brush', displayName: 'Alex Brush', category: 'script' },
   { id: 'allison', family: 'Allison', displayName: 'Allison', category: 'script' },

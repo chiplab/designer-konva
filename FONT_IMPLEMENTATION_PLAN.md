@@ -1,9 +1,9 @@
 # Font Implementation Plan
 
 ## Overview
-Implement a two-phase font system for the designer tool, starting with a curated selection of 50 fonts (Phase 1) and later expanding to a full font browser (Phase 2).
+Implement a two-phase font system for the designer tool, starting with a curated selection of 49 fonts (Phase 1) and later expanding to a full font browser (Phase 2).
 
-## Phase 1: Curated Font Library (50 Fonts) ✅ COMPLETED
+## Phase 1: Curated Font Library (49 Fonts) ✅ COMPLETED
 
 ### Implementation Status
 Phase 1 has been successfully implemented with the following components:
@@ -11,7 +11,7 @@ Phase 1 has been successfully implemented with the following components:
 ### Selected Fonts
 Based on VistaPrint's proven selection, covering all major use cases:
 
-#### Sans Serif (15 fonts)
+#### Sans Serif (12 fonts)
 - Arial
 - Roboto (Regular, Bold)
 - Open Sans (Regular, Bold)
@@ -35,7 +35,7 @@ Based on VistaPrint's proven selection, covering all major use cases:
 - Antic Slab
 - Bellota
 
-#### Display/Decorative (12 fonts)
+#### Display/Decorative (11 fonts)
 - Bebas Neue
 - Oswald
 - Anton
@@ -47,7 +47,6 @@ Based on VistaPrint's proven selection, covering all major use cases:
 - Lobster
 - Amaranth
 - Bevan
-- Blazma
 
 #### Script/Handwriting (10 fonts)
 - Alex Brush
@@ -191,7 +190,7 @@ export class FontLoader {
 
 #### Backend Tasks ✅
 1. ✅ Create S3 folder structure for fonts
-2. ✅ Download and upload 50 fonts to S3 (via setup-fonts.mjs script)
+2. ✅ Download and upload 49 fonts to S3 (via setup-fonts.mjs script)
 3. ✅ Generate preview images for each font (styled previews showing font characteristics)
 4. ✅ Create font metadata constants file (app/constants/fonts.ts)
 5. ✅ Implement font loading service (app/services/font-loader.ts)
@@ -227,11 +226,14 @@ s3://shopify-designs/fonts/{font-id}/
 
 #### Scripts
 - `npm run setup-fonts`: Downloads fonts from Google Fonts and uploads to S3
-- `npm run generate-font-previews`: Generates styled preview images
+- `node scripts/generate-font-previews-with-ttf.mjs`: Generates preview images using actual TTF fonts
+  - Downloads TTF files temporarily from Google Fonts
+  - Creates accurate previews at 50px size
+  - Cleans up after each font to minimize resource usage
 
 #### Key Features Implemented
 1. **Visual Font Picker**: Displays font preview images with appropriate styling
-2. **Performance Optimized**: Only loads fonts when selected, not all 50 at once
+2. **Performance Optimized**: Only loads fonts when selected, not all 49 at once
 3. **CORS Resolved**: Self-hosting on S3 eliminates cross-origin issues
 4. **Latin Subset**: Downloads proper Latin character set (U+0000-00FF)
 5. **Canvas Integration**: Full support in both designer and frontend renderer

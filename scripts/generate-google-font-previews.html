@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Google Font Preview Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        #canvas-container {
+            margin: 20px 0;
+        }
+        .preview-item {
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #status {
+            margin: 20px 0;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Generate Google Font Previews</h1>
+    <p>This will generate preview images for the problematic script fonts using actual Google Fonts.</p>
+    
+    <button onclick="generatePreviews()">Generate Previews</button>
+    
+    <div id="status"></div>
+    <div id="canvas-container">
+        <canvas id="canvas" width="300" height="60" style="border: 1px solid #ddd;"></canvas>
+    </div>
+    <div id="previews"></div>
+
+    <script>
+        // Fonts that need proper previews
+        const FONTS_TO_GENERATE = [
+            { id: 'dancing-script', family: 'Dancing Script', displayName: 'Dancing Script' },
+            { id: 'parisienne', family: 'Parisienne', displayName: 'Parisienne' },
+            { id: 'sacramento', family: 'Sacramento', displayName: 'Sacramento' },
+            { id: 'caveat', family: 'Caveat', displayName: 'Caveat' },
+            { id: 'kalam', family: 'Kalam', displayName: 'Kalam' },
+            { id: 'satisfy', family: 'Satisfy', displayName: 'Satisfy' },
+            { id: 'amatic-sc', family: 'Amatic SC', displayName: 'Amatic SC' }
+        ];
+
+        async function loadGoogleFont(fontFamily) {
+            const link = document.createElement('link');
+            link.href = `https://fonts.googleapis.com/css2?family=${fontFamily.replace(' ', '+')}:wght@400&display=swap`;
+            link.rel = 'stylesheet';
+            document.head.appendChild(link);
+            
+            // Wait for font to load
+            await document.fonts.load(`48px "${fontFamily}"`);
+        }
+
+        async function generatePreview(fontDef) {
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Clear canvas
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, 300, 60);
+            
+            // Load the font
+            await loadGoogleFont(fontDef.family);
+            
+            // Draw text with actual Google Font
+            ctx.fillStyle = '#000000';
+            ctx.font = `48px "${fontDef.family}"`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(fontDef.displayName, 150, 30);
+            
+            // Get data URL
+            const dataUrl = canvas.toDataURL('image/png');
+            
+            // Display preview
+            const previewContainer = document.getElementById('previews');
+            const item = document.createElement('div');
+            item.className = 'preview-item';
+            item.innerHTML = `
+                <span>${fontDef.displayName}</span>
+                <img src="${dataUrl}" alt="${fontDef.displayName}" style="border: 1px solid #ddd;">
+                <a href="${dataUrl}" download="${fontDef.id}-preview.png">Download</a>
+            `;
+            previewContainer.appendChild(item);
+            
+            return dataUrl;
+        }
+
+        async function generatePreviews() {
+            const statusEl = document.getElementById('status');
+            const previewsEl = document.getElementById('previews');
+            
+            statusEl.textContent = 'Generating previews...';
+            previewsEl.innerHTML = '';
+            
+            for (const fontDef of FONTS_TO_GENERATE) {
+                statusEl.textContent = `Generating preview for ${fontDef.displayName}...`;
+                await generatePreview(fontDef);
+                
+                // Small delay between fonts
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            
+            statusEl.innerHTML = `
+                <strong>All previews generated!</strong><br>
+                Right-click and save each image, then upload to S3 at:<br>
+                <code>fonts/{font-id}/preview.png</code>
+            `;
+        }
+    </script>
+</body>
+</html>

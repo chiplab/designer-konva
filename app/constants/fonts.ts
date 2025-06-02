@@ -450,19 +450,6 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
     },
     fallback: 'serif'
   },
-  {
-    id: 'blayzma',
-    family: 'Blazma',
-    displayName: 'Blazma',
-    category: 'display',
-    weights: {
-      400: {
-        style: 'normal',
-        url: 'https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/blazma/blazma-regular.woff2'
-      }
-    },
-    fallback: 'sans-serif'
-  },
 
   // Script Fonts
   {
@@ -671,7 +658,7 @@ const CURATED_FONTS_BASE: Omit<FontDefinition, 'previewUrl'>[] = [
 // Add preview URLs to all fonts and export
 export const CURATED_FONTS: FontDefinition[] = CURATED_FONTS_BASE.map(font => ({
   ...font,
-  previewUrl: `https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/${font.id}/preview.png?v=2`
+  previewUrl: `https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/${font.id}/preview.png?v=3`
 }));
 
 // Helper function to get font by ID

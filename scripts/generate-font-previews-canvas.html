@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Font Preview Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        #status {
+            margin: 20px 0;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 4px;
+        }
+        #preview {
+            margin: 20px 0;
+        }
+        .preview-item {
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .preview-item img {
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <h1>Font Preview Generator</h1>
+    <p>This page generates font preview images. Open developer console to see the generated data URLs.</p>
+    <button onclick="generatePreviews()">Generate Previews</button>
+    <div id="status"></div>
+    <div id="preview"></div>
+
+    <script>
+        const FONT_LIST = [
+            // Sans Serif
+            { id: 'arial', family: 'Arial', displayName: 'Arial', isSystem: true },
+            { id: 'roboto', family: 'Roboto', displayName: 'Roboto' },
+            { id: 'open-sans', family: 'Open Sans', displayName: 'Open Sans' },
+            { id: 'lato', family: 'Lato', displayName: 'Lato' },
+            { id: 'montserrat', family: 'Montserrat', displayName: 'Montserrat' },
+            { id: 'raleway', family: 'Raleway', displayName: 'Raleway' },
+            { id: 'poppins', family: 'Poppins', displayName: 'Poppins' },
+            { id: 'archivo', family: 'Archivo', displayName: 'Archivo' },
+            { id: 'archivo-narrow', family: 'Archivo Narrow', displayName: 'Archivo Narrow' },
+            { id: 'barlow-semi-condensed', family: 'Barlow Semi Condensed', displayName: 'Barlow Semi Condensed' },
+            { id: 'alumni-sans', family: 'Alumni Sans', displayName: 'Alumni Sans' },
+            { id: 'arimo', family: 'Arimo', displayName: 'Arimo' },
+            // Serif
+            { id: 'times-new-roman', family: 'Times New Roman', displayName: 'Times New Roman', isSystem: true },
+            { id: 'georgia', family: 'Georgia', displayName: 'Georgia', isSystem: true },
+            { id: 'playfair-display', family: 'Playfair Display', displayName: 'Playfair Display' },
+            { id: 'merriweather', family: 'Merriweather', displayName: 'Merriweather' },
+            { id: 'lora', family: 'Lora', displayName: 'Lora' },
+            { id: 'abril-fatface', family: 'Abril Fatface', displayName: 'Abril Fatface' },
+            { id: 'antic-slab', family: 'Antic Slab', displayName: 'Antic Slab' },
+            { id: 'bellota', family: 'Bellota', displayName: 'Bellota' },
+            // Display
+            { id: 'bebas-neue', family: 'Bebas Neue', displayName: 'Bebas Neue' },
+            { id: 'oswald', family: 'Oswald', displayName: 'Oswald' },
+            { id: 'anton', family: 'Anton', displayName: 'Anton' },
+            { id: 'righteous', family: 'Righteous', displayName: 'Righteous' },
+            { id: 'bowlby-one', family: 'Bowlby One', displayName: 'Bowlby One' },
+            { id: 'boogaloo', family: 'Boogaloo', displayName: 'Boogaloo' },
+            { id: 'fredoka-one', family: 'Fredoka One', displayName: 'Fredoka One' },
+            { id: 'pacifico', family: 'Pacifico', displayName: 'Pacifico' },
+            { id: 'lobster', family: 'Lobster', displayName: 'Lobster' },
+            { id: 'amaranth', family: 'Amaranth', displayName: 'Amaranth' },
+            { id: 'bevan', family: 'Bevan', displayName: 'Bevan' },
+            { id: 'blazma', family: 'Blazma', displayName: 'Blazma' },
+            // Script
+            { id: 'alex-brush', family: 'Alex Brush', displayName: 'Alex Brush' },
+            { id: 'allison', family: 'Allison', displayName: 'Allison' },
+            { id: 'dancing-script', family: 'Dancing Script', displayName: 'Dancing Script' },
+            { id: 'great-vibes', family: 'Great Vibes', displayName: 'Great Vibes' },
+            { id: 'parisienne', family: 'Parisienne', displayName: 'Parisienne' },
+            { id: 'sacramento', family: 'Sacramento', displayName: 'Sacramento' },
+            { id: 'caveat', family: 'Caveat', displayName: 'Caveat' },
+            { id: 'kalam', family: 'Kalam', displayName: 'Kalam' },
+            { id: 'satisfy', family: 'Satisfy', displayName: 'Satisfy' },
+            { id: 'amatic-sc', family: 'Amatic SC', displayName: 'Amatic SC' },
+            // Monospace
+            { id: 'courier-new', family: 'Courier New', displayName: 'Courier New', isSystem: true },
+            { id: 'roboto-mono', family: 'Roboto Mono', displayName: 'Roboto Mono' },
+            { id: 'source-code-pro', family: 'Source Code Pro', displayName: 'Source Code Pro' },
+            { id: 'ibm-plex-mono', family: 'IBM Plex Mono', displayName: 'IBM Plex Mono' },
+            { id: 'jetbrains-mono', family: 'JetBrains Mono', displayName: 'JetBrains Mono' }
+        ];
+
+        async function loadFont(fontDef) {
+            if (fontDef.isSystem) return true;
+            
+            try {
+                const fontUrl = `https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/${fontDef.id}/${fontDef.id}-regular.woff2`;
+                const font = new FontFace(fontDef.family, `url(${fontUrl})`);
+                await font.load();
+                document.fonts.add(font);
+                return true;
+            } catch (error) {
+                console.error(`Failed to load font ${fontDef.family}:`, error);
+                return false;
+            }
+        }
+
+        async function generatePreview(fontDef) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 300;
+            canvas.height = 60;
+            const ctx = canvas.getContext('2d');
+            
+            // White background
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Load font if needed
+            const fontLoaded = await loadFont(fontDef);
+            
+            // Draw text
+            ctx.fillStyle = '#000000';
+            ctx.font = `24px "${fontDef.family}"`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(fontDef.displayName, canvas.width / 2, canvas.height / 2);
+            
+            return canvas.toDataURL('image/png');
+        }
+
+        async function generatePreviews() {
+            const statusEl = document.getElementById('status');
+            const previewEl = document.getElementById('preview');
+            
+            statusEl.textContent = 'Generating previews...';
+            previewEl.innerHTML = '';
+            
+            const results = [];
+            
+            for (const fontDef of FONT_LIST) {
+                try {
+                    statusEl.textContent = `Generating preview for ${fontDef.displayName}...`;
+                    const dataUrl = await generatePreview(fontDef);
+                    
+                    // Display preview
+                    const item = document.createElement('div');
+                    item.className = 'preview-item';
+                    item.innerHTML = `
+                        <span style="width: 200px">${fontDef.displayName}</span>
+                        <img src="${dataUrl}" alt="${fontDef.displayName}">
+                    `;
+                    previewEl.appendChild(item);
+                    
+                    // Log for manual upload
+                    console.log(`${fontDef.id}:`, dataUrl);
+                    results.push({ id: fontDef.id, dataUrl });
+                    
+                } catch (error) {
+                    console.error(`Failed to generate preview for ${fontDef.displayName}:`, error);
+                }
+            }
+            
+            statusEl.textContent = `Generated ${results.length} previews. Check console for data URLs.`;
+            
+            // Log all results as JSON for easy copying
+            console.log('All preview data:', JSON.stringify(results, null, 2));
+        }
+    </script>
+</body>
+</html>

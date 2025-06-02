@@ -639,3 +639,71 @@ The designer now features a sophisticated two-part toolbar system:
 - **Delete/Backspace**: Remove selected element
 - **Ctrl/Cmd+D**: Duplicate selected element
 - **Escape**: Deselect element (when in text input)
+
+## Font System
+
+### Overview
+The application uses a curated library of 49 fonts hosted on AWS S3, replacing direct Google Fonts integration for better performance and reliability.
+
+### Font Infrastructure
+
+1. **Font Storage**: All fonts are stored in S3 at `https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/`
+2. **Font Loading**: Dynamic font loading using the FontFace API with fallback support
+3. **Font Categories**: Sans Serif, Serif, Display, Script, and Monospace
+4. **Caching**: Fonts are cached in the browser after first load
+
+### Key Components
+
+- **Font Constants** (`app/constants/fonts.ts`): Defines all 50 curated fonts with metadata
+- **Font Loader Service** (`app/services/font-loader.ts`): Handles dynamic font loading and caching
+- **Font Setup Script** (`scripts/setup-fonts.mjs`): Downloads fonts from Google Fonts and uploads to S3
+
+### Usage in Designer
+
+1. Fonts are loaded on-demand when selected in the font picker
+2. Priority fonts (Arial, Roboto, Open Sans, Montserrat, Playfair Display) are preloaded on designer initialization
+3. Font loading state is tracked and shown in the UI (✓ = loaded, ⏳ = loading)
+4. Templates automatically load all required fonts when opened
+
+### Frontend Rendering
+
+The canvas text renderer (`canvas-text-renderer.js`) includes font loading support:
+- Maps font families to S3 URLs
+- Loads fonts before rendering templates
+- Ensures consistent rendering between designer and frontend
+
+### Running Font Setup
+
+To download and upload fonts to S3:
+```bash
+npm run setup-fonts
+```
+
+This script:
+1. Downloads fonts from Google Fonts API
+2. Uploads them to S3 with proper caching headers
+3. Creates placeholders for system fonts
+
+### Font Preview Images
+
+For performance optimization, the font picker displays preview images instead of loading all fonts:
+
+```bash
+# Generate previews with actual TTF fonts (recommended)
+node scripts/generate-font-previews-with-ttf.mjs
+
+# Alternative: Simple styled previews
+node scripts/generate-font-previews-simple.mjs
+```
+
+The TTF-based script:
+1. Downloads TTF files from Google Fonts for each font
+2. Registers them with node-canvas 
+3. Generates accurate 300x60px preview images at 50px font size
+4. Uploads to S3 and cleans up TTF files
+5. Works for all 49 Google Fonts in our library
+
+Preview images are stored at:
+`https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/{font-id}/preview.png?v=3`
+
+The DesignerCanvas component displays these preview images in the font picker dropdown, only loading the actual font when selected.

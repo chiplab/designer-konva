@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://just-abu-density-novelty.trycloudflare.com"
+application_url = "https://powerful-wealth-gzip-disclaimers.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://just-abu-density-novelty.trycloudflare.com/auth/callback",
-  "https://just-abu-density-novelty.trycloudflare.com/auth/shopify/callback",
-  "https://just-abu-density-novelty.trycloudflare.com/api/auth/callback"
+  "https://powerful-wealth-gzip-disclaimers.trycloudflare.com/auth/callback",
+  "https://powerful-wealth-gzip-disclaimers.trycloudflare.com/auth/shopify/callback",
+  "https://powerful-wealth-gzip-disclaimers.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://just-abu-density-novelty.trycloudflare.com/api"
+url = "https://powerful-wealth-gzip-disclaimers.trycloudflare.com/api"
 subpath = "designer"
 prefix = "apps"
 
