@@ -38,7 +38,6 @@ export default function FontBrowser({
 }: FontBrowserProps) {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
-  const [customPreviewText, setCustomPreviewText] = React.useState(previewText);
   const [recentFonts, setRecentFonts] = React.useState<string[]>([]);
   const [loadingFonts, setLoadingFonts] = React.useState<Set<string>>(new Set());
   const [visibleFonts, setVisibleFonts] = React.useState<Set<string>>(new Set());
@@ -226,7 +225,7 @@ export default function FontBrowser({
               whiteSpace: 'nowrap'
             }}
           >
-            {customPreviewText}
+            {previewText}
           </div>
         ) : (
           <div style={{ height: '29px', backgroundColor: '#f0f0f0', borderRadius: '4px' }} />
@@ -374,33 +373,6 @@ export default function FontBrowser({
               </button>
             ))}
           </div>
-        </div>
-        
-        {/* Preview Text Input */}
-        <div style={{
-          padding: '16px 24px',
-          borderBottom: '1px solid #e0e0e0'
-        }}>
-          <input
-            type="text"
-            placeholder="Type your preview text..."
-            value={customPreviewText}
-            onChange={(e) => setCustomPreviewText(e.target.value || DEFAULT_PREVIEW_TEXT)}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              fontSize: '14px',
-              border: '1px solid #ddd',
-              borderRadius: '6px',
-              outline: 'none'
-            }}
-            onFocus={(e) => {
-              e.currentTarget.style.borderColor = '#0066ff';
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.borderColor = '#ddd';
-            }}
-          />
         </div>
         
         {/* Font List */}

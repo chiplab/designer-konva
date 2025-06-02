@@ -2879,7 +2879,12 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
           curvedTextElements.find(el => el.id === selectedId)?.fontFamily ||
           'Arial'
         }
-        previewText="The quick brown fox jumps over the lazy dog"
+        previewText={
+          textElements.find(el => el.id === selectedId)?.text ||
+          gradientTextElements.find(el => el.id === selectedId)?.text ||
+          curvedTextElements.find(el => el.id === selectedId)?.text ||
+          "The quick brown fox jumps over the lazy dog"
+        }
       />
       
       {/* CSS Animation for notification */}
