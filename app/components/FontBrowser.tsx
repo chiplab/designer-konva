@@ -66,12 +66,14 @@ export default function FontBrowser({
         entries.forEach(entry => {
           if (entry.isIntersecting) {
             const fontId = entry.target.getAttribute('data-font-id');
-            if (fontId && !visibleFonts.has(fontId)) {
-              console.log('Font becoming visible:', fontId);
-              // Add a small delay to stagger loading
-              setTimeout(() => {
-                setVisibleFonts(prev => new Set(prev).add(fontId));
-              }, Math.random() * 200); // Random delay up to 200ms
+            if (fontId) {
+              setVisibleFonts(prev => {
+                if (prev.has(fontId)) {
+                  return prev; // Already visible, don't update state
+                }
+                console.log('Font becoming visible:', fontId);
+                return new Set(prev).add(fontId);
+              });
             }
           }
         });
@@ -172,23 +174,21 @@ export default function FontBrowser({
     const isSelected = font.family === currentFont;
     const isLoaded = fontLoader.isFontLoaded(font.family);
     
-    // Debug logging
-    React.useEffect(() => {
-      if (!isRecent && isVisible) {
-        console.log(`Font ${font.id} is now visible`);
-      }
-    }, [isVisible, font.id, isRecent]);
+    // Debug logging (removed to prevent infinite loop)
 
     return (
       <div
         ref={(el) => {
           if (el && !isRecent) {
-            fontRefs.current.set(font.id, el);
-            // Start observing this element if observer exists
-            if (observerRef.current) {
-              observerRef.current.observe(el);
+            // Only set up observation if not already tracked
+            if (!fontRefs.current.has(font.id)) {
+              fontRefs.current.set(font.id, el);
+              // Start observing this element if observer exists
+              if (observerRef.current) {
+                observerRef.current.observe(el);
+              }
             }
-          } else if (!el && !isRecent) {
+          } else if (!el && !isRecent && fontRefs.current.has(font.id)) {
             // Element is being removed, stop observing
             const existingEl = fontRefs.current.get(font.id);
             if (existingEl && observerRef.current) {
