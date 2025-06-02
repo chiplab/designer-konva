@@ -60,36 +60,43 @@ export default function FontBrowser({
   React.useEffect(() => {
     if (!isOpen) return;
 
-    // Create the observer
+    // Create the observer with more conservative settings
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach(entry => {
           if (entry.isIntersecting) {
             const fontId = entry.target.getAttribute('data-font-id');
-            if (fontId) {
+            if (fontId && !visibleFonts.has(fontId)) {
               console.log('Font becoming visible:', fontId);
-              setVisibleFonts(prev => new Set(prev).add(fontId));
+              // Add a small delay to stagger loading
+              setTimeout(() => {
+                setVisibleFonts(prev => new Set(prev).add(fontId));
+              }, Math.random() * 200); // Random delay up to 200ms
             }
           }
         });
       },
       { 
         root: null,
-        rootMargin: '100px',
-        threshold: 0.01
+        rootMargin: '50px', // Reduced from 100px
+        threshold: 0.1 // Increased from 0.01 to require more visibility
       }
     );
 
     observerRef.current = observer;
 
     // Check for fonts already in viewport after a short delay
+    // But limit to first 5 to prevent loading too many at once
     setTimeout(() => {
+      let count = 0;
       fontRefs.current.forEach((element, fontId) => {
+        if (count >= 5) return; // Only load first 5 fonts initially
         const rect = element.getBoundingClientRect();
         const inViewport = rect.top < window.innerHeight && rect.bottom > 0;
         if (inViewport) {
           console.log('Font initially in viewport:', fontId);
           setVisibleFonts(prev => new Set(prev).add(fontId));
+          count++;
         }
       });
     }, 100);
@@ -193,17 +200,18 @@ export default function FontBrowser({
         data-font-id={font.id}
         onClick={() => !isLoading && handleSelectFont(font)}
         style={{
-          padding: '16px',
-          borderRadius: '8px',
+          padding: '12px 16px',
+          borderRadius: '6px',
           cursor: isLoading ? 'wait' : 'pointer',
           backgroundColor: isSelected ? '#e3f2fd' : 'transparent',
-          border: isSelected ? '2px solid #0066ff' : '2px solid transparent',
+          border: isSelected ? '2px solid #0066ff' : '1px solid #e0e0e0',
           transition: 'all 0.2s',
           opacity: isLoading ? 0.6 : 1,
-          minHeight: '80px',
+          minHeight: '60px',
           display: 'flex',
-          flexDirection: 'column',
-          gap: '8px'
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '16px'
         }}
         onMouseEnter={(e) => {
           if (!isSelected && !isLoading) {
@@ -216,62 +224,58 @@ export default function FontBrowser({
           }
         }}
       >
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          marginBottom: '4px'
-        }}>
-          <span style={{ 
-            fontSize: '14px', 
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ 
+            fontSize: '13px', 
             color: '#666',
-            fontWeight: 500
+            marginBottom: '4px'
           }}>
             {font.displayName}
-          </span>
-          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-            {isLoaded && <span style={{ fontSize: '12px', color: '#4caf50' }}>✓</span>}
-            {isLoading && (
-              <span style={{ 
-                fontSize: '12px', 
-                color: '#666',
-                animation: 'pulse 1.5s ease-in-out infinite'
-              }}>
-                ⏳
-              </span>
-            )}
           </div>
+          
+          {/* Font preview - only render if visible */}
+          {isVisible ? (
+            <div
+              style={{
+                fontFamily: isLoaded ? font.family : font.fallback,
+                fontSize: '18px',
+                lineHeight: 1.2,
+                color: '#000',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {previewText}
+            </div>
+          ) : (
+            <div style={{ 
+              fontSize: '18px',
+              color: '#ccc',
+              fontStyle: 'italic'
+            }}>
+              Loading...
+            </div>
+          )}
         </div>
         
-        {/* Font preview - only render if visible */}
-        {isVisible ? (
-          <div
-            style={{
-              fontFamily: isLoaded ? font.family : font.fallback,
-              fontSize: '24px',
-              lineHeight: 1.2,
-              color: '#000',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {previewText}
-          </div>
-        ) : (
-          <div style={{ 
-            height: '29px', 
-            backgroundColor: '#f0f0f0', 
-            borderRadius: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '12px',
-            color: '#999'
-          }}>
-            Loading preview...
-          </div>
-        )}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {font.weights && Object.keys(font.weights).length > 1 && (
+            <span style={{ fontSize: '12px', color: '#999' }}>
+              {Object.keys(font.weights).length} weights
+            </span>
+          )}
+          {isLoaded && <span style={{ fontSize: '12px', color: '#4caf50' }}>✓</span>}
+          {isLoading && (
+            <span style={{ 
+              fontSize: '12px', 
+              color: '#666',
+              animation: 'pulse 1.5s ease-in-out infinite'
+            }}>
+              ⏳
+            </span>
+          )}
+        </div>
       </div>
     );
   };
@@ -435,9 +439,9 @@ export default function FontBrowser({
                 Recently Used
               </h3>
               <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                gap: '12px'
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
               }}>
                 {recentFontObjects.map(font => (
                   <FontPreview key={font.id} font={font} isRecent={true} />
@@ -459,9 +463,9 @@ export default function FontBrowser({
               </h3>
             )}
             <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-              gap: '12px'
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
             }}>
               {filteredFonts.map(font => (
                 <FontPreview key={font.id} font={font} />
