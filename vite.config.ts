@@ -38,9 +38,16 @@ if (host === "localhost") {
 }
 
 export default defineConfig({
+  base: process.env.NODE_ENV === 'production' && process.env.SHOPIFY_APP_URL
+    ? process.env.SHOPIFY_APP_URL + '/'
+    : '/',
   server: {
     allowedHosts: [host],
     cors: {
+      origin: process.env.NODE_ENV === 'production' 
+        ? ['https://*.myshopify.com', 'https://admin.shopify.com']
+        : true,
+      credentials: true,
       preflightContinue: true,
     },
     port: Number(process.env.PORT || 3000),
