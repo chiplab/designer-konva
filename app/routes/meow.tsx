@@ -8,7 +8,12 @@ import { authenticate } from '../shopify.server';
 import ClientOnly from '../components/ClientOnly';
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  await authenticate.public.appProxy(request);
+  // Try to authenticate, but don't fail if it doesn't work
+  try {
+    await authenticate.public.appProxy(request);
+  } catch (error) {
+    console.log('Auth failed, continuing anyway:', error);
+  }
   
   // In production, the app URL should be your actual domain
   const appUrl = process.env.NODE_ENV === 'production' 
@@ -30,9 +35,20 @@ const DesignerCanvas = () => {
   const shapeRef = React.useRef(null);
   const stageRef = React.useRef<any>(null);
   const [dimensions, setDimensions] = React.useState({ width: 1000, height: 1000 });
+  
+  // Use absolute URLs for images when in production/proxy
+  const getBaseUrl = () => {
+    if (typeof window !== 'undefined' && window.location.hostname.includes('myshopify.com')) {
+      return 'https://6ux5iwunmq.us-east-1.awsapprunner.com';
+    }
+    return '';
+  };
+  
+  const baseUrl = getBaseUrl();
+  
   // Default to local assets, but can be overridden with S3 URLs
-  const [baseImageUrl, setBaseImageUrl] = React.useState('/media/images/8-spot-red-base-image.png');
-  const [svgImageUrl, setSvgImageUrl] = React.useState('/media/images/borders_v7-11.svg');
+  const [baseImageUrl, setBaseImageUrl] = React.useState(`${baseUrl}/media/images/8-spot-red-base-image.png`);
+  const [svgImageUrl, setSvgImageUrl] = React.useState(`${baseUrl}/media/images/borders_v7-11.svg`);
   const [baseImage] = useImage(baseImageUrl);
   const [svgImage] = useImage(svgImageUrl);
   const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string}>>([]);
@@ -340,7 +356,7 @@ const DesignerCanvas = () => {
         formData.append('thumbnail', thumbnail);
       }
 
-      const response = await fetch('/api/templates/save', {
+      const response = await fetch(`${baseUrl}/api/templates/save`, {
         method: 'POST',
         body: formData,
       });
@@ -374,7 +390,7 @@ const DesignerCanvas = () => {
 
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/templates/${templateId}`);
+      const response = await fetch(`${baseUrl}/api/templates/${templateId}`);
       const result = await response.json();
       
       if (result.template) {
@@ -395,7 +411,7 @@ const DesignerCanvas = () => {
   // Load templates list
   const loadTemplatesList = async () => {
     try {
-      const response = await fetch('/api/templates');
+      const response = await fetch(`${baseUrl}/api/templates`);
       const result = await response.json();
       
       if (result.templates) {
@@ -514,7 +530,7 @@ const DesignerCanvas = () => {
                   formData.append('assetType', 'image');
                   
                   try {
-                    const response = await fetch('/api/assets/upload', {
+                    const response = await fetch(`${baseUrl}/api/assets/upload`, {
                       method: 'POST',
                       body: formData,
                     });

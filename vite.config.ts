@@ -70,11 +70,12 @@ export default defineConfig({
   ],
   build: {
     assetsInlineLimit: 0,
-    rollupOptions: {
-      output: {
-        // Disable code splitting for proxy routes to avoid dynamic import issues
-        manualChunks: undefined,
-      },
+  },
+  experimental: {
+    renderBuiltUrl(filename) {
+      // Ensure chunks are loaded from the app URL, not the proxy URL
+      const base = process.env.SHOPIFY_APP_URL || '';
+      return base ? `${base}/${filename}` : `/${filename}`;
     },
   },
   optimizeDeps: {

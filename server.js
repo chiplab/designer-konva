@@ -8,14 +8,20 @@ const app = express();
 
 // CORS middleware for app proxy routes
 app.use((req, res, next) => {
-  const origin = req.get('origin');
+  const origin = req.get('origin') || req.get('referer');
   
-  // Allow Shopify domains
+  // Allow Shopify domains and handle dynamic imports
   if (origin && (origin.includes('.myshopify.com') || origin.includes('admin.shopify.com'))) {
     res.header('Access-Control-Allow-Origin', origin);
     res.header('Access-Control-Allow-Credentials', 'true');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    
+    // Add CORS headers for module scripts
+    if (req.path.includes('/assets/')) {
+      res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.header('Cross-Origin-Embedder-Policy', 'require-corp');
+    }
   }
   
   // Handle preflight requests
