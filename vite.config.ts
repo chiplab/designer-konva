@@ -70,6 +70,12 @@ export default defineConfig({
   ],
   build: {
     assetsInlineLimit: 0,
+    rollupOptions: {
+      output: {
+        // Disable code splitting for proxy routes to avoid dynamic import issues
+        manualChunks: undefined,
+      },
+    },
   },
   optimizeDeps: {
     include: ["@shopify/app-bridge-react", "@shopify/polaris"],

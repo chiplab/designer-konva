@@ -1099,13 +1099,18 @@ const DesignerCanvas = () => {
 
 // Custom document to handle script loading in app proxy context
 export function links() {
-  // For proxy routes, we need to use absolute URLs for assets
-  const appUrl = process.env.SHOPIFY_APP_URL || '';
-  return appUrl ? [
-    // If we had custom stylesheets, we'd include them here with absolute URLs
-    // { rel: "stylesheet", href: `${appUrl}/styles/app.css` }
-  ] : [];
+  return [];
 }
+
+// Disable client-side navigation for proxy routes
+export function shouldRevalidate() {
+  return false;
+}
+
+// Handle route loading for proxy context
+export const handle = {
+  hydrate: true,
+};
 
 export function meta() {
   return [
