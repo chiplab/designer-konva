@@ -5,6 +5,7 @@ import { json, type LoaderFunctionArgs } from '@remix-run/node';
 import { useLoaderData } from '@remix-run/react';
 import { AppProxyProvider } from '@shopify/shopify-app-remix/react';
 import { authenticate } from '../shopify.server';
+import ClientOnly from '../components/ClientOnly';
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await authenticate.public.appProxy(request);
@@ -26,12 +27,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 const DesignerCanvas = () => {
-  // Don't render canvas during SSR
-  const [isClient, setIsClient] = React.useState(false);
-  
-  React.useEffect(() => {
-    setIsClient(true);
-  }, []);
   const shapeRef = React.useRef(null);
   const stageRef = React.useRef<any>(null);
   const [dimensions, setDimensions] = React.useState({ width: 1000, height: 1000 });
@@ -415,11 +410,6 @@ const DesignerCanvas = () => {
   React.useEffect(() => {
     loadTemplatesList();
   }, []);
-
-  // Don't render during SSR to avoid hydration mismatch
-  if (!isClient) {
-    return <div style={{ padding: '20px', textAlign: 'center' }}>Loading designer...</div>;
-  }
 
   return (
     <div>
@@ -1109,8 +1099,12 @@ const DesignerCanvas = () => {
 
 // Custom document to handle script loading in app proxy context
 export function links() {
-  // Return empty array to prevent default stylesheet loading in proxy context
-  return [];
+  // For proxy routes, we need to use absolute URLs for assets
+  const appUrl = process.env.SHOPIFY_APP_URL || '';
+  return appUrl ? [
+    // If we had custom stylesheets, we'd include them here with absolute URLs
+    // { rel: "stylesheet", href: `${appUrl}/styles/app.css` }
+  ] : [];
 }
 
 export function meta() {
@@ -1129,21 +1123,28 @@ export default function App() {
   
   return (
     <AppProxyProvider appUrl={appUrl}>
-      <div style={{ padding: 0, margin: 0 }}>
-        {showDevNotice && (
-          <div style={{
-            background: '#fffbdd',
-            border: '1px solid #f0c36d',
-            padding: '10px',
-            fontSize: '14px',
-            color: '#333'
-          }}>
-            ⚠️ Development Mode: Hot reload is disabled when accessing through Shopify proxy. 
-            Manual refresh required for changes.
-          </div>
-        )}
-        <DesignerCanvas />
-      </div>
+      <ClientOnly fallback={
+        <div style={{ padding: '20px', textAlign: 'center' }}>
+          <h2>Loading Designer...</h2>
+          <p>Please wait while we initialize the canvas.</p>
+        </div>
+      }>
+        <div style={{ padding: 0, margin: 0 }}>
+          {showDevNotice && (
+            <div style={{
+              background: '#fffbdd',
+              border: '1px solid #f0c36d',
+              padding: '10px',
+              fontSize: '14px',
+              color: '#333'
+            }}>
+              ⚠️ Development Mode: Hot reload is disabled when accessing through Shopify proxy. 
+              Manual refresh required for changes.
+            </div>
+          )}
+          <DesignerCanvas />
+        </div>
+      </ClientOnly>
     </AppProxyProvider>
   );
 }
