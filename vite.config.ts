@@ -38,9 +38,6 @@ if (host === "localhost") {
 }
 
 export default defineConfig({
-  base: process.env.NODE_ENV === 'production' 
-    ? 'https://6ux5iwunmq.us-east-1.awsapprunner.com/'
-    : '/',
   server: {
     allowedHosts: [host],
     cors: {

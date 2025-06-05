@@ -31,9 +31,15 @@ app.get("/health", (req, res) => {
   res.status(200).send("OK");
 });
 
-// Serve static files from both public and build/client
+// Serve static files
 app.use(express.static("public"));
+
+// Serve Remix assets - IMPORTANT: must match Remix's expected paths
 app.use("/build", express.static("build/client"));
+
+// CRITICAL: Serve assets at /assets/ for production builds
+// This is where Remix looks for them when using absolute URLs
+app.use("/assets", express.static("build/client/assets"));
 
 // Remix handler
 app.all(
