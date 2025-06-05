@@ -31,6 +31,14 @@ app.get("/health", (req, res) => {
   res.status(200).send("OK");
 });
 
+// Debug middleware to log requests
+app.use((req, res, next) => {
+  if (req.path.startsWith('/assets/') || req.path.startsWith('/build/')) {
+    console.log(`Static file request: ${req.method} ${req.path}`);
+  }
+  next();
+});
+
 // Serve static files
 app.use(express.static("public"));
 
@@ -39,9 +47,12 @@ app.use("/build", express.static("build/client"));
 
 // CRITICAL: Serve assets at /assets/ for production builds
 // This is where Remix looks for them when using absolute URLs
-app.use("/assets", express.static("build/client/assets"));
+app.use("/assets", express.static("build/client/assets", {
+  maxAge: "1y",
+  immutable: true
+}));
 
-// Remix handler
+// Remix handler - MUST BE LAST
 app.all(
   "*",
   createRequestHandler({
