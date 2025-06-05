@@ -9,7 +9,8 @@
     "deploy": "shopify app deploy",
     "config:use": "shopify app config use",
     "env": "shopify app env",
-    "start": "remix-serve ./build/server/index.js",
+    "start": "node server.js",
+    "start:remix": "remix-serve ./build/server/index.js",
     "docker-start": "npm run setup && npm run start",
     "setup": "prisma generate && prisma migrate deploy",
     "lint": "eslint --cache --cache-location ./node_modules/.cache/eslint .",
@@ -29,6 +30,7 @@
     "@aws-sdk/s3-request-presigner": "^3.817.0",
     "@prisma/client": "^6.8.2",
     "@remix-run/dev": "^2.16.1",
+    "@remix-run/express": "^2.16.8",
     "@remix-run/fs-routes": "^2.16.1",
     "@remix-run/node": "^2.16.1",
     "@remix-run/react": "^2.16.1",
@@ -38,6 +40,7 @@
     "@shopify/shopify-app-remix": "^3.7.0",
     "@shopify/shopify-app-session-storage-prisma": "^6.0.0",
     "@types/node-fetch": "^2.6.12",
+    "express": "^4.21.2",
     "form-data": "^4.0.2",
     "isbot": "^5.1.0",
     "konva": "^9.3.20",
@@ -45,7 +48,8 @@
     "react-dom": "^18.2.0",
     "react-konva": "^18.2.10",
     "use-image": "^1.1.4",
-    "vite-tsconfig-paths": "^5.0.1"
+    "vite-tsconfig-paths": "^5.0.1",
+    "canvas": "^3.1.0"
   },
   "devDependencies": {
     "@remix-run/eslint-config": "^2.16.1",
@@ -55,7 +59,6 @@
     "@types/node": "^22.2.0",
     "@types/react": "^18.2.31",
     "@types/react-dom": "^18.2.14",
-    "canvas": "^3.1.0",
     "eslint": "^8.42.0",
     "eslint-config-prettier": "^10.0.1",
     "prettier": "^3.2.4",

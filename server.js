@@ -33,7 +33,7 @@ app.get("/health", (req, res) => {
 
 // Serve static files from both public and build/client
 app.use(express.static("public"));
-app.use(express.static("build/client"));
+app.use("/build", express.static("build/client"));
 
 // Remix handler
 app.all(

@@ -1,8 +1,31 @@
 import React from 'react';
 import { Stage, Layer, Circle, Text, TextPath, Transformer, Group, Image, Rect } from 'react-konva';
 import useImage from 'use-image';
+import { json, type LoaderFunctionArgs } from '@remix-run/node';
+import { useLoaderData } from '@remix-run/react';
+import { AppProxyProvider } from '@shopify/shopify-app-remix/react';
+import { authenticate } from '../shopify.server';
 
-const App = () => {
+export async function loader({ request }: LoaderFunctionArgs) {
+  await authenticate.public.appProxy(request);
+  
+  // In production, the app URL should be your actual domain
+  const appUrl = process.env.NODE_ENV === 'production' 
+    ? process.env.SHOPIFY_APP_URL || ''
+    : ''; // Empty in dev to avoid CORS issues
+  
+  // Check if accessed through proxy
+  const url = new URL(request.url);
+  const isProxyAccess = url.hostname.includes('myshopify.com');
+  const isDevelopment = process.env.NODE_ENV !== 'production';
+  
+  return json({ 
+    appUrl,
+    showDevNotice: isDevelopment && isProxyAccess
+  });
+}
+
+const DesignerCanvas = () => {
   const shapeRef = React.useRef(null);
   const stageRef = React.useRef<any>(null);
   const [dimensions, setDimensions] = React.useState({ width: 1000, height: 1000 });
@@ -1070,4 +1093,39 @@ const App = () => {
 };
 
 
-export default App;
+// Custom document to handle script loading in app proxy context
+export function links() {
+  // Return empty array to prevent default stylesheet loading in proxy context
+  return [];
+}
+
+export function meta() {
+  return [
+    { title: "Product Designer" },
+    { name: "viewport", content: "width=device-width,initial-scale=1" }
+  ];
+}
+
+export default function App() {
+  const { appUrl, showDevNotice } = useLoaderData<typeof loader>();
+  
+  return (
+    <AppProxyProvider appUrl={appUrl}>
+      <div style={{ padding: 0, margin: 0 }}>
+        {showDevNotice && (
+          <div style={{
+            background: '#fffbdd',
+            border: '1px solid #f0c36d',
+            padding: '10px',
+            fontSize: '14px',
+            color: '#333'
+          }}>
+            ⚠️ Development Mode: Hot reload is disabled when accessing through Shopify proxy. 
+            Manual refresh required for changes.
+          </div>
+        )}
+        <DesignerCanvas />
+      </div>
+    </AppProxyProvider>
+  );
+}

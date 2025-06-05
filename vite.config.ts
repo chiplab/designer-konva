@@ -38,8 +38,8 @@ if (host === "localhost") {
 }
 
 export default defineConfig({
-  base: process.env.NODE_ENV === 'production' && process.env.SHOPIFY_APP_URL
-    ? process.env.SHOPIFY_APP_URL + '/'
+  base: process.env.NODE_ENV === 'production' 
+    ? 'https://6ux5iwunmq.us-east-1.awsapprunner.com/'
     : '/',
   server: {
     allowedHosts: [host],
