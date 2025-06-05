@@ -26,6 +26,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 const DesignerCanvas = () => {
+  // Don't render canvas during SSR
+  const [isClient, setIsClient] = React.useState(false);
+  
+  React.useEffect(() => {
+    setIsClient(true);
+  }, []);
   const shapeRef = React.useRef(null);
   const stageRef = React.useRef<any>(null);
   const [dimensions, setDimensions] = React.useState({ width: 1000, height: 1000 });
@@ -60,6 +66,9 @@ const DesignerCanvas = () => {
 
   const loadFont = async (fontFamily: string) => {
     if (loadedFonts.has(fontFamily) || fontFamily === 'Arial') return;
+    
+    // Only run in browser
+    if (typeof document === 'undefined') return;
     
     try {
       // Google Fonts API integration
@@ -406,6 +415,11 @@ const DesignerCanvas = () => {
   React.useEffect(() => {
     loadTemplatesList();
   }, []);
+
+  // Don't render during SSR to avoid hydration mismatch
+  if (!isClient) {
+    return <div style={{ padding: '20px', textAlign: 'center' }}>Loading designer...</div>;
+  }
 
   return (
     <div>
@@ -1107,7 +1121,11 @@ export function meta() {
 }
 
 export default function App() {
-  const { appUrl, showDevNotice } = useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>();
+  
+  // Handle case where loader data might not be available during SSR
+  const appUrl = data?.appUrl || '';
+  const showDevNotice = data?.showDevNotice || false;
   
   return (
     <AppProxyProvider appUrl={appUrl}>
