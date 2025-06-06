@@ -40,7 +40,9 @@ if (host === "localhost") {
 
 export default defineConfig({
   // Set base URL for production to ensure all assets use absolute URLs
-  base: '/',
+  base: process.env.NODE_ENV === 'production' 
+    ? 'https://app.printlabs.com/' 
+    : '/',
   server: {
     allowedHosts: [host],
     cors: {
@@ -74,16 +76,6 @@ export default defineConfig({
   ],
   build: {
     assetsInlineLimit: 0,
-    rollupOptions: {
-      output: {
-        // Force all assets to use absolute URLs in production
-        assetFileNames: () => {
-          return 'assets/[name]-[hash][extname]';
-        },
-        chunkFileNames: 'assets/[name]-[hash].js',
-        entryFileNames: 'assets/[name]-[hash].js',
-      },
-    },
   },
   optimizeDeps: {
     include: ["@shopify/app-bridge-react", "@shopify/polaris"],
