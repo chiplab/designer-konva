@@ -38,11 +38,12 @@ if (host === "localhost") {
   };
 }
 
+// Set the base URL based on environment
+const baseUrl = process.env.SHOPIFY_APP_URL || 'https://app.printlabs.com';
+
 export default defineConfig({
-  // Set base URL for production to ensure all assets use absolute URLs
-  base: process.env.NODE_ENV === 'production' 
-    ? 'https://app.printlabs.com/' 
-    : '/',
+  // Always use absolute URL as base in production
+  base: process.env.NODE_ENV === 'production' ? baseUrl + '/' : '/',
   server: {
     allowedHosts: [host],
     cors: {

@@ -1,6 +1,7 @@
 import { createRequestHandler } from "@remix-run/express";
 import { installGlobals } from "@remix-run/node";
 import express from "express";
+import { createProxyMiddleware } from 'http-proxy-middleware';
 
 installGlobals();
 
@@ -61,6 +62,24 @@ app.use("/assets", express.static("build/client/assets", {
   maxAge: "1y",
   immutable: true
 }));
+
+// Handle Shopify app proxy requests - rewrite /apps/designer/* to /*
+if (process.env.NODE_ENV === 'production') {
+  // Rewrite manifest requests from the proxy path
+  app.use('/__manifest', (req, res, next) => {
+    // If this is coming from a Shopify proxy, serve it directly
+    if (req.get('referer')?.includes('myshopify.com')) {
+      req.url = '/__manifest' + (req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '');
+    }
+    next();
+  });
+  
+  // Rewrite /apps/designer/meow to /meow for Remix to handle
+  app.use('/apps/designer/:path(*)', (req, res, next) => {
+    req.url = '/' + req.params.path;
+    next();
+  });
+}
 
 // Remix handler - MUST BE LAST
 app.all(
