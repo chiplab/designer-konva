@@ -55,9 +55,15 @@ app.use(express.static("public"));
 // Serve Remix assets - IMPORTANT: must match Remix's expected paths
 app.use("/build", express.static("build/client"));
 
-// CRITICAL: Serve assets at /assets/ for production builds
-// This is where Remix looks for them when using absolute URLs
-app.use("/assets", express.static("build/client/assets", {
+// CRITICAL: Serve assets from the correct nested build path
+// Vite builds them to build/client/build/assets due to our assetsDir config
+app.use("/build/assets", express.static("build/client/build/assets", {
+  maxAge: "1y",
+  immutable: true
+}));
+
+// Also serve at /assets for backward compatibility
+app.use("/assets", express.static("build/client/build/assets", {
   maxAge: "1y",
   immutable: true
 }));
