@@ -19,19 +19,6 @@ export default function App() {
         />
         <Meta />
         <Links />
-        {/* Disable Vite HMR in production for Shopify proxy */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if (typeof window !== 'undefined' && 
-                  window.location.hostname.includes('myshopify.com')) {
-                // Prevent Vite from attempting to connect to HMR
-                window.__vite_plugin_react_preamble_installed__ = true;
-                window.__vite_is_modern_browser = false;
-              }
-            `,
-          }}
-        />
       </head>
       <body>
         <Outlet />

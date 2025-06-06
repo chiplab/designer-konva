@@ -68,32 +68,11 @@ app.use("/assets", express.static("build/client/build/assets", {
   immutable: true
 }));
 
-// Handle Shopify app proxy requests - rewrite /apps/designer/* to /*
+// Handle Shopify app proxy requests
 if (process.env.NODE_ENV === 'production') {
-  // Intercept and handle manifest requests to prevent 404s
-  app.all(['/__manifest', '/apps/designer/__manifest'], (req, res) => {
-    // In production, we don't need HMR manifest
-    // Return a minimal response to satisfy any client-side checks
-    res.json({
-      version: "1.0.0",
-      timestamp: Date.now(),
-      hmr: false,
-      routes: {},
-      url: "/build/"
-    });
-  });
-  
-  // Rewrite /apps/designer/* to /* for Remix to handle
+  // Set proper Content-Type for Shopify proxy routes
   app.use('/apps/designer', (req, res, next) => {
-    // Don't rewrite manifest requests (already handled above)
-    if (!req.path.includes('__manifest')) {
-      // Remove /apps/designer prefix
-      req.url = req.path.replace(/^\/apps\/designer/, '') || '/';
-      // Preserve query string
-      if (req.originalUrl.includes('?')) {
-        req.url += req.originalUrl.substring(req.originalUrl.indexOf('?'));
-      }
-    }
+    res.setHeader("Content-Type", "application/liquid");
     next();
   });
 }

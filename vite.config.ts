@@ -37,12 +37,11 @@ if (host === "localhost") {
   };
 }
 
-// Set the base URL based on environment
-const baseUrl = process.env.SHOPIFY_APP_URL || 'https://app.printlabs.com';
-
 export default defineConfig({
-  // Always use absolute URL as base in production
-  base: process.env.NODE_ENV === 'production' ? baseUrl + '/' : '/',
+  // CRITICAL FIX #1: Hardcode the public asset URL for production
+  base: process.env.NODE_ENV === 'production' 
+    ? 'https://app.printlabs.com/' 
+    : '/',
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
   },
@@ -65,7 +64,10 @@ export default defineConfig({
   plugins: [
     remix({
       ignoredRouteFiles: ["**/.*"],
-      basename: process.env.NODE_ENV === 'production' ? '/' : '/',
+      // CRITICAL FIX #2: Set the basename for client-side routing
+      basename: process.env.NODE_ENV === 'production' 
+        ? '/apps/designer/' 
+        : '/',
       future: {
         v3_fetcherPersist: true,
         v3_relativeSplatPath: true,
