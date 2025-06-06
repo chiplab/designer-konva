@@ -70,9 +70,19 @@ app.use("/assets", express.static("build/client/build/assets", {
 
 // Handle Shopify app proxy requests
 if (process.env.NODE_ENV === 'production') {
-  // Set proper Content-Type for Shopify proxy routes
+  // Rewrite /apps/designer/* to /* for Remix to handle
   app.use('/apps/designer', (req, res, next) => {
+    // Set proper Content-Type for Shopify proxy routes
     res.setHeader("Content-Type", "application/liquid");
+    
+    // Rewrite the URL to remove the /apps/designer prefix
+    req.url = req.path.replace(/^\/apps\/designer/, '') || '/';
+    
+    // Preserve query string
+    if (req.originalUrl.includes('?')) {
+      req.url += req.originalUrl.substring(req.originalUrl.indexOf('?'));
+    }
+    
     next();
   });
 }

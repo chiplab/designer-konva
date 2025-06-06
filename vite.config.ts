@@ -64,10 +64,8 @@ export default defineConfig({
   plugins: [
     remix({
       ignoredRouteFiles: ["**/.*"],
-      // CRITICAL FIX #2: Set the basename for client-side routing
-      basename: process.env.NODE_ENV === 'production' 
-        ? '/apps/designer/' 
-        : '/',
+      // Keep basename as root - we'll handle proxy routing differently
+      basename: '/',
       future: {
         v3_fetcherPersist: true,
         v3_relativeSplatPath: true,
