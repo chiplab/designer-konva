@@ -6,6 +6,10 @@ installGlobals();
 
 const app = express();
 
+// Increase body size limit for large images (50MB)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
 // CORS middleware for app proxy routes
 app.use((req, res, next) => {
   const origin = req.get('origin') || req.get('referer');
