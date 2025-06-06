@@ -13,7 +13,8 @@ database.sqlite
 
 .env
 .env.*
-
+!.env.example
+!.env.production.sample
 
 
 
