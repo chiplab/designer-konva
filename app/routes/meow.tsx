@@ -15,18 +15,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.log('Auth failed, continuing anyway:', error);
   }
   
-  // In production, the app URL should be your actual domain
-  const appUrl = process.env.NODE_ENV === 'production' 
-    ? process.env.SHOPIFY_APP_URL || ''
-    : ''; // Empty in dev to avoid CORS issues
-  
   // Check if accessed through proxy
   const url = new URL(request.url);
   const isProxyAccess = url.hostname.includes('myshopify.com');
   const isDevelopment = process.env.NODE_ENV !== 'production';
   
+  // Always pass the app URL in production, especially for proxy access
+  const appUrl = process.env.SHOPIFY_APP_URL || 'https://app.printlabs.com';
+  
   return json({ 
-    appUrl,
+    appUrl: isProxyAccess ? appUrl : '',
     showDevNotice: isDevelopment && isProxyAccess
   });
 }
@@ -1141,6 +1139,16 @@ export default function App() {
   // Handle case where loader data might not be available during SSR
   const appUrl = data?.appUrl || '';
   const showDevNotice = data?.showDevNotice || false;
+  
+  // Inject base URL for client-side asset loading when in proxy mode
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hostname.includes('myshopify.com') && appUrl) {
+      // Set a global variable that Remix can use for asset URLs
+      (window as any).__remixManifest = (window as any).__remixManifest || {};
+      (window as any).__remixContext = (window as any).__remixContext || {};
+      (window as any).__remixContext.appUrl = appUrl;
+    }
+  }, [appUrl]);
   
   return (
     <AppProxyProvider appUrl={appUrl}>

@@ -8,6 +8,7 @@
         "https://*.shopify.com",
         "https://*.shopifycdn.com",
         "https://*.trycloudflare.com",
+        "https://app.printlabs.com",
         "http://localhost:*",
         "http://127.0.0.1:*"
       ],

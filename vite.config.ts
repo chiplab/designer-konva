@@ -38,6 +38,10 @@ if (host === "localhost") {
 }
 
 export default defineConfig({
+  // Set base URL for production to ensure all assets use absolute URLs
+  base: process.env.NODE_ENV === 'production' && process.env.SHOPIFY_APP_URL 
+    ? process.env.SHOPIFY_APP_URL + '/'
+    : '/',
   server: {
     allowedHosts: [host],
     cors: {
