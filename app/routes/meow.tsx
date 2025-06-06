@@ -1151,93 +1151,29 @@ export default function App() {
   }, [appUrl]);
   
   return (
-    <>
-      {/* Inject manifest handler script before anything else */}
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `
-            (function() {
-              if (!window.location.hostname.includes('myshopify.com')) return;
-              
-              // Debug logging
-              console.log('[Proxy Fix] Installing fetch interceptor');
-              
-              // Store original fetch
-              const originalFetch = window.fetch;
-              
-              // Override fetch
-              window.fetch = function(input, init) {
-                let url;
-                if (typeof input === 'string') {
-                  url = input;
-                } else if (input instanceof Request) {
-                  url = input.url;
-                } else if (input && typeof input.url === 'string') {
-                  url = input.url;
-                }
-                
-                console.log('[Proxy Fix] Fetch called with URL:', url);
-                
-                // Check if it's a manifest request
-                if (url && typeof url === 'string' && url.includes('__manifest')) {
-                  console.log('[Proxy Fix] Manifest request detected:', url);
-                  
-                  // Rewrite to absolute URL
-                  if (!url.startsWith('http')) {
-                    const newUrl = 'https://app.printlabs.com' + (url.startsWith('/') ? url : '/' + url);
-                    console.log('[Proxy Fix] Rewriting to:', newUrl);
-                    
-                    if (typeof input === 'string') {
-                      input = newUrl;
-                    } else {
-                      input = new Request(newUrl, input instanceof Request ? input : {});
-                    }
-                  }
-                }
-                
-                return originalFetch.call(this, input, init);
-              };
-              
-              // Also intercept XMLHttpRequest just in case
-              const originalXHROpen = XMLHttpRequest.prototype.open;
-              XMLHttpRequest.prototype.open = function(method, url) {
-                if (url && url.includes('__manifest')) {
-                  console.log('[Proxy Fix] XHR manifest request:', url);
-                  if (!url.startsWith('http')) {
-                    url = 'https://app.printlabs.com' + (url.startsWith('/') ? url : '/' + url);
-                    console.log('[Proxy Fix] XHR rewritten to:', url);
-                  }
-                }
-                return originalXHROpen.apply(this, arguments);
-              };
-            })();
-          `,
-        }}
-      />
-      <AppProxyProvider appUrl={appUrl}>
-        <ClientOnly fallback={
-          <div style={{ padding: '20px', textAlign: 'center' }}>
-            <h2>Loading Designer...</h2>
-            <p>Please wait while we initialize the canvas editor.</p>
-          </div>
-        }>
-          <div style={{ padding: 0, margin: 0 }}>
-            {showDevNotice && (
-              <div style={{
-                background: '#fffbdd',
-                border: '1px solid #f0c36d',
-                padding: '10px',
-                fontSize: '14px',
-                color: '#333'
-              }}>
-                ⚠️ Development Mode: Hot reload is disabled when accessing through Shopify proxy. 
-                Manual refresh required for changes.
-              </div>
-            )}
-            <DesignerCanvas />
-          </div>
-        </ClientOnly>
-      </AppProxyProvider>
-    </>
+    <AppProxyProvider appUrl={appUrl}>
+      <ClientOnly fallback={
+        <div style={{ padding: '20px', textAlign: 'center' }}>
+          <h2>Loading Designer...</h2>
+          <p>Please wait while we initialize the canvas editor.</p>
+        </div>
+      }>
+        <div style={{ padding: 0, margin: 0 }}>
+          {showDevNotice && (
+            <div style={{
+              background: '#fffbdd',
+              border: '1px solid #f0c36d',
+              padding: '10px',
+              fontSize: '14px',
+              color: '#333'
+            }}>
+              ⚠️ Development Mode: Hot reload is disabled when accessing through Shopify proxy. 
+              Manual refresh required for changes.
+            </div>
+          )}
+          <DesignerCanvas />
+        </div>
+      </ClientOnly>
+    </AppProxyProvider>
   );
 }
