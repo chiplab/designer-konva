@@ -25,7 +25,7 @@ npm run setup
 
 # Restart PM2 process
 echo "🔄 Restarting PM2 process..."
-pm2 reload ecosystem.config.js --update-env
+pm2 reload ecosystem.config.cjs --update-env
 
 # Save PM2 state
 pm2 save

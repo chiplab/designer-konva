@@ -32,7 +32,7 @@ jobs:
           npm run setup
           
           # Restart PM2
-          pm2 reload ecosystem.config.js --update-env
+          pm2 reload ecosystem.config.cjs --update-env
           pm2 save
           
           echo "✅ Deployment complete!"
