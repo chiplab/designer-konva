@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://6ux5iwunmq.us-east-1.awsapprunner.com"
+application_url = "https://app.printlabs.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://6ux5iwunmq.us-east-1.awsapprunner.com/auth/callback",
-  "https://6ux5iwunmq.us-east-1.awsapprunner.com/auth/shopify/callback",
-  "https://6ux5iwunmq.us-east-1.awsapprunner.com/api/auth/callback"
+  "https://app.printlabs.com/auth/callback",
+  "https://app.printlabs.com/auth/shopify/callback",
+  "https://app.printlabs.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://6ux5iwunmq.us-east-1.awsapprunner.com"
+url = "https://app.printlabs.com"
 subpath = "designer"
 prefix = "apps"
 

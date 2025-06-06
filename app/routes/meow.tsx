@@ -39,7 +39,7 @@ const DesignerCanvas = () => {
   // Use absolute URLs for images when in production/proxy
   const getBaseUrl = () => {
     if (typeof window !== 'undefined' && window.location.hostname.includes('myshopify.com')) {
-      return 'https://6ux5iwunmq.us-east-1.awsapprunner.com';
+      return 'https://app.printlabs.com';
     }
     return '';
   };
@@ -1147,7 +1147,7 @@ export default function App() {
       <ClientOnly fallback={
         <div style={{ padding: '20px', textAlign: 'center' }}>
           <h2>Loading Designer...</h2>
-          <p>Please wait while we initialize the canvas.</p>
+          <p>Please wait while we initialize the canvas editor.</p>
         </div>
       }>
         <div style={{ padding: 0, margin: 0 }}>
