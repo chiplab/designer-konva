@@ -2,6 +2,7 @@ import { vitePlugin as remix } from "@remix-run/dev";
 import { installGlobals } from "@remix-run/node";
 import { defineConfig, type UserConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
+import { proxyManifestPlugin } from "./vite-plugin-proxy-manifest";
 
 installGlobals({ nativeFetch: true });
 
@@ -39,9 +40,7 @@ if (host === "localhost") {
 
 export default defineConfig({
   // Set base URL for production to ensure all assets use absolute URLs
-  base: process.env.NODE_ENV === 'production' && process.env.SHOPIFY_APP_URL 
-    ? process.env.SHOPIFY_APP_URL + '/'
-    : '/',
+  base: '/',
   server: {
     allowedHosts: [host],
     cors: {
@@ -71,15 +70,19 @@ export default defineConfig({
       },
     }),
     tsconfigPaths(),
+    proxyManifestPlugin(),
   ],
   build: {
     assetsInlineLimit: 0,
-  },
-  experimental: {
-    renderBuiltUrl(filename) {
-      // Ensure chunks are loaded from the app URL, not the proxy URL
-      const base = process.env.SHOPIFY_APP_URL || '';
-      return base ? `${base}/${filename}` : `/${filename}`;
+    rollupOptions: {
+      output: {
+        // Force all assets to use absolute URLs in production
+        assetFileNames: () => {
+          return 'assets/[name]-[hash][extname]';
+        },
+        chunkFileNames: 'assets/[name]-[hash].js',
+        entryFileNames: 'assets/[name]-[hash].js',
+      },
     },
   },
   optimizeDeps: {
