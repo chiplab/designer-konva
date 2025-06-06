@@ -70,18 +70,30 @@ app.use("/assets", express.static("build/client/build/assets", {
 
 // Handle Shopify app proxy requests - rewrite /apps/designer/* to /*
 if (process.env.NODE_ENV === 'production') {
-  // Rewrite manifest requests from the proxy path
-  app.use('/__manifest', (req, res, next) => {
-    // If this is coming from a Shopify proxy, serve it directly
-    if (req.get('referer')?.includes('myshopify.com')) {
-      req.url = '/__manifest' + (req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '');
-    }
-    next();
+  // Intercept and handle manifest requests to prevent 404s
+  app.all(['/__manifest', '/apps/designer/__manifest'], (req, res) => {
+    // In production, we don't need HMR manifest
+    // Return a minimal response to satisfy any client-side checks
+    res.json({
+      version: "1.0.0",
+      timestamp: Date.now(),
+      hmr: false,
+      routes: {},
+      url: "/build/"
+    });
   });
   
-  // Rewrite /apps/designer/meow to /meow for Remix to handle
-  app.use('/apps/designer/:path(*)', (req, res, next) => {
-    req.url = '/' + req.params.path;
+  // Rewrite /apps/designer/* to /* for Remix to handle
+  app.use('/apps/designer', (req, res, next) => {
+    // Don't rewrite manifest requests (already handled above)
+    if (!req.path.includes('__manifest')) {
+      // Remove /apps/designer prefix
+      req.url = req.path.replace(/^\/apps\/designer/, '') || '/';
+      // Preserve query string
+      if (req.originalUrl.includes('?')) {
+        req.url += req.originalUrl.substring(req.originalUrl.indexOf('?'));
+      }
+    }
     next();
   });
 }

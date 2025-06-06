@@ -43,6 +43,9 @@ const baseUrl = process.env.SHOPIFY_APP_URL || 'https://app.printlabs.com';
 export default defineConfig({
   // Always use absolute URL as base in production
   base: process.env.NODE_ENV === 'production' ? baseUrl + '/' : '/',
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
+  },
   server: {
     allowedHosts: [host],
     cors: {

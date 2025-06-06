@@ -2,7 +2,17 @@ import { RemixBrowser } from "@remix-run/react";
 import { startTransition, StrictMode } from "react";
 import { hydrateRoot } from "react-dom/client";
 
-// Manifest interception is handled in the meow.tsx route with an inline script
+// Disable Vite HMR and manifest requests when accessed through Shopify proxy
+if (typeof window !== 'undefined' && 
+    window.location.hostname.includes('myshopify.com')) {
+  // Override import.meta.hot to disable HMR
+  if (import.meta.hot) {
+    import.meta.hot.dispose = () => {};
+    import.meta.hot.invalidate = () => {};
+    import.meta.hot.accept = () => {};
+    import.meta.hot.on = () => {};
+  }
+}
 
 startTransition(() => {
   hydrateRoot(

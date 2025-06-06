@@ -19,28 +19,15 @@ export default function App() {
         />
         <Meta />
         <Links />
-        {/* Inject manifest interceptor for Shopify proxy */}
+        {/* Disable Vite HMR in production for Shopify proxy */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              if (window.location.hostname.includes('myshopify.com')) {
-                const originalFetch = window.fetch;
-                window.fetch = function(input, init) {
-                  if (!input) return originalFetch.call(this, input, init);
-                  
-                  let url = typeof input === 'string' ? input : (input.url || '');
-                  
-                  if (url && url.includes('__manifest') && !url.startsWith('http')) {
-                    const newUrl = 'https://app.printlabs.com' + (url.startsWith('/') ? url : '/' + url);
-                    if (typeof input === 'string') {
-                      return originalFetch.call(this, newUrl, init);
-                    } else {
-                      return originalFetch.call(this, new Request(newUrl, init || {}), init);
-                    }
-                  }
-                  
-                  return originalFetch.call(this, input, init);
-                };
+              if (typeof window !== 'undefined' && 
+                  window.location.hostname.includes('myshopify.com')) {
+                // Prevent Vite from attempting to connect to HMR
+                window.__vite_plugin_react_preamble_installed__ = true;
+                window.__vite_is_modern_browser = false;
               }
             `,
           }}

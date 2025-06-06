@@ -1116,11 +1116,6 @@ export function links() {
   return [];
 }
 
-// Disable client-side navigation for proxy routes
-export function shouldRevalidate() {
-  return false;
-}
-
 // Handle route loading for proxy context
 export const handle = {
   hydrate: true,
@@ -1147,6 +1142,11 @@ export default function App() {
       (window as any).__remixManifest = (window as any).__remixManifest || {};
       (window as any).__remixContext = (window as any).__remixContext || {};
       (window as any).__remixContext.appUrl = appUrl;
+      
+      // Disable Remix's live reload in production proxy mode
+      if ((window as any).__remix_router) {
+        (window as any).__remix_router.dispose?.();
+      }
     }
   }, [appUrl]);
   
