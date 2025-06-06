@@ -13,25 +13,28 @@ jobs:
     - name: Deploy to EC2
       uses: appleboy/ssh-action@v0.1.5
       with:
-        host: 54.241.88.100
+        host: 50.18.129.148
         username: ec2-user
         key: ${{ secrets.EC2_SSH_KEY }}
+        port: 22
+        script_stop: true
         script: |
+          echo "Starting deployment..."
           cd /home/ec2-user/designer-konva
           
-          # Pull latest changes
+          echo "Pulling latest changes..."
           git pull origin main
           
-          # Install dependencies
+          echo "Installing dependencies..."
           npm ci --production=false
           
-          # Build the app
+          echo "Building the app..."
           npm run build
           
-          # Run database migrations
+          echo "Running database migrations..."
           npm run setup
           
-          # Restart PM2
+          echo "Restarting PM2..."
           pm2 reload ecosystem.config.cjs --update-env
           pm2 save
           

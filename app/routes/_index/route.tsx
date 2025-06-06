@@ -24,7 +24,7 @@ export default function App() {
       <div className={styles.content}>
         <h1 className={styles.heading}>Shopify Product Designer</h1>
         <p className={styles.text}>
-          Create customizable product designs with our powerful canvas editor. Deployed via EC2!
+          Create customizable product designs with our powerful canvas editor. Now running on t3.small!
         </p>
         {showForm && (
           <Form className={styles.form} method="post" action="/auth/login">
