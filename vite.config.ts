@@ -2,7 +2,6 @@ import { vitePlugin as remix } from "@remix-run/dev";
 import { installGlobals } from "@remix-run/node";
 import { defineConfig, type UserConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
-import { proxyManifestPlugin } from "./vite-plugin-proxy-manifest";
 
 installGlobals({ nativeFetch: true });
 
@@ -73,7 +72,6 @@ export default defineConfig({
       },
     }),
     tsconfigPaths(),
-    proxyManifestPlugin(),
   ],
   build: {
     assetsInlineLimit: 0,

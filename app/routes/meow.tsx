@@ -1151,29 +1151,54 @@ export default function App() {
   }, [appUrl]);
   
   return (
-    <AppProxyProvider appUrl={appUrl}>
-      <ClientOnly fallback={
-        <div style={{ padding: '20px', textAlign: 'center' }}>
-          <h2>Loading Designer...</h2>
-          <p>Please wait while we initialize the canvas editor.</p>
-        </div>
-      }>
-        <div style={{ padding: 0, margin: 0 }}>
-          {showDevNotice && (
-            <div style={{
-              background: '#fffbdd',
-              border: '1px solid #f0c36d',
-              padding: '10px',
-              fontSize: '14px',
-              color: '#333'
-            }}>
-              ⚠️ Development Mode: Hot reload is disabled when accessing through Shopify proxy. 
-              Manual refresh required for changes.
-            </div>
-          )}
-          <DesignerCanvas />
-        </div>
-      </ClientOnly>
-    </AppProxyProvider>
+    <>
+      {/* Inject manifest handler script before anything else */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `
+            if (window.location.hostname.includes('myshopify.com')) {
+              // Intercept manifest requests immediately
+              const originalFetch = window.fetch;
+              window.fetch = function(input, init) {
+                let url = typeof input === 'string' ? input : (input.url || input);
+                if (url && url.includes('__manifest') && !url.startsWith('http')) {
+                  url = 'https://app.printlabs.com' + url;
+                  if (typeof input === 'string') {
+                    input = url;
+                  } else {
+                    input = new Request(url, input);
+                  }
+                }
+                return originalFetch.call(this, input, init);
+              };
+            }
+          `,
+        }}
+      />
+      <AppProxyProvider appUrl={appUrl}>
+        <ClientOnly fallback={
+          <div style={{ padding: '20px', textAlign: 'center' }}>
+            <h2>Loading Designer...</h2>
+            <p>Please wait while we initialize the canvas editor.</p>
+          </div>
+        }>
+          <div style={{ padding: 0, margin: 0 }}>
+            {showDevNotice && (
+              <div style={{
+                background: '#fffbdd',
+                border: '1px solid #f0c36d',
+                padding: '10px',
+                fontSize: '14px',
+                color: '#333'
+              }}>
+                ⚠️ Development Mode: Hot reload is disabled when accessing through Shopify proxy. 
+                Manual refresh required for changes.
+              </div>
+            )}
+            <DesignerCanvas />
+          </div>
+        </ClientOnly>
+      </AppProxyProvider>
+    </>
   );
 }
