@@ -27,10 +27,24 @@ jobs:
           cd /home/ec2-user/designer-konva || { echo "❌ ERROR: Directory /home/ec2-user/designer-konva not found"; exit 1; }
           echo "✅ Current directory: $(pwd)"
           
-          # Git pull
+          # Git pull with conflict resolution
           echo ""
           echo "📥 Pulling latest changes..."
-          git pull origin main 2>&1 || { echo "❌ ERROR: Git pull failed with exit code $?"; exit 1; }
+          echo "Current git status:"
+          git status --short
+          
+          # Reset package-lock.json if it has local changes
+          if git status --porcelain | grep -q "package-lock.json"; then
+            echo "⚠️  Resetting package-lock.json to avoid conflicts..."
+            git checkout -- package-lock.json
+          fi
+          
+          git pull origin main 2>&1 || { 
+            echo "❌ ERROR: Git pull failed with exit code $?"
+            echo "Attempting to reset and pull..."
+            git fetch origin
+            git reset --hard origin/main
+          }
           echo "✅ Git pull successful"
           
           # Install dependencies
