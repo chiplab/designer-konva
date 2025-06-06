@@ -19,23 +19,56 @@ jobs:
         port: 22
         script_stop: true
         script: |
-          echo "Starting deployment..."
-          cd /home/ec2-user/designer-konva
+          echo "🚀 Starting deployment at $(date)"
+          echo "================================"
           
-          echo "Pulling latest changes..."
-          git pull origin main
+          # Navigate to project directory
+          echo "📁 Navigating to project directory..."
+          cd /home/ec2-user/designer-konva || { echo "❌ ERROR: Directory /home/ec2-user/designer-konva not found"; exit 1; }
+          echo "✅ Current directory: $(pwd)"
           
-          echo "Installing dependencies..."
-          npm ci --production=false
+          # Git pull
+          echo ""
+          echo "📥 Pulling latest changes..."
+          git pull origin main 2>&1 || { echo "❌ ERROR: Git pull failed with exit code $?"; exit 1; }
+          echo "✅ Git pull successful"
           
-          echo "Building the app..."
-          npm run build
+          # Install dependencies
+          echo ""
+          echo "📦 Installing dependencies..."
+          npm ci --production=false 2>&1 || { echo "❌ ERROR: npm ci failed with exit code $?"; exit 1; }
+          echo "✅ Dependencies installed"
           
-          echo "Running database migrations..."
-          npm run setup
+          # Set environment variables
+          echo ""
+          echo "🔧 Setting environment variables..."
+          export SHOPIFY_APP_URL=https://app.printlabs.com
+          export NODE_ENV=production
+          echo "✅ Environment variables set"
           
-          echo "Restarting PM2..."
-          pm2 reload ecosystem.config.cjs --update-env
+          # Build
+          echo ""
+          echo "🔨 Building the app..."
+          npm run build 2>&1 || { echo "❌ ERROR: Build failed with exit code $?"; exit 1; }
+          echo "✅ Build successful"
+          
+          # Database setup
+          echo ""
+          echo "🗄️  Running database migrations..."
+          npm run setup 2>&1 || { echo "❌ ERROR: Database setup failed with exit code $?"; exit 1; }
+          echo "✅ Database setup complete"
+          
+          # PM2 restart
+          echo ""
+          echo "🔄 Restarting PM2..."
+          pm2 reload ecosystem.config.cjs --update-env 2>&1 || { echo "❌ ERROR: PM2 reload failed with exit code $?"; exit 1; }
           pm2 save
+          echo "✅ PM2 restarted"
           
-          echo "✅ Deployment complete!"
+          echo ""
+          echo "📊 PM2 Status:"
+          pm2 list
+          
+          echo ""
+          echo "================================"
+          echo "✅ Deployment complete at $(date)!"
