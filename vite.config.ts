@@ -62,6 +62,7 @@ export default defineConfig({
   plugins: [
     remix({
       ignoredRouteFiles: ["**/.*"],
+      basename: process.env.NODE_ENV === 'production' ? '/' : '/',
       future: {
         v3_fetcherPersist: true,
         v3_relativeSplatPath: true,
@@ -75,6 +76,8 @@ export default defineConfig({
   ],
   build: {
     assetsInlineLimit: 0,
+    // Build assets in a path that won't conflict with proxy routes
+    assetsDir: "build/assets",
   },
   optimizeDeps: {
     include: ["@shopify/app-bridge-react", "@shopify/polaris"],
