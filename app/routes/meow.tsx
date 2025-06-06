@@ -1160,13 +1160,21 @@ export default function App() {
               // Intercept manifest requests immediately
               const originalFetch = window.fetch;
               window.fetch = function(input, init) {
-                let url = typeof input === 'string' ? input : (input.url || input);
-                if (url && url.includes('__manifest') && !url.startsWith('http')) {
+                let url;
+                if (typeof input === 'string') {
+                  url = input;
+                } else if (input instanceof Request) {
+                  url = input.url;
+                } else if (input && typeof input.url === 'string') {
+                  url = input.url;
+                }
+                
+                if (url && typeof url === 'string' && url.includes('__manifest') && !url.startsWith('http')) {
                   url = 'https://app.printlabs.com' + url;
                   if (typeof input === 'string') {
                     input = url;
                   } else {
-                    input = new Request(url, input);
+                    input = new Request(url, input instanceof Request ? input : {});
                   }
                 }
                 return originalFetch.call(this, input, init);
