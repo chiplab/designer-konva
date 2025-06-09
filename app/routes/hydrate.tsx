@@ -25,7 +25,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   return json({
     appUrl: isProxyAccess ? appUrl : '',
-    showDevNotice: isDevelopment && isProxyAccess
+    showDevNotice: isDevelopment && isProxyAccess,
+    hydration: "1.1",
   });
 }
 
@@ -1130,6 +1131,18 @@ export function meta() {
 
 export default function App() {
   const data = useLoaderData<typeof loader>();
+  const [debugHydrationCount, setDebugHydrationCount] = React.useState(0);
+
+  useEffect(() => {
+    setDebugHydrationCount((prev) => prev + 1);
+  }, []);
+
+  
+  React.useEffect(() => {
+    console.log("Canvas size:", dimensions.width, "×", dimensions.height);
+  }, [dimensions]);
+
+  
   React.useEffect(() => {
     console.log("✅ Hydrated!");
   }, []);
