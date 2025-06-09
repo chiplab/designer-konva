@@ -10,6 +10,15 @@ export async function uploadImageToShopify(
   imageData: string,
   filename: string
 ) {
+  // Check if imageData is already a URL (S3 or other)
+  if (imageData.startsWith('https://') || imageData.startsWith('http://')) {
+    console.log('Image is already a URL, using it directly:', imageData);
+    return {
+      url: imageData,
+      filename: filename,
+    };
+  }
+  
   // Convert base64 to buffer
   const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
   const buffer = Buffer.from(base64Data, "base64");
@@ -272,6 +281,8 @@ export async function updateVariantImage(
       }
     }
   `;
+  
+  console.log('Creating media with URL:', imageUrl);
   
   const createImageResponse = await admin.graphql(createImageMutation, {
     variables: {

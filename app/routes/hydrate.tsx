@@ -1137,12 +1137,6 @@ export default function App() {
     setDebugHydrationCount((prev) => prev + 1);
   }, []);
 
-
-  // React.useEffect(() => {
-  //   console.log("Canvas size:", dimensions.width, "×", dimensions.height);
-  // }, [dimensions]);
-
-
   React.useEffect(() => {
     console.log("✅ Hydrated!");
   }, []);
