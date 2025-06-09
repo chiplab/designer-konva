@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "build": "remix vite:build",
+    "build:standalone": "vite build --config vite.standalone.config.ts",
     "dev": "shopify app dev",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",
@@ -60,6 +61,7 @@
     "@types/node": "^22.2.0",
     "@types/react": "^18.2.31",
     "@types/react-dom": "^18.2.14",
+    "@vitejs/plugin-react": "^4.5.1",
     "eslint": "^8.42.0",
     "eslint-config-prettier": "^10.0.1",
     "prettier": "^3.2.4",

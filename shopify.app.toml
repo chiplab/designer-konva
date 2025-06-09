@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://accounting-childrens-ms-southwest.trycloudflare.com"
+application_url = "https://food-kelly-vids-sku.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://accounting-childrens-ms-southwest.trycloudflare.com/auth/callback",
-  "https://accounting-childrens-ms-southwest.trycloudflare.com/auth/shopify/callback",
-  "https://accounting-childrens-ms-southwest.trycloudflare.com/api/auth/callback"
+  "https://food-kelly-vids-sku.trycloudflare.com/auth/callback",
+  "https://food-kelly-vids-sku.trycloudflare.com/auth/shopify/callback",
+  "https://food-kelly-vids-sku.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://accounting-childrens-ms-southwest.trycloudflare.com"
+url = "https://food-kelly-vids-sku.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 
