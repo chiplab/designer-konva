@@ -1133,16 +1133,11 @@ export default function App() {
   const data = useLoaderData<typeof loader>();
   const [debugHydrationCount, setDebugHydrationCount] = React.useState(0);
 
-  useEffect(() => {
+  React.useEffect(() => {
     setDebugHydrationCount((prev) => prev + 1);
   }, []);
 
-  
-  React.useEffect(() => {
-    console.log("Canvas size:", dimensions.width, "×", dimensions.height);
-  }, [dimensions]);
 
-  
   React.useEffect(() => {
     console.log("✅ Hydrated!");
   }, []);
