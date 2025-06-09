@@ -89,4 +89,4 @@ For more info see: https://github.com/konvajs/react-konva/issues/194
             opacity: 1;
           }
         }
-      `}})]})};function ff(){return J.jsxs("div",{style:{padding:0,margin:0},children:[J.jsx("h2",{style:{padding:"20px",fontFamily:"Arial"},children:"Standalone Designer Canvas (No Remix Hydration)"}),J.jsx(hf,{})]})}if(typeof window<"u"){const s=()=>{const f=document.getElementById("canvas-root");f&&lc.createRoot(f).render(J.jsx(ff,{}))};document.readyState==="loading"?document.addEventListener("DOMContentLoaded",s):s()}})(React,ReactDOM);
+      `}})]})};function ff(){const s=window.__INITIAL_TEMPLATE__||null;return J.jsxs(J.Fragment,{children:[J.jsx("div",{className:"canvas-header",children:J.jsx("h2",{style:{margin:0,fontFamily:"Arial"},children:s?`Editing: ${s.name}`:"Standalone Designer Canvas (No Remix Hydration)"})}),J.jsx("div",{className:"canvas-container",children:J.jsx(hf,{initialTemplate:s})})]})}if(typeof window<"u"){const s=()=>{const f=document.getElementById("canvas-root");f&&lc.createRoot(f).render(J.jsx(ff,{}))};document.readyState==="loading"?document.addEventListener("DOMContentLoaded",s):s()}})(React,ReactDOM);

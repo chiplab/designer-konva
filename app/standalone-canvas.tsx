@@ -4,11 +4,20 @@ import DesignerCanvas from './components/DesignerCanvas';
 
 // Wrapper component for the full designer canvas
 function StandaloneCanvas() {
+  // Get template data from window if available
+  const initialTemplate = (window as any).__INITIAL_TEMPLATE__ || null;
+  
   return (
-    <div style={{ padding: 0, margin: 0 }}>
-      <h2 style={{ padding: '20px', fontFamily: 'Arial' }}>Standalone Designer Canvas (No Remix Hydration)</h2>
-      <DesignerCanvas />
-    </div>
+    <>
+      <div className="canvas-header">
+        <h2 style={{ margin: 0, fontFamily: 'Arial' }}>
+          {initialTemplate ? `Editing: ${initialTemplate.name}` : 'Standalone Designer Canvas (No Remix Hydration)'}
+        </h2>
+      </div>
+      <div className="canvas-container">
+        <DesignerCanvas initialTemplate={initialTemplate} />
+      </div>
+    </>
   );
 }
 
