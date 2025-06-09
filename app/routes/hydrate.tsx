@@ -14,16 +14,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
   } catch (error) {
     console.log('Auth failed, continuing anyway:', error);
   }
-  
+
   // Check if accessed through proxy
   const url = new URL(request.url);
   const isProxyAccess = url.hostname.includes('myshopify.com');
   const isDevelopment = process.env.NODE_ENV !== 'production';
-  
+
   // Always pass the app URL in production, especially for proxy access
   const appUrl = process.env.SHOPIFY_APP_URL || 'https://app.printlabs.com';
-  
-  return json({ 
+
+  return json({
     appUrl: isProxyAccess ? appUrl : '',
     showDevNotice: isDevelopment && isProxyAccess
   });
@@ -33,7 +33,7 @@ const DesignerCanvas = () => {
   const shapeRef = React.useRef(null);
   const stageRef = React.useRef<any>(null);
   const [dimensions, setDimensions] = React.useState({ width: 1000, height: 1000 });
-  
+
   // Use absolute URLs for images when in production/proxy
   const getBaseUrl = () => {
     if (typeof window !== 'undefined' && window.location.hostname.includes('myshopify.com')) {
@@ -41,9 +41,9 @@ const DesignerCanvas = () => {
     }
     return '';
   };
-  
+
   const baseUrl = getBaseUrl();
-  
+
   // Default to local assets, but can be overridden with S3 URLs
   const [baseImageUrl, setBaseImageUrl] = React.useState(`${baseUrl}/media/images/8-spot-red-base-image.png`);
   const [svgImageUrl, setSvgImageUrl] = React.useState(`${baseUrl}/media/images/borders_v7-11.svg`);
@@ -75,17 +75,17 @@ const DesignerCanvas = () => {
 
   const loadFont = async (fontFamily: string) => {
     if (loadedFonts.has(fontFamily) || fontFamily === 'Arial') return;
-    
+
     // Only run in browser
     if (typeof document === 'undefined') return;
-    
+
     try {
       // Google Fonts API integration
       const link = document.createElement('link');
       link.href = `https://fonts.googleapis.com/css2?family=${fontFamily.replace(' ', '+')}:wght@400;700&display=swap`;
       link.rel = 'stylesheet';
       document.head.appendChild(link);
-      
+
       // Wait for font to actually load
       await document.fonts.load(`16px "${fontFamily}"`);
       setLoadedFonts(prev => new Set([...prev, fontFamily]));
@@ -101,14 +101,14 @@ const DesignerCanvas = () => {
       height: 1000
     };
     setDimensions(newDimensions);
-    
+
     // Update designable area position to center
     setDesignableArea(prev => ({
       ...prev,
       x: newDimensions.width / 2 - prev.width / 2,
       y: newDimensions.height / 2 - prev.height / 2
     }));
-    
+
     // it will log `Konva.Circle` instance
     console.log(shapeRef.current);
   }, []);
@@ -184,34 +184,34 @@ const DesignerCanvas = () => {
     // Check if it's a curved text element
     const curvedElement = curvedTextElements.find(el => el.id === id);
     if (curvedElement) {
-      setCurvedTextElements(prev => 
+      setCurvedTextElements(prev =>
         prev.map(el => el.id === id ? { ...el, text: newText } : el)
       );
     }
-    
+
     // Check if it's a regular text element
     const textElement = textElements.find(el => el.id === id);
     if (textElement) {
-      setTextElements(prev => 
+      setTextElements(prev =>
         prev.map(el => el.id === id ? { ...el, text: newText } : el)
       );
     }
-    
+
     // Check if it's a gradient text element
     const gradientElement = gradientTextElements.find(el => el.id === id);
     if (gradientElement) {
-      setGradientTextElements(prev => 
+      setGradientTextElements(prev =>
         prev.map(el => el.id === id ? { ...el, text: newText } : el)
       );
     }
-    
+
     setEditingId(null);
   };
 
   const handleDiameterChange = (newRadius: number) => {
     if (selectedId) {
-      setCurvedTextElements(prev => 
-        prev.map(el => 
+      setCurvedTextElements(prev =>
+        prev.map(el =>
           el.id === selectedId ? { ...el, radius: newRadius } : el
         )
       );
@@ -220,8 +220,8 @@ const DesignerCanvas = () => {
 
   const handleFlipText = () => {
     if (selectedId) {
-      setCurvedTextElements(prev => 
-        prev.map(el => 
+      setCurvedTextElements(prev =>
+        prev.map(el =>
           el.id === selectedId ? { ...el, flipped: !el.flipped } : el
         )
       );
@@ -241,35 +241,35 @@ const DesignerCanvas = () => {
 
   const handleFontChange = async (fontFamily: string) => {
     if (!selectedId) return;
-    
+
     // Load the font first
     await loadFont(fontFamily);
-    
+
     // Update the appropriate element state
     // Check if it's a curved text element
     const curvedElement = curvedTextElements.find(el => el.id === selectedId);
     if (curvedElement) {
-      setCurvedTextElements(prev => 
+      setCurvedTextElements(prev =>
         prev.map(el => el.id === selectedId ? { ...el, fontFamily } : el)
       );
     }
-    
+
     // Check if it's a regular text element
     const textElement = textElements.find(el => el.id === selectedId);
     if (textElement) {
-      setTextElements(prev => 
+      setTextElements(prev =>
         prev.map(el => el.id === selectedId ? { ...el, fontFamily } : el)
       );
     }
-    
+
     // Check if it's a gradient text element
     const gradientElement = gradientTextElements.find(el => el.id === selectedId);
     if (gradientElement) {
-      setGradientTextElements(prev => 
+      setGradientTextElements(prev =>
         prev.map(el => el.id === selectedId ? { ...el, fontFamily } : el)
       );
     }
-    
+
     // Force re-render and update transformer bounds after font loads
     setTimeout(() => {
       if (transformerRef.current) {
@@ -278,7 +278,7 @@ const DesignerCanvas = () => {
         if (selectedNode) {
           // Re-render the layer first
           selectedNode.getLayer()?.batchDraw();
-          
+
           // Force transformer to recalculate bounds for new font metrics
           transformerRef.current.nodes([selectedNode]);
           transformerRef.current.forceUpdate();
@@ -309,12 +309,12 @@ const DesignerCanvas = () => {
 
   const loadCanvasState = (state: any) => {
     if (!state) return;
-    
+
     // Load dimensions and background
     if (state.dimensions) setDimensions(state.dimensions);
     if (state.backgroundColor) setBackgroundColor(state.backgroundColor);
     if (state.designableArea) setDesignableArea(state.designableArea);
-    
+
     // Load elements
     if (state.elements) {
       if (state.elements.textElements) setTextElements(state.elements.textElements);
@@ -322,7 +322,7 @@ const DesignerCanvas = () => {
       if (state.elements.gradientTextElements) setGradientTextElements(state.elements.gradientTextElements);
       if (state.elements.svgElements) setSvgElements(state.elements.svgElements);
     }
-    
+
     // Load assets (with fallback to local defaults)
     if (state.assets) {
       if (state.assets.baseImage) {
@@ -343,7 +343,7 @@ const DesignerCanvas = () => {
     try {
       // Get canvas state
       const canvasState = getCanvasState();
-      
+
       // Generate thumbnail
       const thumbnail = stageRef.current?.toDataURL({ pixelRatio: 0.3 });
 
@@ -360,10 +360,10 @@ const DesignerCanvas = () => {
       });
 
       const result = await response.json();
-      
+
       if (result.success) {
         // Show a more informative message with sync status
-        const message = result.warning 
+        const message = result.warning
           ? `Template saved but with warning: ${result.warning}`
           : 'Template saved and synced successfully to your Shopify store!';
         alert(message);
@@ -373,7 +373,7 @@ const DesignerCanvas = () => {
       }
     } catch (error) {
       console.error('Error saving template:', error);
-      const errorMessage = error instanceof Error 
+      const errorMessage = error instanceof Error
         ? `Failed to save template: ${error.message}. Please check your connection and try again.`
         : 'Failed to save template. Please check your connection and try again.';
       alert(errorMessage);
@@ -390,7 +390,7 @@ const DesignerCanvas = () => {
     try {
       const response = await fetch(`${baseUrl}/api/templates/${templateId}`);
       const result = await response.json();
-      
+
       if (result.template) {
         const canvasData = JSON.parse(result.template.canvasData);
         loadCanvasState(canvasData);
@@ -400,7 +400,7 @@ const DesignerCanvas = () => {
       }
     } catch (error) {
       console.error('Error loading template:', error);
-      alert('Failed to load template: ' + error.message);
+      alert('Failed to load template: ' + (error as Error).message);
     } finally {
       setIsLoading(false);
     }
@@ -411,7 +411,7 @@ const DesignerCanvas = () => {
     try {
       const response = await fetch(`${baseUrl}/api/templates`);
       const result = await response.json();
-      
+
       if (result.templates) {
         setTemplates(result.templates);
       }
@@ -440,11 +440,11 @@ const DesignerCanvas = () => {
         <button onClick={addSvg} style={{ padding: '8px 16px', fontSize: '14px', marginRight: '10px' }}>
           Add SVG
         </button>
-        <button 
+        <button
           onClick={() => setDesignableArea(prev => ({ ...prev, visible: !prev.visible }))}
-          style={{ 
-            padding: '8px 16px', 
-            fontSize: '14px', 
+          style={{
+            padding: '8px 16px',
+            fontSize: '14px',
             marginRight: '10px',
             backgroundColor: designableArea.visible ? '#28a745' : '#6c757d',
             color: 'white',
@@ -454,15 +454,15 @@ const DesignerCanvas = () => {
         >
           {designableArea.visible ? 'Hide' : 'Show'} Design Area
         </button>
-        
+
         {/* Save/Load Controls */}
         <div style={{ display: 'inline-block', marginLeft: '20px', borderLeft: '2px solid #ddd', paddingLeft: '20px' }}>
-          <button 
-            onClick={saveTemplate} 
+          <button
+            onClick={saveTemplate}
             disabled={isSaving}
-            style={{ 
-              padding: '8px 16px', 
-              fontSize: '14px', 
+            style={{
+              padding: '8px 16px',
+              fontSize: '14px',
               marginRight: '10px',
               backgroundColor: '#007bff',
               color: 'white',
@@ -474,12 +474,12 @@ const DesignerCanvas = () => {
           >
             {isSaving ? 'Saving...' : 'Save Template'}
           </button>
-          
-          <select 
+
+          <select
             onChange={(e) => loadTemplate(e.target.value)}
             disabled={isLoading}
-            style={{ 
-              padding: '8px 16px', 
+            style={{
+              padding: '8px 16px',
               fontSize: '14px',
               marginRight: '10px',
               borderRadius: '4px',
@@ -494,16 +494,16 @@ const DesignerCanvas = () => {
               </option>
             ))}
           </select>
-          
+
           {isLoading && <span style={{ fontSize: '14px', color: '#666' }}>Loading...</span>}
         </div>
-        
+
         {/* Asset Management Controls */}
         <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f0f4f8', border: '1px solid #dae1e7', borderRadius: '4px' }}>
           <strong>Asset Management (S3):</strong>
           <div style={{ display: 'flex', gap: '15px', marginTop: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
             <label>
-              Base Image: 
+              Base Image:
               <select
                 value={baseImageUrl}
                 onChange={(e) => setBaseImageUrl(e.target.value)}
@@ -526,7 +526,7 @@ const DesignerCanvas = () => {
                   const formData = new FormData();
                   formData.append('file', file);
                   formData.append('assetType', 'image');
-                  
+
                   try {
                     const response = await fetch(`${baseUrl}/api/assets/upload`, {
                       method: 'POST',
@@ -550,13 +550,13 @@ const DesignerCanvas = () => {
             </span>
           </div>
         </div>
-        
+
         {/* Designable Area Controls */}
         <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f8f9fa', border: '1px solid #dee2e6', borderRadius: '4px' }}>
           <strong>Design Area Controls:</strong>
           <div style={{ display: 'flex', gap: '15px', marginTop: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
             <label>
-              Center X: 
+              Center X:
               <input
                 type="range"
                 min="200"
@@ -564,8 +564,8 @@ const DesignerCanvas = () => {
                 value={designableArea.x + designableArea.width / 2}
                 onChange={(e) => {
                   const newCenterX = parseInt(e.target.value);
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
+                  setDesignableArea(prev => ({
+                    ...prev,
                     x: newCenterX - prev.width / 2
                   }));
                 }}
@@ -574,7 +574,7 @@ const DesignerCanvas = () => {
               <span style={{ marginLeft: '5px', minWidth: '40px', display: 'inline-block' }}>{Math.round(designableArea.x + designableArea.width / 2)}px</span>
             </label>
             <label>
-              Center Y: 
+              Center Y:
               <input
                 type="range"
                 min="200"
@@ -582,8 +582,8 @@ const DesignerCanvas = () => {
                 value={designableArea.y + designableArea.height / 2}
                 onChange={(e) => {
                   const newCenterY = parseInt(e.target.value);
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
+                  setDesignableArea(prev => ({
+                    ...prev,
                     y: newCenterY - prev.height / 2
                   }));
                 }}
@@ -592,7 +592,7 @@ const DesignerCanvas = () => {
               <span style={{ marginLeft: '5px', minWidth: '40px', display: 'inline-block' }}>{Math.round(designableArea.y + designableArea.height / 2)}px</span>
             </label>
             <label>
-              Width: 
+              Width:
               <input
                 type="range"
                 min="100"
@@ -601,8 +601,8 @@ const DesignerCanvas = () => {
                 onChange={(e) => {
                   const newWidth = parseInt(e.target.value);
                   const centerX = designableArea.x + designableArea.width / 2;
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
+                  setDesignableArea(prev => ({
+                    ...prev,
                     width: newWidth,
                     x: centerX - newWidth / 2, // Keep center fixed
                     cornerRadius: Math.min(prev.cornerRadius, newWidth / 2)
@@ -614,8 +614,8 @@ const DesignerCanvas = () => {
                 onClick={() => {
                   const newWidth = Math.max(100, designableArea.width - 1);
                   const centerX = designableArea.x + designableArea.width / 2;
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
+                  setDesignableArea(prev => ({
+                    ...prev,
                     width: newWidth,
                     x: centerX - newWidth / 2,
                     cornerRadius: Math.min(prev.cornerRadius, newWidth / 2)
@@ -629,8 +629,8 @@ const DesignerCanvas = () => {
                 onClick={() => {
                   const newWidth = Math.min(1000, designableArea.width + 1);
                   const centerX = designableArea.x + designableArea.width / 2;
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
+                  setDesignableArea(prev => ({
+                    ...prev,
                     width: newWidth,
                     x: centerX - newWidth / 2,
                     cornerRadius: Math.min(prev.cornerRadius, newWidth / 2)
@@ -643,7 +643,7 @@ const DesignerCanvas = () => {
               <span style={{ marginLeft: '5px', minWidth: '40px', display: 'inline-block' }}>{designableArea.width}px</span>
             </label>
             <label>
-              Height: 
+              Height:
               <input
                 type="range"
                 min="100"
@@ -652,8 +652,8 @@ const DesignerCanvas = () => {
                 onChange={(e) => {
                   const newHeight = parseInt(e.target.value);
                   const centerY = designableArea.y + designableArea.height / 2;
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
+                  setDesignableArea(prev => ({
+                    ...prev,
                     height: newHeight,
                     y: centerY - newHeight / 2, // Keep center fixed
                     cornerRadius: Math.min(prev.cornerRadius, newHeight / 2)
@@ -665,8 +665,8 @@ const DesignerCanvas = () => {
                 onClick={() => {
                   const newHeight = Math.max(100, designableArea.height - 1);
                   const centerY = designableArea.y + designableArea.height / 2;
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
+                  setDesignableArea(prev => ({
+                    ...prev,
                     height: newHeight,
                     y: centerY - newHeight / 2,
                     cornerRadius: Math.min(prev.cornerRadius, newHeight / 2)
@@ -680,8 +680,8 @@ const DesignerCanvas = () => {
                 onClick={() => {
                   const newHeight = Math.min(1000, designableArea.height + 1);
                   const centerY = designableArea.y + designableArea.height / 2;
-                  setDesignableArea(prev => ({ 
-                    ...prev, 
+                  setDesignableArea(prev => ({
+                    ...prev,
                     height: newHeight,
                     y: centerY - newHeight / 2,
                     cornerRadius: Math.min(prev.cornerRadius, newHeight / 2)
@@ -694,7 +694,7 @@ const DesignerCanvas = () => {
               <span style={{ marginLeft: '5px', minWidth: '40px', display: 'inline-block' }}>{designableArea.height}px</span>
             </label>
             <label>
-              Corner Radius: 
+              Corner Radius:
               <input
                 type="range"
                 min="0"
@@ -711,7 +711,7 @@ const DesignerCanvas = () => {
           </div>
           <div style={{ display: 'flex', gap: '15px', marginTop: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <label>
-              Background Color: 
+              Background Color:
               <select
                 value={backgroundColor}
                 onChange={(e) => setBackgroundColor(e.target.value)}
@@ -729,16 +729,16 @@ const DesignerCanvas = () => {
             </label>
           </div>
         </div>
-        
+
         {/* Canvas Size Debug Info */}
         <div style={{ marginTop: '10px', padding: '5px', fontSize: '12px', color: '#6c757d', fontFamily: 'monospace' }}>
           Canvas Size: {dimensions.width} px width × {dimensions.height} px height
         </div>
-        
+
         {selectedId && curvedTextElements.find(el => el.id === selectedId) && (
           <div style={{ display: 'inline-block', marginLeft: '20px' }}>
             <label style={{ marginRight: '10px' }}>
-              Diameter: 
+              Diameter:
               <input
                 type="range"
                 min="50"
@@ -751,11 +751,11 @@ const DesignerCanvas = () => {
                 {(curvedTextElements.find(el => el.id === selectedId)?.radius || 100) * 2}px
               </span>
             </label>
-            <button 
+            <button
               onClick={handleFlipText}
-              style={{ 
-                padding: '8px 16px', 
-                fontSize: '14px', 
+              style={{
+                padding: '8px 16px',
+                fontSize: '14px',
                 marginLeft: '20px',
                 backgroundColor: '#007bff',
                 color: 'white',
@@ -769,10 +769,10 @@ const DesignerCanvas = () => {
           </div>
         )}
         {selectedId && curvedTextElements.find(el => el.id === selectedId) && (
-          <div style={{ 
-            background: '#f0f0f0', 
-            padding: '10px', 
-            margin: '10px 0', 
+          <div style={{
+            background: '#f0f0f0',
+            padding: '10px',
+            margin: '10px 0',
             border: '1px solid #ccc',
             fontFamily: 'monospace',
             fontSize: '12px'
@@ -784,14 +784,14 @@ const DesignerCanvas = () => {
             Center Y (calculated): {(curvedTextElements.find(el => el.id === selectedId)?.topY || 0) + (curvedTextElements.find(el => el.id === selectedId)?.radius || 0)}<br/>
           </div>
         )}
-        
+
         {/* Font Controls - POC */}
         {selectedId && (textElements.find(el => el.id === selectedId) || gradientTextElements.find(el => el.id === selectedId) || curvedTextElements.find(el => el.id === selectedId)) && (
           <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f8f9fa', border: '1px solid #dee2e6', borderRadius: '4px' }}>
             <strong>Font Controls (POC):</strong>
             <div style={{ display: 'flex', gap: '10px', marginTop: '5px', alignItems: 'center' }}>
               <label>
-                Font Family: 
+                Font Family:
                 <select
                   value={
                     textElements.find(el => el.id === selectedId)?.fontFamily ||
@@ -864,7 +864,7 @@ const DesignerCanvas = () => {
               height={1000}
             />
           )}
-          
+
           {/* Clipped Design Content Group */}
           <Group
             clipFunc={(ctx) => {
@@ -874,7 +874,7 @@ const DesignerCanvas = () => {
               const width = designableArea.width;
               const height = designableArea.height;
               const radius = designableArea.cornerRadius;
-              
+
               // Use same logic as Konva Rect with cornerRadius
               ctx.beginPath();
               if (radius > 0) {
@@ -909,7 +909,7 @@ const DesignerCanvas = () => {
                 listening={false}
               />
             )}
-            
+
             {/* Demo circle - can be removed later */}
             <Circle
               ref={shapeRef}
@@ -937,9 +937,9 @@ const DesignerCanvas = () => {
                 onDragEnd={(e) => {
                   const newX = e.target.x();
                   const newY = e.target.y();
-                  setTextElements(prev => 
-                    prev.map(el => 
-                      el.id === textEl.id 
+                  setTextElements(prev =>
+                    prev.map(el =>
+                      el.id === textEl.id
                         ? { ...el, x: newX, y: newY }
                         : el
                     )
@@ -967,9 +967,9 @@ const DesignerCanvas = () => {
                 onDragEnd={(e) => {
                   const newX = e.target.x();
                   const newY = e.target.y();
-                  setGradientTextElements(prev => 
-                    prev.map(el => 
-                      el.id === gradientEl.id 
+                  setGradientTextElements(prev =>
+                    prev.map(el =>
+                      el.id === gradientEl.id
                         ? { ...el, x: newX, y: newY }
                         : el
                     )
@@ -992,9 +992,9 @@ const DesignerCanvas = () => {
                 onDragEnd={(e) => {
                   const newX = e.target.x();
                   const newY = e.target.y();
-                  setSvgElements(prev => 
-                    prev.map(el => 
-                      el.id === svgEl.id 
+                  setSvgElements(prev =>
+                    prev.map(el =>
+                      el.id === svgEl.id
                         ? { ...el, x: newX, y: newY }
                         : el
                     )
@@ -1006,14 +1006,14 @@ const DesignerCanvas = () => {
             // Calculate center Y based on whether text is flipped
             // For normal text: pin top edge, so center = topY + radius
             // For flipped text: pin bottom edge, so center = topY - radius
-            const centerY = curvedEl.flipped 
+            const centerY = curvedEl.flipped
               ? curvedEl.topY - curvedEl.radius  // Bottom edge stays at topY
               : curvedEl.topY + curvedEl.radius; // Top edge stays at topY
-            
+
             // Create path for text
             const textLength = curvedEl.text.length * 12; // Approximate text length
             const angleSpan = Math.min(textLength / curvedEl.radius, Math.PI * 1.5); // Max 270 degrees
-            
+
             let startAngle, endAngle, sweepFlag;
             if (curvedEl.flipped) {
               // Bottom arc - text reads left to right along bottom
@@ -1027,15 +1027,15 @@ const DesignerCanvas = () => {
               endAngle = -Math.PI/2 + angleSpan/2;
               sweepFlag = 1; // Clockwise
             }
-            
+
             const startX = Math.cos(startAngle) * curvedEl.radius;
             const startY = Math.sin(startAngle) * curvedEl.radius;
             const endX = Math.cos(endAngle) * curvedEl.radius;
             const endY = Math.sin(endAngle) * curvedEl.radius;
-            
+
             const largeArcFlag = angleSpan > Math.PI ? 1 : 0;
             const pathData = `M ${startX},${startY} A ${curvedEl.radius},${curvedEl.radius} 0 ${largeArcFlag},${sweepFlag} ${endX},${endY}`;
-            
+
             return (
               <Group
                 key={curvedEl.id}
@@ -1053,12 +1053,12 @@ const DesignerCanvas = () => {
                   // Calculate topY based on whether text is flipped
                   // For normal text: topY = centerY - radius
                   // For flipped text: topY = centerY + radius (since bottom is pinned)
-                  const newTopY = curvedEl.flipped 
-                    ? newY + curvedEl.radius 
+                  const newTopY = curvedEl.flipped
+                    ? newY + curvedEl.radius
                     : newY - curvedEl.radius;
-                  setCurvedTextElements(prev => 
-                    prev.map(el => 
-                      el.id === curvedEl.id 
+                  setCurvedTextElements(prev =>
+                    prev.map(el =>
+                      el.id === curvedEl.id
                         ? { ...el, x: newX, topY: newTopY }
                         : el
                     )
@@ -1077,7 +1077,7 @@ const DesignerCanvas = () => {
             );
           })}
           </Group>
-          
+
           {/* Designable Area Overlay */}
           {designableArea.visible && (
             <Rect
@@ -1093,7 +1093,7 @@ const DesignerCanvas = () => {
               listening={false} // Don't interfere with other interactions
             />
           )}
-          
+
           <Transformer
             ref={transformerRef}
             boundBoxFunc={(oldBox, newBox) => {
@@ -1130,11 +1130,11 @@ export function meta() {
 
 export default function App() {
   const data = useLoaderData<typeof loader>();
-  
+
   // Handle case where loader data might not be available during SSR
   const appUrl = data?.appUrl || '';
   const showDevNotice = data?.showDevNotice || false;
-  
+
   // Inject base URL for client-side asset loading when in proxy mode
   React.useEffect(() => {
     if (typeof window !== 'undefined' && window.location.hostname.includes('myshopify.com') && appUrl) {
@@ -1142,14 +1142,14 @@ export default function App() {
       (window as any).__remixManifest = (window as any).__remixManifest || {};
       (window as any).__remixContext = (window as any).__remixContext || {};
       (window as any).__remixContext.appUrl = appUrl;
-      
+
       // Disable Remix's live reload in production proxy mode
       if ((window as any).__remix_router) {
         (window as any).__remix_router.dispose?.();
       }
     }
   }, [appUrl]);
-  
+
   return (
     <AppProxyProvider appUrl={appUrl}>
       <ClientOnly fallback={
@@ -1167,7 +1167,7 @@ export default function App() {
               fontSize: '14px',
               color: '#333'
             }}>
-              ⚠️ Development Mode: Hot reload is disabled when accessing through Shopify proxy. 
+              ⚠️ Development Mode: Hot reload is disabled when accessing through Shopify proxy.
               Manual refresh required for changes.
             </div>
           )}

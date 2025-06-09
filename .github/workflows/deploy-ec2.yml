@@ -8,7 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Deploy to EC2
       uses: appleboy/ssh-action@v0.1.5
@@ -21,68 +21,71 @@ jobs:
         script: |
           echo "🚀 Starting deployment at $(date)"
           echo "================================"
-          
+
           # Navigate to project directory
           echo "📁 Navigating to project directory..."
           cd /home/ec2-user/designer-konva || { echo "❌ ERROR: Directory /home/ec2-user/designer-konva not found"; exit 1; }
           echo "✅ Current directory: $(pwd)"
-          
+
           # Git pull with conflict resolution
           echo ""
           echo "📥 Pulling latest changes..."
           echo "Current git status:"
           git status --short
-          
+
           # Reset package-lock.json if it has local changes
           if git status --porcelain | grep -q "package-lock.json"; then
             echo "⚠️  Resetting package-lock.json to avoid conflicts..."
             git checkout -- package-lock.json
           fi
-          
-          git pull origin main 2>&1 || { 
-            echo "❌ ERROR: Git pull failed with exit code $?"
-            echo "Attempting to reset and pull..."
-            git fetch origin
-            git reset --hard origin/main
-          }
-          echo "✅ Git pull successful"
-          
+
+          # Clean git state and pull
+          git fetch origin
+          git reset --hard origin/main
+          git clean -fd
+          echo "✅ Git state cleaned and updated"
+
           # Install dependencies
           echo ""
           echo "📦 Installing dependencies..."
-          npm ci --production=false 2>&1 || { echo "❌ ERROR: npm ci failed with exit code $?"; exit 1; }
+          rm -rf node_modules
+          rm -f package-lock.json
+          npm install --production=false 2>&1 || { echo "❌ ERROR: npm install failed with exit code $?"; exit 1; }
           echo "✅ Dependencies installed"
-          
+
           # Set environment variables
           echo ""
           echo "🔧 Setting environment variables..."
           export SHOPIFY_APP_URL=https://app.printlabs.com
           export NODE_ENV=production
           echo "✅ Environment variables set"
-          
+
           # Build
           echo ""
           echo "🔨 Building the app..."
+          rm -rf build
+          rm -rf public/build
           npm run build 2>&1 || { echo "❌ ERROR: Build failed with exit code $?"; exit 1; }
           echo "✅ Build successful"
-          
+
           # Database setup
           echo ""
           echo "🗄️  Running database migrations..."
           npm run setup 2>&1 || { echo "❌ ERROR: Database setup failed with exit code $?"; exit 1; }
           echo "✅ Database setup complete"
-          
+
           # PM2 restart
           echo ""
           echo "🔄 Restarting PM2..."
-          pm2 reload ecosystem.config.cjs --update-env 2>&1 || { echo "❌ ERROR: PM2 reload failed with exit code $?"; exit 1; }
+          pm2 delete all || true
+          pm2 start ecosystem.config.cjs --update-env 2>&1 || { echo "❌ ERROR: PM2 start failed with exit code $?"; exit 1; }
           pm2 save
           echo "✅ PM2 restarted"
-          
+
           echo ""
           echo "📊 PM2 Status:"
           pm2 list
-          
+
           echo ""
           echo "================================"
           echo "✅ Deployment complete at $(date)!"
