@@ -1,27 +1,33 @@
 /**
  * Server-side canvas rendering service using Konva and @napi-rs/canvas
  */
-import { createCanvas, GlobalFonts, type Canvas } from '@napi-rs/canvas';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 import Konva from 'konva';
-// No need for node-fetch import in modern Node.js
 import { fontLoader } from './font-loader';
 
-// Polyfill for Konva to work in Node.js
-if (typeof window === 'undefined') {
-  // @ts-ignore
-  global.window = {
-    devicePixelRatio: 1,
-  };
-  // @ts-ignore
-  global.document = {
-    createElement: () => {
-      return createCanvas(1, 1);
-    },
-    documentElement: {
-      addEventListener: () => {},
-    },
-  };
-}
+// Set Konva's window/document to use our canvas implementation
+// This is the official way per https://github.com/konvajs/konva#4-nodejs-env
+// @ts-ignore
+Konva.window = {
+  devicePixelRatio: 1,
+  // Add matchMedia that was causing the error
+  matchMedia: () => ({
+    matches: false,
+    addListener: () => {},
+    removeListener: () => {},
+  }),
+};
+
+// @ts-ignore
+Konva.document = {
+  createElement: function() {
+    // Return our canvas implementation when Konva asks for it
+    return createCanvas(1, 1) as any;
+  },
+  documentElement: {
+    addEventListener: function() {},
+  },
+};
 
 interface CanvasState {
   dimensions: { width: number; height: number };
@@ -123,15 +129,10 @@ export async function renderCanvasToBuffer(
 
   const { width, height } = state.dimensions;
   
-  // Create canvas
-  const canvas = createCanvas(width, height);
-  const ctx = canvas.getContext('2d');
-  
-  // Create Konva stage with our canvas
+  // For server-side, we don't need a container - we'll export to canvas
   const stage = new Konva.Stage({
     width,
     height,
-    container: canvas as any,
   });
   
   const layer = new Konva.Layer();
@@ -236,10 +237,13 @@ export async function renderCanvasToBuffer(
     clipGroup.add(text);
   });
   
-  // Draw everything
-  layer.draw();
+  // Draw the stage
+  stage.draw();
   
-  // Convert to buffer
+  // Get the canvas from the layer
+  const canvas = layer.getCanvas()._canvas;
+  
+  // Convert to buffer using @napi-rs/canvas methods
   const format = options.format || 'png';
   const buffer = format === 'jpeg' 
     ? await canvas.toBuffer('image/jpeg', { quality: options.quality || 0.9 })
