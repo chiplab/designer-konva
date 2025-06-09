@@ -20,7 +20,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         </style>
       </head>
       <body>
-        <div id="canvas-root">Loading canvas...</div>
+        <div id="canvas-root">Loading canvas....</div>
         
         <!-- React and React-DOM from CDN -->
         <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
