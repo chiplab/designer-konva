@@ -92,10 +92,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }
 
       // Import the sync service
-      const { syncTemplateThumbnailToVariants } = await import("../services/template-sync.server");
+      const { syncTemplateWithServerRender } = await import("../services/template-sync.server");
       
-      // Sync the thumbnail to variants
-      const syncResult = await syncTemplateThumbnailToVariants(admin, templateId, template.thumbnail);
+      // Use server-side rendering for better Shopify compatibility
+      const syncResult = await syncTemplateWithServerRender(admin, templateId, session);
       
       if (!syncResult.success && syncResult.errors.length > 0) {
         return json({ 
