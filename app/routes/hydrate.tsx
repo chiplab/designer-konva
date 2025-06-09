@@ -1137,7 +1137,6 @@ export default function App() {
     setDebugHydrationCount((prev) => prev + 1);
   }, []);
 
-
   React.useEffect(() => {
     console.log("✅ Hydrated!");
   }, []);
