@@ -20,7 +20,9 @@
     "graphql-codegen": "graphql-codegen",
     "vite": "vite",
     "setup-fonts": "node scripts/setup-fonts.mjs",
-    "generate-font-previews": "node scripts/generate-font-previews.mjs"
+    "generate-font-previews": "node scripts/generate-font-previews.mjs",
+    "db:tunnel": "./scripts/rds-tunnel.sh",
+    "db:studio": "prisma studio"
   },
   "type": "module",
   "engines": {
