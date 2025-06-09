@@ -26,11 +26,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
         <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
         
-        <!-- Konva from CDN -->
-        <script src="https://unpkg.com/konva@9/konva.min.js"></script>
-        
-        <!-- Load our standalone canvas bundle -->
-        <script src="${appUrl}/standalone/standalone-canvas.js"></script>
+        <!-- Load our standalone canvas bundle (includes Konva) -->
+        <script src="standalone/standalone-canvas.js"></script>
         
         <!-- Fallback test if bundle not found -->
         <script>

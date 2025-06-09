@@ -1,49 +1,23 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { Stage, Layer, Circle, Text } from 'react-konva';
+import DesignerCanvas from './components/DesignerCanvas';
 
-// Simple test component with react-konva
+// Wrapper component for the full designer canvas
 function StandaloneCanvas() {
-  const [isDragging, setIsDragging] = React.useState(false);
-
   return (
     <div style={{ padding: 0, margin: 0 }}>
-      <h1>React-Konva Standalone Test</h1>
-      <p>Drag the circle below:</p>
-      <Stage width={400} height={400}>
-        <Layer>
-          <Circle
-            x={200}
-            y={200}
-            radius={50}
-            fill={isDragging ? "green" : "red"}
-            draggable
-            onDragStart={() => setIsDragging(true)}
-            onDragEnd={() => setIsDragging(false)}
-          />
-          <Text
-            x={150}
-            y={300}
-            text="Drag me!"
-            fontSize={20}
-            fontFamily="Arial"
-          />
-        </Layer>
-      </Stage>
+      <h2 style={{ padding: '20px', fontFamily: 'Arial' }}>Standalone Designer Canvas (No Remix Hydration)</h2>
+      <DesignerCanvas />
     </div>
   );
 }
 
 // Mount the app when DOM is ready
 if (typeof window !== 'undefined') {
-  // Wait for both DOM and Konva to be ready
   const init = () => {
     const root = document.getElementById('canvas-root');
-    if (root && window.Konva) {
+    if (root) {
       ReactDOM.createRoot(root).render(<StandaloneCanvas />);
-    } else {
-      // Retry if Konva isn't loaded yet
-      setTimeout(init, 100);
     }
   };
 
