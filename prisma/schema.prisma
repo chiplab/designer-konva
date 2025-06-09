@@ -31,14 +31,49 @@ model Session {
   emailVerified Boolean?  @default(false)
 }
 
-model Template {
-  id          String   @id @default(cuid())
-  name        String
-  shop        String   // Link to Shopify shop
-  canvasData  String   // JSON string of canvas state
-  thumbnail   String?  // Base64 or URL for preview
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model ProductLayout {
+  id            String   @id @default(cuid())
+  name          String   // e.g., "Composite Poker Chip"
+  shop          String
+  
+  // Physical dimensions of the print area
+  width         Int
+  height        Int
+  
+  // Base image URL (S3)
+  baseImageUrl  String
+  
+  // Variant attributes (e.g., {colors: ["red", "blue"], edgePatterns: ["8-spot", "solid"]})
+  attributes    Json
+  
+  // Relations
+  templates     Template[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
   
   @@index([shop])
+}
+
+model Template {
+  id             String         @id @default(cuid())
+  name           String
+  shop           String         // Link to Shopify shop
+  
+  // Reference to product layout
+  productLayoutId String
+  productLayout   ProductLayout  @relation(fields: [productLayoutId], references: [id])
+  
+  // Which variant this template is for (e.g., "red", "blue")
+  layoutVariant  String?
+  
+  // Canvas data without base image (just the design elements)
+  canvasData     String         // JSON string of canvas state
+  thumbnail      String?        // Base64 or URL for preview
+  
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([shop])
+  @@index([productLayoutId])
 }

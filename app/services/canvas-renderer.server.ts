@@ -4,30 +4,37 @@
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import Konva from 'konva';
 import { fontLoader } from './font-loader';
+import path from 'path';
+import fs from 'fs/promises';
 
-// Set Konva's window/document to use our canvas implementation
-// This is the official way per https://github.com/konvajs/konva#4-nodejs-env
-// @ts-ignore
-Konva.window = {
-  devicePixelRatio: 1,
-  // Add matchMedia that was causing the error
-  matchMedia: () => ({
-    matches: false,
-    addListener: () => {},
-    removeListener: () => {},
-  }),
-};
-
-// @ts-ignore
-Konva.document = {
-  createElement: function() {
-    // Return our canvas implementation when Konva asks for it
-    return createCanvas(1, 1) as any;
-  },
-  documentElement: {
-    addEventListener: function() {},
-  },
-};
+// Function to setup Konva for server-side rendering
+function setupKonvaForServer(width: number, height: number) {
+  // Create a canvas for Konva to use
+  const canvas = createCanvas(width, height);
+  canvas.style = {} as any;
+  
+  // According to Konva docs, we need to provide these globals
+  // @ts-ignore
+  Konva.window = {
+    devicePixelRatio: 1,
+    matchMedia: () => ({
+      matches: false,
+      addListener: () => {},
+      removeListener: () => {},
+    }),
+  };
+  
+  // @ts-ignore
+  Konva.document = {
+    createElement: () => canvas,
+    documentElement: {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    },
+  };
+  
+  return canvas;
+}
 
 interface CanvasState {
   dimensions: { width: number; height: number };
@@ -103,17 +110,35 @@ interface CanvasState {
  * Loads an image from URL into a format Konva can use
  */
 async function loadImageFromUrl(url: string): Promise<any> {
-  const response = await fetch(url);
-  const buffer = await response.buffer();
+  console.log('Loading image from:', url);
   
-  // Create an image-like object for Konva
-  const img = await createCanvas(1, 1).getContext('2d').canvas;
-  // This is a simplified approach - we may need to enhance this
-  return {
-    width: 1000, // We'll use default dimensions for now
-    height: 1000,
-    src: buffer,
-  };
+  try {
+    // Handle local images by reading from file system
+    if (url.startsWith('/')) {
+      // Construct the full file path
+      const publicPath = path.join(process.cwd(), 'public', url);
+      console.log('Reading local file:', publicPath);
+      
+      // Check if file exists
+      try {
+        await fs.access(publicPath);
+        // Load the image from file system
+        const img = await loadImage(publicPath);
+        return img;
+      } catch (error) {
+        console.error('Local file not found, trying as URL:', error);
+        // If local file doesn't exist, fall back to URL loading
+      }
+    }
+    
+    // For external URLs (S3, etc.), load directly
+    const img = await loadImage(url);
+    return img;
+  } catch (error) {
+    console.error('Failed to load image:', error);
+    // Return null to skip this image instead of crashing
+    return null;
+  }
 }
 
 /**
@@ -129,10 +154,14 @@ export async function renderCanvasToBuffer(
 
   const { width, height } = state.dimensions;
   
-  // For server-side, we don't need a container - we'll export to canvas
+  // Setup Konva for server-side rendering
+  const canvas = setupKonvaForServer(width, height);
+  
+  // Create stage with our canvas
   const stage = new Konva.Stage({
     width,
     height,
+    container: canvas as any,
   });
   
   const layer = new Konva.Layer();
@@ -162,10 +191,43 @@ export async function renderCanvasToBuffer(
   // Render base image if exists
   if (state.assets.baseImage) {
     try {
-      // For now, we'll skip image loading complexity
-      console.log('Base image URL:', state.assets.baseImage);
+      console.log('Loading base image:', state.assets.baseImage);
+      const img = await loadImageFromUrl(state.assets.baseImage);
+      
+      if (img) {
+        // Create Konva.Image with the loaded image
+        const baseImage = new Konva.Image({
+          x: 0,
+          y: 0,
+          image: img,
+          width: width,
+          height: height,
+        });
+        layer.add(baseImage);
+        console.log('Base image added successfully');
+      } else {
+        console.log('Base image could not be loaded, using fallback');
+        // Add a gray background as fallback
+        const fallbackBg = new Konva.Rect({
+          x: 0,
+          y: 0,
+          width,
+          height,
+          fill: '#f0f0f0',
+        });
+        layer.add(fallbackBg);
+      }
     } catch (error) {
       console.error('Failed to load base image:', error);
+      // Add a gray background as fallback
+      const fallbackBg = new Konva.Rect({
+        x: 0,
+        y: 0,
+        width,
+        height,
+        fill: '#f0f0f0',
+      });
+      layer.add(fallbackBg);
     }
   }
   
@@ -182,6 +244,18 @@ export async function renderCanvasToBuffer(
   
   // Render text elements
   state.elements.textElements?.forEach(element => {
+    // Handle special fills like gold-gradient
+    let fillConfig: any = {};
+    if (element.fill === 'gold-gradient') {
+      fillConfig = {
+        fillLinearGradientStartPoint: { x: 0, y: 0 },
+        fillLinearGradientEndPoint: { x: 0, y: element.fontSize || 24 },
+        fillLinearGradientColorStops: [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'],
+      };
+    } else {
+      fillConfig = { fill: element.fill || 'black' };
+    }
+    
     const text = new Konva.Text({
       id: element.id,
       x: element.x,
@@ -189,12 +263,13 @@ export async function renderCanvasToBuffer(
       text: element.text,
       fontSize: element.fontSize || 24,
       fontFamily: element.fontFamily,
-      fill: element.fill || 'black',
+      fontStyle: element.fontWeight === 'bold' ? 'bold' : 'normal',
       stroke: element.stroke,
       strokeWidth: element.strokeWidth,
       rotation: element.rotation || 0,
       scaleX: element.scaleX || 1,
       scaleY: element.scaleY || 1,
+      ...fillConfig,
     });
     clipGroup.add(text);
   });
@@ -220,6 +295,18 @@ export async function renderCanvasToBuffer(
   
   // Render curved text elements (simplified for now)
   state.elements.curvedTextElements?.forEach(element => {
+    // Handle special fills like gold-gradient
+    let fillConfig: any = {};
+    if (element.fill === 'gold-gradient') {
+      fillConfig = {
+        fillLinearGradientStartPoint: { x: 0, y: 0 },
+        fillLinearGradientEndPoint: { x: 0, y: element.fontSize || 20 },
+        fillLinearGradientColorStops: [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'],
+      };
+    } else {
+      fillConfig = { fill: element.fill || 'black' };
+    }
+    
     // For server-side, we'll render curved text as regular text
     // Full implementation would require SVG path generation
     const text = new Konva.Text({
@@ -229,19 +316,44 @@ export async function renderCanvasToBuffer(
       text: element.text,
       fontSize: element.fontSize || 20,
       fontFamily: element.fontFamily,
-      fill: element.fill || 'black',
+      fontStyle: element.fontWeight === 'bold' ? 'bold' : 'normal',
+      stroke: element.stroke,
+      strokeWidth: element.strokeWidth,
       rotation: element.rotation || 0,
       scaleX: element.scaleX || 1,
       scaleY: element.scaleY || 1,
+      ...fillConfig,
     });
     clipGroup.add(text);
   });
   
+  // Render image elements
+  if (state.elements.imageElements) {
+    for (const element of state.elements.imageElements) {
+      try {
+        const img = await loadImageFromUrl(element.url);
+        if (img) {
+          const image = new Konva.Image({
+            id: element.id,
+            x: element.x,
+            y: element.y,
+            image: img,
+            width: element.width,
+            height: element.height,
+            rotation: element.rotation || 0,
+          });
+          clipGroup.add(image);
+        } else {
+          console.log(`Skipping image element ${element.id} - could not load`);
+        }
+      } catch (error) {
+        console.error(`Failed to load image element ${element.id}:`, error);
+      }
+    }
+  }
+  
   // Draw the stage
   stage.draw();
-  
-  // Get the canvas from the layer
-  const canvas = layer.getCanvas()._canvas;
   
   // Convert to buffer using @napi-rs/canvas methods
   const format = options.format || 'png';

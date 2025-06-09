@@ -28,8 +28,9 @@ if (typeof CanvasTextRenderer === 'undefined') {
     }
   }
   
-  async loadFont(fontFamily, fontUrl) {
-    if (this.loadedFonts.has(fontFamily)) return;
+  async loadFont(fontFamily, fontUrl, fontWeight = 400) {
+    const fontKey = `${fontFamily}-${fontWeight}`;
+    if (this.loadedFonts.has(fontKey)) return;
     
     try {
       // Create @font-face rule
@@ -38,20 +39,20 @@ if (typeof CanvasTextRenderer === 'undefined') {
         @font-face {
           font-family: '${fontFamily}';
           src: url('${fontUrl}') format('woff2');
-          font-weight: 400;
+          font-weight: ${fontWeight};
           font-display: swap;
         }
       `;
       document.head.appendChild(style);
       
-      // Wait for font to load
+      // Wait for font to load with specific weight
       if (document.fonts && document.fonts.load) {
-        await document.fonts.load(`16px "${fontFamily}"`);
+        await document.fonts.load(`${fontWeight} 16px "${fontFamily}"`);
       }
       
-      this.loadedFonts.add(fontFamily);
+      this.loadedFonts.add(fontKey);
     } catch (error) {
-      console.warn(`Failed to load font ${fontFamily}:`, error);
+      console.warn(`Failed to load font ${fontFamily} (weight: ${fontWeight}):`, error);
     }
   }
 
@@ -104,28 +105,45 @@ if (typeof CanvasTextRenderer === 'undefined') {
   }
   
   async loadTemplateFonts() {
-    const fontsToLoad = new Set();
+    const fontsToLoad = new Map(); // Map of fontFamily -> Set of weights
     
-    // Collect all unique fonts from text elements
+    // Collect all unique fonts and weights from text elements
     if (this.template.elements) {
       const { textElements, curvedTextElements, gradientTextElements } = this.template.elements;
       
       [textElements, curvedTextElements, gradientTextElements].forEach(elements => {
         if (elements) {
           elements.forEach(el => {
-            if (el.fontFamily) fontsToLoad.add(el.fontFamily);
+            if (el.fontFamily) {
+              if (!fontsToLoad.has(el.fontFamily)) {
+                fontsToLoad.set(el.fontFamily, new Set());
+              }
+              const weight = el.fontWeight === 'bold' ? 700 : 400;
+              fontsToLoad.get(el.fontFamily).add(weight);
+            }
           });
         }
       });
     }
     
-    // Load each font
-    const fontPromises = Array.from(fontsToLoad).map(async fontFamily => {
+    // Load each font with its weights
+    const fontPromises = [];
+    for (const [fontFamily, weights] of fontsToLoad) {
       const fontUrl = this.getFontUrl(fontFamily);
       if (fontUrl) {
-        await this.loadFont(fontFamily, fontUrl);
+        for (const weight of weights) {
+          // For bold weight, try to load bold variant if available
+          let urlToLoad = fontUrl;
+          if (weight === 700 && fontUrl.includes('-regular.')) {
+            // Try bold variant by replacing -regular with -700
+            const boldUrl = fontUrl.replace('-regular.', '-700.');
+            // For now, use the regular font and let browser synthesize bold
+            // In the future, we could check if bold variant exists
+          }
+          fontPromises.push(this.loadFont(fontFamily, urlToLoad, weight));
+        }
       }
-    });
+    }
     
     await Promise.all(fontPromises);
   }
@@ -311,6 +329,7 @@ if (typeof CanvasTextRenderer === 'undefined') {
         y: el.y,
         fontSize: el.fontSize || 24,
         fontFamily: el.fontFamily || 'Arial',
+        fontWeight: el.fontWeight || 'normal',
         rotation: el.rotation || 0,
         scaleX: el.scaleX || 1,
         scaleY: el.scaleY || 1
@@ -346,6 +365,7 @@ if (typeof CanvasTextRenderer === 'undefined') {
         y: el.y,
         fontSize: el.fontSize || 24,
         fontFamily: el.fontFamily || 'Arial',
+        fontWeight: el.fontWeight || 'normal',
         rotation: el.rotation || 0,
         scaleX: el.scaleX || 1,
         scaleY: el.scaleY || 1,
@@ -404,6 +424,7 @@ if (typeof CanvasTextRenderer === 'undefined') {
         data: pathData,
         fontSize: fontSize,
         fontFamily: el.fontFamily || 'Arial',
+        fontWeight: el.fontWeight || 'normal',
         align: 'center'
       };
 

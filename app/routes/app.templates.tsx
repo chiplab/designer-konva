@@ -91,11 +91,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         });
       }
 
-      // Import the sync service
-      const { syncTemplateWithServerRender } = await import("../services/template-sync.server");
+      // Dynamically import the sync service to avoid loading canvas renderer at module level
+      const templateSyncModule = await import("../services/template-sync.server");
       
-      // Use server-side rendering for better Shopify compatibility
-      const syncResult = await syncTemplateWithServerRender(admin, templateId, session);
+      // Use the original thumbnail sync (not server-side rendering for now)
+      const syncResult = await templateSyncModule.syncTemplateThumbnailToVariants(admin, templateId, template.thumbnail);
       
       if (!syncResult.success && syncResult.errors.length > 0) {
         return json({ 
@@ -253,6 +253,7 @@ export default function Templates() {
   const [showSuccessBanner, setShowSuccessBanner] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [templateToDelete, setTemplateToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [testRenderResult, setTestRenderResult] = useState<any>(null);
   const submit = useSubmit();
   
   useEffect(() => {
@@ -318,6 +319,23 @@ export default function Templates() {
       shopify.toast.show("Syncing preview images...");
     }
   }, [submit]);
+  
+  const handleTestRender = useCallback(async (templateId: string) => {
+    try {
+      const formData = new FormData();
+      formData.append("templateId", templateId);
+      
+      const response = await fetch('/api/test-template-render', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      const result = await response.json();
+      setTestRenderResult(result);
+    } catch (error) {
+      console.error('Test render error:', error);
+    }
+  }, []);
 
   const emptyStateMarkup = (
     <EmptyState
@@ -366,6 +384,10 @@ export default function Templates() {
               {
                 content: "Re-sync preview images",
                 onAction: () => handleSyncPreviews(id),
+              },
+              {
+                content: "Test server render",
+                onAction: () => handleTestRender(id),
               },
               {
                 content: "Delete",
@@ -504,6 +526,39 @@ export default function Templates() {
           </Text>
         </Modal.Section>
       </Modal>
+      
+      {testRenderResult && (
+        <Modal
+          open={true}
+          onClose={() => setTestRenderResult(null)}
+          title="Server Render Test Result"
+          size="large"
+        >
+          <Modal.Section>
+            {testRenderResult.success ? (
+              <>
+                <Banner tone="success">
+                  <p>{testRenderResult.message}</p>
+                </Banner>
+                <div style={{ marginTop: '16px', textAlign: 'center' }}>
+                  <img 
+                    src={testRenderResult.dataUrl} 
+                    alt="Server rendered template"
+                    style={{ 
+                      maxWidth: '100%',
+                      border: '1px solid #ccc'
+                    }} 
+                  />
+                </div>
+              </>
+            ) : (
+              <Banner tone="critical">
+                <p>Error: {testRenderResult.error}</p>
+              </Banner>
+            )}
+          </Modal.Section>
+        </Modal>
+      )}
     </Page>
   );
 }
