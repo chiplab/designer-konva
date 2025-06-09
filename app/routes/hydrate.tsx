@@ -1132,7 +1132,6 @@ export default function App() {
   const data = useLoaderData<typeof loader>();
   React.useEffect(() => {
     console.log("✅ Hydrated!");
-    document.body.style.backgroundColor = "#e6fff2";
   }, []);
   // Handle case where loader data might not be available during SSR
   const appUrl = data?.appUrl || '';
