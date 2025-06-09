@@ -78,9 +78,10 @@ export default defineConfig({
     tsconfigPaths(),
   ],
   build: {
+    outDir: "build/client",           // Top-level output folder
+    assetsDir: "build/assets",        // Assets go into build/client/build/assets/
     assetsInlineLimit: 0,
-    // Build assets in a path that won't conflict with proxy routes
-    assetsDir: "build/assets",
+    emptyOutDir: true,                // Clears old builds
   },
   optimizeDeps: {
     include: ["@shopify/app-bridge-react", "@shopify/polaris"],
