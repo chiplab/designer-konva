@@ -4,7 +4,7 @@
 
 1. **Update `.env` file** on production server:
    ```
-   DATABASE_URL="postgresql://postgres:o!(HNa1~[fFlS>MWMcv_s~B0>ZfP@designer-konva-dev.cjyk6pbmwqld.us-west-1.rds.amazonaws.com:5432/designer_dev?schema=public"
+   DATABASE_URL="postgresql://postgres:o!(HNa1~[fFlS>MWMcv_s~B0>ZfP@designer-dev.cncask2wa433.us-west-1.rds.amazonaws.com:5432/designer_dev?schema=public"
    ```
    Note: Use the direct RDS endpoint, not localhost (no SSH tunnel in production)
 
