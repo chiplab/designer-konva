@@ -81,12 +81,24 @@ export default defineConfig({
     assetsInlineLimit: 0,
     // Build assets in a path that won't conflict with proxy routes
     assetsDir: "build/assets",
+    rollupOptions: {
+      external: [
+        '@napi-rs/canvas',
+        '@napi-rs/canvas-linux-x64-gnu',
+        /^@napi-rs\/canvas-.*/
+      ],
+    },
   },
   optimizeDeps: {
     include: ["@shopify/app-bridge-react", "@shopify/polaris"],
+    exclude: ['@napi-rs/canvas'],
   },
   ssr: {
     noExternal: ["react-konva"],
-    external: ["canvas"],
+    external: [
+      "canvas",
+      "@napi-rs/canvas",
+      /^@napi-rs\/canvas-.*/
+    ],
   },
 }) satisfies UserConfig;

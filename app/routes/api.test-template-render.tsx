@@ -1,11 +1,17 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { createCanvas, loadImage } from '@napi-rs/canvas';
-import Konva from 'konva';
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
-import path from 'path';
-import fs from 'fs/promises';
+
+// Only import canvas dependencies on the server
+let createCanvas: any, loadImage: any, Konva: any, path: any, fs: any;
+if (typeof window === 'undefined') {
+  createCanvas = require('@napi-rs/canvas').createCanvas;
+  loadImage = require('@napi-rs/canvas').loadImage;
+  Konva = require('konva');
+  path = require('path');
+  fs = require('fs/promises');
+}
 
 // Helper function to safely load images
 async function loadImageSafely(url: string): Promise<any> {
