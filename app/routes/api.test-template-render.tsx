@@ -3,44 +3,40 @@ import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 
-// Only import canvas dependencies on the server
-let createCanvas: any, loadImage: any, Konva: any, path: any, fs: any;
-if (typeof window === 'undefined') {
-  createCanvas = require('@napi-rs/canvas').createCanvas;
-  loadImage = require('@napi-rs/canvas').loadImage;
-  Konva = require('konva');
-  path = require('path');
-  fs = require('fs/promises');
-}
-
-// Helper function to safely load images
-async function loadImageSafely(url: string): Promise<any> {
-  try {
-    if (url.startsWith('/')) {
-      // Local image - try file system
-      const publicPath = path.join(process.cwd(), 'public', url);
-      console.log('Trying to load local image:', publicPath);
-      
-      // Check if file exists
-      await fs.access(publicPath);
-      const img = await loadImage(publicPath);
-      console.log('Successfully loaded local image, dimensions:', img.width, 'x', img.height);
-      return img;
-    } else {
-      // External URL (S3, etc.)
-      console.log('Loading external image:', url);
-      const img = await loadImage(url);
-      console.log('Successfully loaded external image, dimensions:', img.width, 'x', img.height);
-      return img;
-    }
-  } catch (error) {
-    console.error('Failed to load image:', url, error);
-    return null;
-  }
-}
-
 export async function action({ request }: ActionFunctionArgs) {
   const { session } = await authenticate.admin(request);
+  
+  // Dynamically import server-only dependencies
+  const { createCanvas, loadImage } = await import('@napi-rs/canvas');
+  const Konva = (await import('konva')).default;
+  const path = await import('path');
+  const fs = await import('fs/promises');
+  
+  // Helper function to safely load images
+  async function loadImageSafely(url: string): Promise<any> {
+    try {
+      if (url.startsWith('/')) {
+        // Local image - try file system
+        const publicPath = path.join(process.cwd(), 'public', url);
+        console.log('Trying to load local image:', publicPath);
+        
+        // Check if file exists
+        await fs.access(publicPath);
+        const img = await loadImage(publicPath);
+        console.log('Successfully loaded local image, dimensions:', img.width, 'x', img.height);
+        return img;
+      } else {
+        // External URL (S3, etc.)
+        console.log('Loading external image:', url);
+        const img = await loadImage(url);
+        console.log('Successfully loaded external image, dimensions:', img.width, 'x', img.height);
+        return img;
+      }
+    } catch (error) {
+      console.error('Failed to load image:', url, error);
+      return null;
+    }
+  }
   
   try {
     const formData = await request.formData();

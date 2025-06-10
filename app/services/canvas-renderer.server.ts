@@ -1,16 +1,6 @@
 /**
  * Server-side canvas rendering service using Konva and @napi-rs/canvas
  */
-// Only import canvas dependencies on the server
-let createCanvas: any, loadImage: any, Konva: any, path: any, fs: any;
-if (typeof window === 'undefined') {
-  createCanvas = require('@napi-rs/canvas').createCanvas;
-  loadImage = require('@napi-rs/canvas').loadImage;
-  Konva = require('konva');
-  path = require('path');
-  fs = require('fs/promises');
-}
-
 import { fontLoader } from './font-loader';
 
 // Function to setup Konva for server-side rendering
