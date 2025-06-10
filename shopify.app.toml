@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://mv-narrow-tahoe-bride.trycloudflare.com"
+application_url = "https://employees-quarterly-cd-landscape.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://mv-narrow-tahoe-bride.trycloudflare.com/auth/callback",
-  "https://mv-narrow-tahoe-bride.trycloudflare.com/auth/shopify/callback",
-  "https://mv-narrow-tahoe-bride.trycloudflare.com/api/auth/callback"
+  "https://employees-quarterly-cd-landscape.trycloudflare.com/auth/callback",
+  "https://employees-quarterly-cd-landscape.trycloudflare.com/auth/shopify/callback",
+  "https://employees-quarterly-cd-landscape.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://mv-narrow-tahoe-bride.trycloudflare.com"
+url = "https://employees-quarterly-cd-landscape.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 

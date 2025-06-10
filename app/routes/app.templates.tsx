@@ -15,6 +15,7 @@ import {
   Modal,
   ChoiceList,
   Banner,
+  Button,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -234,6 +235,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     where: {
       shop: session.shop,
     },
+    include: {
+      productLayout: true,
+    },
     orderBy: {
       updatedAt: "desc",
     },
@@ -355,7 +359,7 @@ export default function Templates() {
       resourceName={{ singular: "template", plural: "templates" }}
       items={templates}
       renderItem={(template) => {
-        const { id, name, thumbnail, createdAt, updatedAt } = template;
+        const { id, name, thumbnail, createdAt, updatedAt, colorVariant, productLayout } = template;
         const media = thumbnail ? (
           <Thumbnail
             source={thumbnail}
@@ -402,17 +406,23 @@ export default function Templates() {
                   {name}
                 </Text>
                 <div style={{ marginTop: "4px" }}>
-                  <Text variant="bodySm" tone="subdued" as="p">
-                    Created: {new Date(createdAt).toLocaleDateString()}
-                  </Text>
-                  {updatedAt !== createdAt && (
+                  {productLayout && (
                     <Text variant="bodySm" tone="subdued" as="p">
-                      {" • Updated: " + new Date(updatedAt).toLocaleDateString()}
+                      Layout: {productLayout.name}
                     </Text>
                   )}
+                  <Text variant="bodySm" tone="subdued" as="p">
+                    Created: {new Date(createdAt).toLocaleDateString()}
+                    {updatedAt !== createdAt && ` • Updated: ${new Date(updatedAt).toLocaleDateString()}`}
+                  </Text>
                 </div>
               </div>
-              <Badge tone="info">Template</Badge>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                {colorVariant && (
+                  <Badge tone="success">{colorVariant.charAt(0).toUpperCase() + colorVariant.slice(1)}</Badge>
+                )}
+                <Badge tone="info">Template</Badge>
+              </div>
             </div>
           </ResourceItem>
         );
@@ -435,7 +445,7 @@ export default function Templates() {
       )}
       
       <TitleBar title="Templates">
-        <button variant="primary" onClick={() => window.location.href = "/app/designer"}>
+        <button variant="primary" onClick={() => window.location.href = "/app/product-layouts"}>
           Create template
         </button>
       </TitleBar>
@@ -477,23 +487,57 @@ export default function Templates() {
           ) : products.length === 0 ? (
             <Text as="p">No products found.</Text>
           ) : (
-            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-              {products.map((product: any) => (
-                <div key={product.id} style={{ marginBottom: '16px' }}>
-                  <Text variant="headingMd" as="h3">{product.title}</Text>
-                  <ChoiceList
-                    title="Select variants"
-                    allowMultiple
-                    choices={product.variants.edges.map((edge: any) => ({
-                      label: edge.node.displayName,
-                      value: edge.node.id,
-                    }))}
-                    selected={selectedVariants}
-                    onChange={setSelectedVariants}
-                  />
-                </div>
-              ))}
-            </div>
+            <>
+              {/* Show color assignment option for templates with colorVariant */}
+              {selectedTemplate && templates.find(t => t.id === selectedTemplate)?.colorVariant && (
+                <Banner tone="info">
+                  <p>
+                    This template is designed for <strong>{templates.find(t => t.id === selectedTemplate)?.colorVariant}</strong> variants. 
+                    You can assign it to all {templates.find(t => t.id === selectedTemplate)?.colorVariant} variants at once or select specific ones below.
+                  </p>
+                  <div style={{ marginTop: '12px' }}>
+                    <Button
+                      onClick={() => {
+                        const templateColor = templates.find(t => t.id === selectedTemplate)?.colorVariant?.toLowerCase();
+                        if (templateColor) {
+                          // Find all variants that match this color
+                          const colorVariants: string[] = [];
+                          products.forEach((product: any) => {
+                            product.variants.edges.forEach((edge: any) => {
+                              const variantName = edge.node.displayName.toLowerCase();
+                              if (variantName.includes(templateColor)) {
+                                colorVariants.push(edge.node.id);
+                              }
+                            });
+                          });
+                          setSelectedVariants(colorVariants);
+                        }
+                      }}
+                      variant="primary"
+                    >
+                      Select all {templates.find(t => t.id === selectedTemplate)?.colorVariant} variants
+                    </Button>
+                  </div>
+                </Banner>
+              )}
+              <div style={{ maxHeight: '400px', overflowY: 'auto', marginTop: '16px' }}>
+                {products.map((product: any) => (
+                  <div key={product.id} style={{ marginBottom: '16px' }}>
+                    <Text variant="headingMd" as="h3">{product.title}</Text>
+                    <ChoiceList
+                      title="Select variants"
+                      allowMultiple
+                      choices={product.variants.edges.map((edge: any) => ({
+                        label: edge.node.displayName,
+                        value: edge.node.id,
+                      }))}
+                      selected={selectedVariants}
+                      onChange={setSelectedVariants}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </Modal.Section>
       </Modal>

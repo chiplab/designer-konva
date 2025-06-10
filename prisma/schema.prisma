@@ -40,11 +40,17 @@ model ProductLayout {
   width         Int
   height        Int
   
-  // Base image URL (S3)
+  // Base image URL (S3) - default/fallback image
   baseImageUrl  String
   
   // Variant attributes (e.g., {colors: ["red", "blue"], edgePatterns: ["8-spot", "solid"]})
   attributes    Json
+  
+  // Variant-specific images (e.g., {"red-8-spot": "https://...", "red-solid": "https://..."})
+  variantImages Json @default("{}")
+  
+  // Designable area configuration (e.g., {shape: "circle", diameter: 744} or {shape: "rect", width: 400, height: 300})
+  designableArea Json
   
   // Relations
   templates     Template[]
@@ -64,8 +70,8 @@ model Template {
   productLayoutId String
   productLayout   ProductLayout  @relation(fields: [productLayoutId], references: [id])
   
-  // Which variant this template is for (e.g., "red", "blue")
-  layoutVariant  String?
+  // Which color variant this template is for (e.g., "red", "blue", "gold")
+  colorVariant   String         // Required: templates are color-specific
   
   // Canvas data without base image (just the design elements)
   canvasData     String         // JSON string of canvas state
@@ -76,4 +82,5 @@ model Template {
 
   @@index([shop])
   @@index([productLayoutId])
+  @@index([productLayoutId, colorVariant])
 }

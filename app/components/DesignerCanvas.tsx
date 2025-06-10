@@ -83,6 +83,18 @@ interface DesignerCanvasProps {
     id: string;
     name: string;
     canvasData: string;
+    productLayoutId?: string;
+    colorVariant?: string;
+  } | null;
+  productLayout?: {
+    id: string;
+    name: string;
+    width: number;
+    height: number;
+    baseImageUrl: string;
+    attributes: any;
+    designableArea: any;
+    variantImages?: any;
   } | null;
   initialState?: {
     templateId?: string;
@@ -92,27 +104,82 @@ interface DesignerCanvasProps {
   } | null;
 }
 
-const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initialState }) => {
+const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, productLayout, initialState }) => {
   const shapeRef = React.useRef(null);
   const stageRef = React.useRef<any>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = React.useState({ width: 1000, height: 1000 });
+  const [dimensions, setDimensions] = React.useState({ 
+    width: productLayout?.width || 1000, 
+    height: productLayout?.height || 1000 
+  });
   const [containerSize, setContainerSize] = React.useState({ width: 800, height: 600 });
-  // Support for S3 URLs
-  const [baseImageUrl, setBaseImageUrl] = React.useState('/media/images/8-spot-red-base-image.png');
+  // Support for S3 URLs - use variant-specific image if available
+  const getVariantImage = () => {
+    if (productLayout && initialTemplate?.colorVariant) {
+      // Try to find a variant image for the template's color
+      // We'll need to match against all patterns since we don't know which one yet
+      const variantImages = productLayout.variantImages || {};
+      const color = initialTemplate.colorVariant;
+      
+      // Look for any variant image with this color
+      for (const [key, url] of Object.entries(variantImages)) {
+        if (key.startsWith(`${color}-`)) {
+          return url as string;
+        }
+      }
+    }
+    // Fall back to base image
+    return productLayout?.baseImageUrl || '/media/images/8-spot-red-base-image.png';
+  };
+  
+  const [baseImageUrl, setBaseImageUrl] = React.useState(getVariantImage());
+  const [selectedVariantKey, setSelectedVariantKey] = React.useState<string | null>(null);
   // Use 'anonymous' only for external URLs (S3), not for local files
   const [baseImage] = useImage(baseImageUrl, baseImageUrl.startsWith('http') ? 'anonymous' : undefined);
   const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [curvedTextElements, setCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
   const [imageElements, setImageElements] = React.useState<Array<{id: string, url: string, x: number, y: number, width: number, height: number, rotation?: number}>>([]);
-  const [designableArea, setDesignableArea] = React.useState({
-    width: 744,
-    height: 744,
-    cornerRadius: 372, // Max corner radius for circle
-    x: 1000 / 2 - 372, // Center in 1000px canvas
-    y: 1000 / 2 - 372, // Center in 1000px canvas
-    visible: true
+  const [designableArea, setDesignableArea] = React.useState(() => {
+    // Use designableArea from productLayout if available
+    if (productLayout?.designableArea) {
+      const area = productLayout.designableArea;
+      if (area.shape === 'circle') {
+        return {
+          width: area.diameter,
+          height: area.diameter,
+          cornerRadius: area.diameter / 2,
+          x: area.x,
+          y: area.y,
+          visible: true
+        };
+      } else {
+        // Rectangle or other shapes
+        return {
+          width: area.width,
+          height: area.height,
+          cornerRadius: area.cornerRadius || 0,
+          x: area.x,
+          y: area.y,
+          visible: true
+        };
+      }
+    }
+    
+    // Default fallback
+    const canvasWidth = productLayout?.width || 1000;
+    const canvasHeight = productLayout?.height || 1000;
+    const diameter = Math.min(canvasWidth, canvasHeight) * 0.744;
+    const radius = diameter / 2;
+    
+    return {
+      width: diameter,
+      height: diameter,
+      cornerRadius: radius,
+      x: canvasWidth / 2 - radius,
+      y: canvasHeight / 2 - radius,
+      visible: true
+    };
   });
   const [backgroundColor, setBackgroundColor] = React.useState('transparent');
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
@@ -675,6 +742,26 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
     const templateName = initialTemplate?.name || prompt('Enter template name:');
     if (!templateName) return;
 
+    // If we have a productLayout but no colorVariant, prompt for it
+    let colorVariant = initialTemplate?.colorVariant;
+    if (productLayout && !colorVariant) {
+      const availableColors = productLayout.attributes?.colors || [];
+      if (availableColors.length > 0) {
+        const selectedColor = prompt(
+          `Select color for this template:\n${availableColors.join(', ')}\n\nEnter color:`
+        );
+        if (!selectedColor || !availableColors.includes(selectedColor)) {
+          alert('Invalid color selection. Please choose from: ' + availableColors.join(', '));
+          return;
+        }
+        colorVariant = selectedColor;
+      } else {
+        const selectedColor = prompt('Enter color variant for this template:');
+        if (!selectedColor) return;
+        colorVariant = selectedColor;
+      }
+    }
+
     setIsSaving(true);
     try {
       // Get canvas state
@@ -784,6 +871,13 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
       // Include template ID if we're updating an existing template
       if (initialTemplate?.id) {
         formData.append('templateId', initialTemplate.id);
+      }
+      // Include productLayoutId and colorVariant for new templates
+      if (productLayout?.id) {
+        formData.append('productLayoutId', productLayout.id);
+      }
+      if (colorVariant) {
+        formData.append('colorVariant', colorVariant);
       }
 
       const response = await fetch('/api/templates/save', {
@@ -1747,6 +1841,48 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, initia
           </label>
         </div>
         
+        {/* Variant Image Selector - Only show if productLayout has variantImages */}
+        {productLayout?.variantImages && Object.keys(productLayout.variantImages).length > 0 && (
+          <div style={{ display: 'inline-block', marginLeft: '20px' }}>
+            <select
+              value={selectedVariantKey || ''}
+              onChange={(e) => {
+                const key = e.target.value;
+                setSelectedVariantKey(key);
+                if (key && productLayout.variantImages[key]) {
+                  setBaseImageUrl(productLayout.variantImages[key] as string);
+                } else {
+                  setBaseImageUrl(productLayout.baseImageUrl);
+                }
+              }}
+              style={{
+                padding: '8px 16px',
+                fontSize: '14px',
+                borderRadius: '4px',
+                border: '1px solid #ddd',
+                cursor: 'pointer',
+                minWidth: '200px',
+              }}
+            >
+              <option value="">Default Base Image</option>
+              {Object.entries(productLayout.variantImages).map(([key, url]) => {
+                // Parse the key to get color and pattern
+                const [color, ...patternParts] = key.split('-');
+                const pattern = patternParts.join(' ').replace(/-/g, ' ');
+                const displayName = `${color.charAt(0).toUpperCase() + color.slice(1)} - ${pattern.split(' ').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')}`;
+                
+                return (
+                  <option key={key} value={key}>
+                    {displayName}
+                  </option>
+                );
+              })}
+            </select>
+            <span style={{ marginLeft: '8px', fontSize: '12px', color: '#666' }}>
+              Reference Image
+            </span>
+          </div>
+        )}
         
         {/* Canvas Size Debug Info */}
         <div style={{ marginTop: '10px', padding: '5px', fontSize: '12px', color: '#6c757d', fontFamily: 'monospace' }}>

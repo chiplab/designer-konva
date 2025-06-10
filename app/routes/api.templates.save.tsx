@@ -18,6 +18,8 @@ export async function action({ request }: ActionFunctionArgs) {
     const canvasData = formData.get("canvasData") as string;
     const thumbnail = formData.get("thumbnail") as string | null;
     const templateId = formData.get("templateId") as string | null;
+    const productLayoutId = formData.get("productLayoutId") as string | null;
+    const colorVariant = formData.get("colorVariant") as string | null;
 
     if (!name || !canvasData) {
       return json({ error: "Name and canvas data are required" }, { status: 400 });
@@ -45,16 +47,23 @@ export async function action({ request }: ActionFunctionArgs) {
         data: {
           name,
           canvasData,
+          colorVariant: colorVariant || existingTemplate.colorVariant,
           updatedAt: new Date(),
         },
       });
     } else {
-      // Create new template
+      // Create new template - require productLayoutId and colorVariant
+      if (!productLayoutId || !colorVariant) {
+        return json({ error: "Product layout and color variant are required for new templates" }, { status: 400 });
+      }
+      
       template = await db.template.create({
         data: {
           name,
           shop: session.shop,
           canvasData,
+          productLayoutId,
+          colorVariant,
           thumbnail: null, // We'll update this after S3 upload
         },
       });

@@ -11,12 +11,26 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const url = new URL(request.url);
   const templateId = url.searchParams.get("template");
+  const layoutId = url.searchParams.get("layoutId");
   
   let template = null;
+  let productLayout = null;
+  
   if (templateId) {
     template = await db.template.findFirst({
       where: {
         id: templateId,
+        shop: session.shop,
+      },
+      include: {
+        productLayout: true,
+      },
+    });
+    productLayout = template?.productLayout;
+  } else if (layoutId) {
+    productLayout = await db.productLayout.findFirst({
+      where: {
+        id: layoutId,
         shop: session.shop,
       },
     });
@@ -25,15 +39,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return json({
     shop: session.shop,
     template,
+    productLayout,
   });
 };
 
 export default function Designer() {
-  const { template } = useLoaderData<typeof loader>();
+  const { template, productLayout } = useLoaderData<typeof loader>();
   
   return (
     <Page fullWidth>
-      <TitleBar title={template ? `Edit: ${template.name}` : "Template Designer"}>
+      <TitleBar title={template ? `Edit: ${template.name}` : productLayout ? `New Template for ${productLayout.name}` : "Template Designer"}>
         <button onClick={() => window.location.href = "/app/templates"}>
           View all templates
         </button>
@@ -44,7 +59,10 @@ export default function Designer() {
         position: 'relative',
         backgroundColor: '#ffffff'
       }}>
-        <DesignerCanvas initialTemplate={template} />
+        <DesignerCanvas 
+          initialTemplate={template} 
+          productLayout={productLayout}
+        />
       </div>
     </Page>
   );
