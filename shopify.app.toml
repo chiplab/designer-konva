@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://specialized-charlotte-boxes-magnetic.trycloudflare.com"
+application_url = "https://clear-beauty-speaks-himself.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://specialized-charlotte-boxes-magnetic.trycloudflare.com/auth/callback",
-  "https://specialized-charlotte-boxes-magnetic.trycloudflare.com/auth/shopify/callback",
-  "https://specialized-charlotte-boxes-magnetic.trycloudflare.com/api/auth/callback"
+  "https://clear-beauty-speaks-himself.trycloudflare.com/auth/callback",
+  "https://clear-beauty-speaks-himself.trycloudflare.com/auth/shopify/callback",
+  "https://clear-beauty-speaks-himself.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://specialized-charlotte-boxes-magnetic.trycloudflare.com"
+url = "https://clear-beauty-speaks-himself.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 

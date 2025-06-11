@@ -15,25 +15,60 @@ export async function action({ request }: ActionFunctionArgs) {
   // Helper function to safely load images
   async function loadImageSafely(url: string): Promise<any> {
     try {
+      if (!url) {
+        console.warn('Empty URL provided for image');
+        return null;
+      }
+      
       if (url.startsWith('/')) {
         // Local image - try file system
         const publicPath = path.join(process.cwd(), 'public', url);
         console.log('Trying to load local image:', publicPath);
         
-        // Check if file exists
-        await fs.access(publicPath);
-        const img = await loadImage(publicPath);
-        console.log('Successfully loaded local image, dimensions:', img.width, 'x', img.height);
+        try {
+          // Check if file exists
+          await fs.access(publicPath);
+          const img = await loadImage(publicPath);
+          console.log('Successfully loaded local image, dimensions:', img.width, 'x', img.height);
+          return img;
+        } catch (fsError) {
+          console.error('Local file not found:', publicPath);
+          return null;
+        }
+      } else if (url.startsWith('data:')) {
+        // Data URL (base64)
+        console.log('Loading data URL image');
+        const img = await loadImage(url);
+        console.log('Successfully loaded data URL image');
         return img;
       } else {
         // External URL (S3, etc.)
         console.log('Loading external image:', url);
-        const img = await loadImage(url);
-        console.log('Successfully loaded external image, dimensions:', img.width, 'x', img.height);
-        return img;
+        
+        // For external images, we might need to handle CORS or network issues
+        try {
+          const img = await loadImage(url);
+          console.log('Successfully loaded external image, dimensions:', img.width, 'x', img.height);
+          return img;
+        } catch (loadError) {
+          console.error('Failed to load external image:', url, loadError);
+          
+          // Try to provide more specific error information
+          if (loadError instanceof Error) {
+            if (loadError.message.includes('ENOTFOUND')) {
+              console.error('DNS resolution failed - host not found');
+            } else if (loadError.message.includes('ETIMEDOUT')) {
+              console.error('Network timeout - image took too long to load');
+            } else if (loadError.message.includes('ECONNREFUSED')) {
+              console.error('Connection refused - server may be down');
+            }
+          }
+          
+          return null;
+        }
       }
     } catch (error) {
-      console.error('Failed to load image:', url, error);
+      console.error('Unexpected error loading image:', url, error);
       return null;
     }
   }
@@ -124,33 +159,50 @@ export async function action({ request }: ActionFunctionArgs) {
     const bg = new Konva.Rect(bgConfig);
     layer.add(bg);
     
-    // Skip base image for now - there's a compatibility issue
+    // Load and render base image
     if (state.assets.baseImage) {
-      console.log('Base image exists but skipping due to compatibility issues:', state.assets.baseImage);
+      console.log('Loading base image:', state.assets.baseImage);
       
-      // Add a light gray placeholder rectangle instead
-      const imagePlaceholder = new Konva.Rect({
-        x: 0,
-        y: 0,
-        width: width,
-        height: height,
-        fill: '#f5f5f5',
-        opacity: 0.5,
-      });
-      layer.add(imagePlaceholder);
-      
-      // Add text to indicate this is a placeholder
-      const placeholderText = new Konva.Text({
-        x: width / 2,
-        y: height / 2,
-        text: 'Base Image Placeholder',
-        fontSize: 20,
-        fill: '#999',
-        align: 'center',
-        offsetX: 100, // Approximate half width of text
-        offsetY: 10,
-      });
-      layer.add(placeholderText);
+      try {
+        const baseImg = await loadImageSafely(state.assets.baseImage);
+        
+        if (baseImg) {
+          // Create Konva.Image with the loaded image
+          const baseImage = new Konva.Image({
+            x: 0,
+            y: 0,
+            image: baseImg,
+            width: width,
+            height: height,
+          });
+          layer.add(baseImage);
+          console.log('Base image added to layer successfully');
+        } else {
+          console.log('Base image could not be loaded, adding placeholder');
+          // Add a light gray placeholder rectangle if image fails
+          const imagePlaceholder = new Konva.Rect({
+            x: 0,
+            y: 0,
+            width: width,
+            height: height,
+            fill: '#f5f5f5',
+            opacity: 0.5,
+          });
+          layer.add(imagePlaceholder);
+        }
+      } catch (error) {
+        console.error('Error loading base image:', error);
+        // Add placeholder on error
+        const imagePlaceholder = new Konva.Rect({
+          x: 0,
+          y: 0,
+          width: width,
+          height: height,
+          fill: '#f5f5f5',
+          opacity: 0.5,
+        });
+        layer.add(imagePlaceholder);
+      }
     }
     
     // Create clipping group for designable area
@@ -275,9 +327,37 @@ export async function action({ request }: ActionFunctionArgs) {
       clipGroup.add(curvedTextGroup);
     });
     
-    // Skip user images for now until we fix the crash
+    // Render user-uploaded images
     if (state.elements.imageElements?.length > 0) {
-      console.log('Skipping', state.elements.imageElements.length, 'user image elements for now');
+      console.log('Rendering', state.elements.imageElements.length, 'user image elements');
+      
+      for (const element of state.elements.imageElements) {
+        try {
+          console.log('Loading user image:', element.url);
+          const userImg = await loadImageSafely(element.url);
+          
+          if (userImg) {
+            // Create Konva.Image with proper positioning and rotation
+            const imageNode = new Konva.Image({
+              x: element.x + element.width / 2,
+              y: element.y + element.height / 2,
+              image: userImg,
+              width: element.width,
+              height: element.height,
+              offsetX: element.width / 2,
+              offsetY: element.height / 2,
+              rotation: element.rotation || 0,
+            });
+            clipGroup.add(imageNode);
+            console.log('User image added successfully');
+          } else {
+            console.warn('Failed to load user image:', element.url);
+          }
+        } catch (error) {
+          console.error('Error loading user image:', element.url, error);
+          // Continue with other images even if one fails
+        }
+      }
     }
     
     // Draw everything
@@ -295,7 +375,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ 
       success: true, 
       dataUrl,
-      message: 'Template rendered successfully (without images)!'
+      message: 'Template rendered successfully with all elements!'
     });
     
   } catch (error) {
