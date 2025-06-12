@@ -150,44 +150,7 @@ export async function action({ request }: ActionFunctionArgs) {
     
     console.log('Canvas setup complete');
     
-    // Render background
-    console.log('Background color value:', state.backgroundColor);
-    
-    // Create background configuration based on type
-    let bgConfig: any = {
-      x: 0,
-      y: 0,
-      width,
-      height,
-    };
-    
-    if (state.backgroundColor === 'linear-gradient') {
-      // Linear gradient from left to right
-      bgConfig = {
-        ...bgConfig,
-        fillLinearGradientStartPoint: { x: 0, y: 0 },
-        fillLinearGradientEndPoint: { x: state.designableArea.width, y: 0 },
-        fillLinearGradientColorStops: [0, '#c8102e', 1, '#ffaaaa'],
-      };
-    } else if (state.backgroundColor === 'radial-gradient') {
-      // Radial gradient from center - use full canvas dimensions for center point
-      bgConfig = {
-        ...bgConfig,
-        fillRadialGradientStartPoint: { x: width / 2, y: height / 2 },
-        fillRadialGradientEndPoint: { x: width / 2, y: height / 2 },
-        fillRadialGradientStartRadius: 0,
-        fillRadialGradientEndRadius: Math.min(width, height) / 2,
-        fillRadialGradientColorStops: [0, '#c8102e', 1, '#ffaaaa'],
-      };
-    } else {
-      // Solid color
-      bgConfig.fill = state.backgroundColor || 'white';
-    }
-    
-    const bg = new Konva.Rect(bgConfig);
-    layer.add(bg);
-    
-    // Load and render base image
+    // Load and render base image FIRST (bottom layer)
     if (state.assets.baseImage) {
       console.log('Loading base image:', state.assets.baseImage);
       
@@ -212,143 +175,207 @@ export async function action({ request }: ActionFunctionArgs) {
     
     // Create clipping group for designable area
     const clipGroup = new Konva.Group({
-      clip: {
-        x: state.designableArea.x,
-        y: state.designableArea.y,
-        width: state.designableArea.width,
-        height: state.designableArea.height,
+      clipFunc: (ctx: any) => {
+        const { x, y, width, height, cornerRadius } = state.designableArea;
+        
+        ctx.beginPath();
+        if (cornerRadius > 0) {
+          ctx.moveTo(x + cornerRadius, y);
+          ctx.arcTo(x + width, y, x + width, y + height, cornerRadius);
+          ctx.arcTo(x + width, y + height, x, y + height, cornerRadius);
+          ctx.arcTo(x, y + height, x, y, cornerRadius);
+          ctx.arcTo(x, y, x + width, y, cornerRadius);
+        } else {
+          ctx.rect(x, y, width, height);
+        }
+        ctx.closePath();
       },
     });
     layer.add(clipGroup);
     
-    // Render text elements
+    // Render background INSIDE the clipped group
+    console.log('Background color value:', state.backgroundColor);
+    
+    if (state.backgroundColor && state.backgroundColor !== 'transparent') {
+      let bgConfig: any = {
+        x: state.designableArea.x,
+        y: state.designableArea.y,
+        width: state.designableArea.width,
+        height: state.designableArea.height,
+        cornerRadius: state.designableArea.cornerRadius || 0,
+      };
+      
+      if (state.backgroundColor === 'linear-gradient') {
+        bgConfig = {
+          ...bgConfig,
+          fillLinearGradientStartPoint: { x: 0, y: 0 },
+          fillLinearGradientEndPoint: { x: state.designableArea.width, y: 0 },
+          fillLinearGradientColorStops: [0, '#c8102e', 1, '#ffaaaa'],
+        };
+      } else if (state.backgroundColor === 'radial-gradient') {
+        bgConfig = {
+          ...bgConfig,
+          fillRadialGradientStartPoint: { x: state.designableArea.width / 2, y: state.designableArea.height / 2 },
+          fillRadialGradientEndPoint: { x: state.designableArea.width / 2, y: state.designableArea.height / 2 },
+          fillRadialGradientStartRadius: 0,
+          fillRadialGradientEndRadius: Math.min(state.designableArea.width, state.designableArea.height) / 2,
+          fillRadialGradientColorStops: [0, '#c8102e', 1, '#ffaaaa'],
+        };
+      } else {
+        bgConfig.fill = state.backgroundColor;
+      }
+      
+      const bg = new Konva.Rect(bgConfig);
+      clipGroup.add(bg);
+    }
+    
+    // Collect all elements into a single array with their types
+    const allElements: any[] = [];
+    
+    // Add text elements
     state.elements.textElements?.forEach((element: any) => {
-      console.log('Rendering text element:', element.text);
-      
-      // Handle special fills
-      let fillConfig: any = {};
-      if (element.fill === 'gold-gradient') {
-        fillConfig = {
-          fillLinearGradientStartPoint: { x: 0, y: 0 },
-          fillLinearGradientEndPoint: { x: 0, y: element.fontSize || 24 },
-          fillLinearGradientColorStops: [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'],
-        };
-      } else {
-        fillConfig = { fill: element.fill || 'black' };
-      }
-      
-      const text = new Konva.Text({
-        x: element.x,
-        y: element.y,
-        text: element.text,
-        fontSize: element.fontSize || 24,
-        fontFamily: element.fontFamily || 'Arial',
-        fontStyle: element.fontWeight === 'bold' ? 'bold' : 'normal',
-        stroke: element.stroke,
-        strokeWidth: element.strokeWidth,
-        fillAfterStrokeEnabled: true,
-        rotation: element.rotation || 0,
-        scaleX: element.scaleX || 1,
-        scaleY: element.scaleY || 1,
-        ...fillConfig,
-      });
-      clipGroup.add(text);
+      allElements.push({ ...element, type: 'text' });
     });
     
-    // Render curved text with proper SVG paths
+    // Add curved text elements
     state.elements.curvedTextElements?.forEach((element: any) => {
-      console.log('Rendering curved text element:', element.text);
-      
-      // Calculate center position based on flip state
-      const centerY = element.flipped ? element.topY - element.radius : element.topY + element.radius;
-      
-      // Calculate text length and angle span
-      const fontSize = element.fontSize || 20;
-      const textLength = element.text.length * fontSize * 0.6;
-      const circumference = 2 * Math.PI * element.radius;
-      const angleSpan = Math.min((textLength / circumference) * 2 * Math.PI, 1.5 * Math.PI);
-      
-      // Calculate angles based on flip state
-      let startAngle, endAngle, sweepFlag;
-      
-      if (!element.flipped) {
-        // Normal text (curves upward)
-        startAngle = -Math.PI / 2 - angleSpan / 2;
-        endAngle = -Math.PI / 2 + angleSpan / 2;
-        sweepFlag = 1;
-      } else {
-        // Flipped text (curves downward)
-        startAngle = Math.PI / 2 + angleSpan / 2;
-        endAngle = Math.PI / 2 - angleSpan / 2;
-        sweepFlag = 0;
-      }
-      
-      // Calculate path coordinates
-      const startX = Math.cos(startAngle) * element.radius;
-      const startY = Math.sin(startAngle) * element.radius;
-      const endX = Math.cos(endAngle) * element.radius;
-      const endY = Math.sin(endAngle) * element.radius;
-      
-      // Create SVG path data
-      const largeArcFlag = angleSpan > Math.PI ? 1 : 0;
-      const pathData = `M ${startX},${startY} A ${element.radius},${element.radius} 0 ${largeArcFlag},${sweepFlag} ${endX},${endY}`;
-      
-      // Handle special fills
-      let fillConfig: any = {};
-      if (element.fill === 'gold-gradient') {
-        fillConfig = {
-          fillLinearGradientStartPoint: { x: 0, y: 0 },
-          fillLinearGradientEndPoint: { x: 0, y: fontSize },
-          fillLinearGradientColorStops: [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'],
-        };
-      } else {
-        fillConfig = { fill: element.fill || 'black' };
-      }
-      
-      // Create a group positioned at the center
-      const curvedTextGroup = new Konva.Group({
-        x: element.x,
-        y: centerY,
-        rotation: element.rotation || 0,
-        scaleX: element.scaleX || 1,
-        scaleY: element.scaleY || 1,
-      });
-      
-      // Create TextPath for curved text
-      const textPath = new Konva.TextPath({
-        text: element.text,
-        data: pathData,
-        fontSize: fontSize,
-        fontFamily: element.fontFamily || 'Arial',
-        fontStyle: element.fontWeight === 'bold' ? 'bold' : 'normal',
-        align: 'center',
-        stroke: element.stroke,
-        strokeWidth: element.strokeWidth,
-        fillAfterStrokeEnabled: true,
-        ...fillConfig,
-      });
-      
-      curvedTextGroup.add(textPath);
-      clipGroup.add(curvedTextGroup);
+      allElements.push({ ...element, type: 'curvedText' });
     });
     
-    // Render user images
-    if (state.elements.imageElements?.length > 0) {
-      console.log('Rendering', state.elements.imageElements.length, 'user image elements');
-      
-      for (const imgElement of state.elements.imageElements) {
-        console.log('Loading user image:', imgElement.url);
-        const userImg = await loadImageSafely(imgElement.url);
+    // Add image elements
+    state.elements.imageElements?.forEach((element: any) => {
+      allElements.push({ ...element, type: 'image' });
+    });
+    
+    // Sort by zIndex (lower values render first)
+    allElements.sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+    
+    console.log('Rendering elements in z-order:', allElements.map(el => ({
+      type: el.type,
+      zIndex: el.zIndex || 0,
+      text: el.text || el.url
+    })));
+    
+    // Render all elements in sorted order
+    for (const element of allElements) {
+      if (element.type === 'text') {
+        console.log('Rendering text element:', element.text, 'zIndex:', element.zIndex || 0);
+        
+        // Handle special fills
+        let fillConfig: any = {};
+        if (element.fill === 'gold-gradient') {
+          fillConfig = {
+            fillLinearGradientStartPoint: { x: 0, y: 0 },
+            fillLinearGradientEndPoint: { x: 0, y: element.fontSize || 24 },
+            fillLinearGradientColorStops: [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'],
+          };
+        } else {
+          fillConfig = { fill: element.fill || 'black' };
+        }
+        
+        const text = new Konva.Text({
+          x: element.x,
+          y: element.y,
+          text: element.text,
+          fontSize: element.fontSize || 24,
+          fontFamily: element.fontFamily || 'Arial',
+          fontStyle: element.fontWeight === 'bold' ? 'bold' : 'normal',
+          stroke: element.stroke,
+          strokeWidth: element.strokeWidth,
+          fillAfterStrokeEnabled: true,
+          rotation: element.rotation || 0,
+          scaleX: element.scaleX || 1,
+          scaleY: element.scaleY || 1,
+          ...fillConfig,
+        });
+        clipGroup.add(text);
+      } else if (element.type === 'curvedText') {
+        console.log('Rendering curved text element:', element.text, 'zIndex:', element.zIndex || 0);
+        
+        // Calculate center position based on flip state
+        const centerY = element.flipped ? element.topY - element.radius : element.topY + element.radius;
+        
+        // Calculate text length and angle span
+        const fontSize = element.fontSize || 20;
+        const textLength = element.text.length * fontSize * 0.6;
+        const circumference = 2 * Math.PI * element.radius;
+        const angleSpan = Math.min((textLength / circumference) * 2 * Math.PI, 1.5 * Math.PI);
+        
+        // Calculate angles based on flip state
+        let startAngle, endAngle, sweepFlag;
+        
+        if (!element.flipped) {
+          // Normal text (curves upward)
+          startAngle = -Math.PI / 2 - angleSpan / 2;
+          endAngle = -Math.PI / 2 + angleSpan / 2;
+          sweepFlag = 1;
+        } else {
+          // Flipped text (curves downward)
+          startAngle = Math.PI / 2 + angleSpan / 2;
+          endAngle = Math.PI / 2 - angleSpan / 2;
+          sweepFlag = 0;
+        }
+        
+        // Calculate path coordinates
+        const startX = Math.cos(startAngle) * element.radius;
+        const startY = Math.sin(startAngle) * element.radius;
+        const endX = Math.cos(endAngle) * element.radius;
+        const endY = Math.sin(endAngle) * element.radius;
+        
+        // Create SVG path data
+        const largeArcFlag = angleSpan > Math.PI ? 1 : 0;
+        const pathData = `M ${startX},${startY} A ${element.radius},${element.radius} 0 ${largeArcFlag},${sweepFlag} ${endX},${endY}`;
+        
+        // Handle special fills
+        let fillConfig: any = {};
+        if (element.fill === 'gold-gradient') {
+          fillConfig = {
+            fillLinearGradientStartPoint: { x: 0, y: 0 },
+            fillLinearGradientEndPoint: { x: 0, y: fontSize },
+            fillLinearGradientColorStops: [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'],
+          };
+        } else {
+          fillConfig = { fill: element.fill || 'black' };
+        }
+        
+        // Create a group positioned at the center
+        const curvedTextGroup = new Konva.Group({
+          x: element.x,
+          y: centerY,
+          rotation: element.rotation || 0,
+          scaleX: element.scaleX || 1,
+          scaleY: element.scaleY || 1,
+        });
+        
+        // Create TextPath for curved text
+        const textPath = new Konva.TextPath({
+          text: element.text,
+          data: pathData,
+          fontSize: fontSize,
+          fontFamily: element.fontFamily || 'Arial',
+          fontStyle: element.fontWeight === 'bold' ? 'bold' : 'normal',
+          align: 'center',
+          stroke: element.stroke,
+          strokeWidth: element.strokeWidth,
+          fillAfterStrokeEnabled: true,
+          ...fillConfig,
+        });
+        
+        curvedTextGroup.add(textPath);
+        clipGroup.add(curvedTextGroup);
+      } else if (element.type === 'image') {
+        console.log('Loading user image:', element.url, 'zIndex:', element.zIndex || 0);
+        const userImg = await loadImageSafely(element.url);
         
         if (userImg) {
           try {
             const image = new Konva.Image({
-              x: imgElement.x,
-              y: imgElement.y,
+              x: element.x,
+              y: element.y,
               image: userImg,
-              width: imgElement.width,
-              height: imgElement.height,
-              rotation: imgElement.rotation || 0,
+              width: element.width,
+              height: element.height,
+              rotation: element.rotation || 0,
             });
             clipGroup.add(image);
             console.log('User image added to clip group');
