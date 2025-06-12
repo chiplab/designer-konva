@@ -1,7 +1,7 @@
 import React from 'react';
 import { Stage, Layer, Text, TextPath, Transformer, Group, Image, Rect } from 'react-konva';
 import useImage from 'use-image';
-import { CURATED_FONTS, getFontById, getFontsByCategory, DEFAULT_FONT } from '../constants/fonts';
+import { CURATED_FONTS, getFontsByCategory, DEFAULT_FONT } from '../constants/fonts';
 import { fontLoader } from '../services/font-loader';
 import FontBrowser from './FontBrowser';
 
@@ -78,6 +78,14 @@ const ImageElement: React.FC<{
   );
 };
 
+// Define unified element type
+type UnifiedCanvasElement = {
+  id: string;
+  type: 'text' | 'gradientText' | 'curvedText' | 'image';
+  zIndex: number;
+  data: any; // Will contain the specific element data
+};
+
 interface DesignerCanvasProps {
   initialTemplate?: {
     id: string;
@@ -136,10 +144,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   const [selectedVariantKey, setSelectedVariantKey] = React.useState<string | null>(null);
   // Use 'anonymous' only for external URLs (S3), not for local files
   const [baseImage] = useImage(baseImageUrl, baseImageUrl.startsWith('http') ? 'anonymous' : undefined);
-  const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
-  const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
-  const [curvedTextElements, setCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number}>>([]);
-  const [imageElements, setImageElements] = React.useState<Array<{id: string, url: string, x: number, y: number, width: number, height: number, rotation?: number}>>([]);
+  const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>>([]);
+  const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>>([]);
+  const [curvedTextElements, setCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>>([]);
+  const [imageElements, setImageElements] = React.useState<Array<{id: string, url: string, x: number, y: number, width: number, height: number, rotation?: number, zIndex?: number}>>([]);
   const [designableArea, setDesignableArea] = React.useState(() => {
     // Use designableArea from productLayout if available
     if (productLayout?.designableArea) {
@@ -308,7 +316,127 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     }
   }, [selectedId, scale]);
 
+  // Create unified array of all elements with their types and z-indexes
+  const unifiedElements = React.useMemo(() => {
+    const elements: UnifiedCanvasElement[] = [];
+    let currentZIndex = 0;
+    
+    // Add all element types with zIndex
+    imageElements.forEach((img) => {
+      elements.push({
+        id: img.id,
+        type: 'image',
+        zIndex: img.zIndex ?? currentZIndex++,
+        data: img
+      });
+    });
+    
+    textElements.forEach((text) => {
+      elements.push({
+        id: text.id,
+        type: 'text',
+        zIndex: text.zIndex ?? currentZIndex++,
+        data: text
+      });
+    });
+    
+    gradientTextElements.forEach((gradient) => {
+      elements.push({
+        id: gradient.id,
+        type: 'gradientText',
+        zIndex: gradient.zIndex ?? currentZIndex++,
+        data: gradient
+      });
+    });
+    
+    curvedTextElements.forEach((curved) => {
+      elements.push({
+        id: curved.id,
+        type: 'curvedText',
+        zIndex: curved.zIndex ?? currentZIndex++,
+        data: curved
+      });
+    });
+    
+    return elements.sort((a, b) => a.zIndex - b.zIndex);
+  }, [textElements, gradientTextElements, curvedTextElements, imageElements]);
+
+
+  // Helper function to update element zIndex
+  const updateElementZIndex = (elementId: string, newZIndex: number) => {
+    setTextElements(prev => 
+      prev.map(el => el.id === elementId ? { ...el, zIndex: newZIndex } : el)
+    );
+    setGradientTextElements(prev => 
+      prev.map(el => el.id === elementId ? { ...el, zIndex: newZIndex } : el)
+    );
+    setCurvedTextElements(prev => 
+      prev.map(el => el.id === elementId ? { ...el, zIndex: newZIndex } : el)
+    );
+    setImageElements(prev => 
+      prev.map(el => el.id === elementId ? { ...el, zIndex: newZIndex } : el)
+    );
+  };
+
+  // Helper function to swap zIndexes
+  const swapZIndexes = (id1: string, id2: string) => {
+    const el1 = unifiedElements.find(el => el.id === id1);
+    const el2 = unifiedElements.find(el => el.id === id2);
+    
+    if (el1 && el2) {
+      const tempZIndex = el1.zIndex;
+      updateElementZIndex(id1, el2.zIndex);
+      updateElementZIndex(id2, tempZIndex);
+    }
+  };
+
+  // Layer control functions
+  const moveLayerUp = () => {
+    if (!selectedId) return;
+    
+    const element = unifiedElements.find(el => el.id === selectedId);
+    if (!element) return;
+    
+    // Find the element with the next higher zIndex
+    const nextElement = unifiedElements
+      .filter(el => el.zIndex > element.zIndex)
+      .sort((a, b) => a.zIndex - b.zIndex)[0];
+    
+    if (nextElement) {
+      swapZIndexes(selectedId, nextElement.id);
+    }
+  };
+
+  const moveLayerDown = () => {
+    if (!selectedId) return;
+    
+    const element = unifiedElements.find(el => el.id === selectedId);
+    if (!element) return;
+    
+    // Find the element with the next lower zIndex
+    const prevElement = unifiedElements
+      .filter(el => el.zIndex < element.zIndex)
+      .sort((a, b) => b.zIndex - a.zIndex)[0];
+    
+    if (prevElement) {
+      swapZIndexes(selectedId, prevElement.id);
+    }
+  };
+
+  const moveToFront = () => {
+    if (!selectedId) return;
+    const maxZIndex = Math.max(...unifiedElements.map(el => el.zIndex), -1);
+    updateElementZIndex(selectedId, maxZIndex + 1);
+  };
+
+  const moveToBack = () => {
+    if (!selectedId) return;
+    const minZIndex = Math.min(...unifiedElements.map(el => el.zIndex), 1);
+    updateElementZIndex(selectedId, minZIndex - 1);
+  };
+
   const addText = () => {
+    const maxZIndex = Math.max(...unifiedElements.map(el => el.zIndex), -1) + 1;
     const newText = {
       id: `text-${Date.now()}`,
       text: 'Hello World',
@@ -319,12 +447,14 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       fill: 'black',
       rotation: 0,
       scaleX: 1,
-      scaleY: 1
+      scaleY: 1,
+      zIndex: maxZIndex
     };
     setTextElements(prev => [...prev, newText]);
   };
 
   const addCurvedText = () => {
+    const maxZIndex = Math.max(...unifiedElements.map(el => el.zIndex), -1) + 1;
     const radius = 100;
     const topY = dimensions.height / 2 - radius;
     const newCurvedText = {
@@ -339,7 +469,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       fill: 'black',
       rotation: 0,
       scaleX: 1,
-      scaleY: 1
+      scaleY: 1,
+      zIndex: maxZIndex
     };
     setCurvedTextElements(prev => [...prev, newCurvedText]);
   };
@@ -377,6 +508,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   const duplicateElement = () => {
     if (!selectedId) return;
     
+    // Get the highest zIndex for new element
+    const maxZIndex = Math.max(...unifiedElements.map(el => el.zIndex), -1) + 1;
+    
     // Find the element to duplicate
     const textEl = textElements.find(el => el.id === selectedId);
     if (textEl) {
@@ -384,7 +518,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         ...textEl,
         id: `text-${Date.now()}`,
         x: textEl.x + 20,
-        y: textEl.y + 20
+        y: textEl.y + 20,
+        zIndex: maxZIndex
       };
       setTextElements(prev => [...prev, newEl]);
       setSelectedId(newEl.id);
@@ -397,7 +532,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         ...curvedEl,
         id: `curved-text-${Date.now()}`,
         x: curvedEl.x + 20,
-        topY: curvedEl.topY + 20
+        topY: curvedEl.topY + 20,
+        zIndex: maxZIndex
       };
       setCurvedTextElements(prev => [...prev, newEl]);
       setSelectedId(newEl.id);
@@ -410,7 +546,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         ...gradientEl,
         id: `gradient-text-${Date.now()}`,
         x: gradientEl.x + 20,
-        y: gradientEl.y + 20
+        y: gradientEl.y + 20,
+        zIndex: maxZIndex
       };
       setGradientTextElements(prev => [...prev, newEl]);
       setSelectedId(newEl.id);
@@ -423,7 +560,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         ...imgEl,
         id: `image-${Date.now()}`,
         x: imgEl.x + 20,
-        y: imgEl.y + 20
+        y: imgEl.y + 20,
+        zIndex: maxZIndex
       };
       setImageElements(prev => [...prev, newEl]);
       setSelectedId(newEl.id);
@@ -541,7 +679,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         stageRef.current.clear();
         
         // Force all layers to redraw
-        stageRef.current.getLayers().forEach(layer => {
+        stageRef.current.getLayers().forEach((layer: any) => {
           layer.clear();
           layer.batchDraw();
         });
@@ -1032,6 +1170,18 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       if (e.key === 'd' && (e.ctrlKey || e.metaKey) && selectedId) {
         e.preventDefault();
         duplicateElement();
+      }
+      
+      // Ctrl+] or Cmd+] to move layer up
+      if (e.key === ']' && (e.ctrlKey || e.metaKey) && selectedId) {
+        e.preventDefault();
+        moveLayerUp();
+      }
+      
+      // Ctrl+[ or Cmd+[ to move layer down
+      if (e.key === '[' && (e.ctrlKey || e.metaKey) && selectedId) {
+        e.preventDefault();
+        moveLayerDown();
       }
     };
 
@@ -1979,235 +2129,251 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
               />
             )}
             
-            {/* Render images first so text appears on top */}
-            {imageElements.map((imgEl) => (
-              <ImageElement
-                key={imgEl.id}
-                imageElement={imgEl}
-                isSelected={selectedId === imgEl.id}
-                onSelect={() => setSelectedId(imgEl.id)}
-                onChange={(newAttrs) => {
-                  setImageElements(prev =>
-                    prev.map(el =>
-                      el.id === imgEl.id ? { ...el, ...newAttrs } : el
-                    )
-                  );
-                }}
-                onDragEnd={() => setTimeout(updateToolbarPosition, 0)}
-                onTransformEnd={() => setTimeout(updateToolbarPosition, 0)}
-              />
-            ))}
-            
-            {textElements.map((textEl) => (
-              <Text
-                key={textEl.id}
-                id={textEl.id}
-                text={textEl.text}
-                x={textEl.x}
-                y={textEl.y}
-                fontSize={textEl.fontSize || 24}
-                fontFamily={textEl.fontFamily}
-                fontStyle={textEl.fontWeight === 'bold' ? 'bold' : 'normal'}
-                fill={textEl.fill === 'gold-gradient' ? undefined : (textEl.fill || "black")}
-                fillLinearGradientStartPoint={textEl.fill === 'gold-gradient' ? { x: 0, y: 0 } : undefined}
-                fillLinearGradientEndPoint={textEl.fill === 'gold-gradient' ? { x: 0, y: textEl.fontSize || 24 } : undefined}
-                fillLinearGradientColorStops={textEl.fill === 'gold-gradient' ? [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'] : undefined}
-                stroke={textEl.stroke && textEl.stroke !== 'transparent' ? textEl.stroke : undefined}
-                strokeWidth={textEl.stroke && textEl.stroke !== 'transparent' ? (textEl.strokeWidth || 2) : 0}
-                fillAfterStrokeEnabled={true}
-                rotation={textEl.rotation || 0}
-                scaleX={textEl.scaleX || 1}
-                scaleY={textEl.scaleY || 1}
-                draggable
-                onClick={() => setSelectedId(textEl.id)}
-                onTap={() => setSelectedId(textEl.id)}
-                onDragEnd={(e) => {
-                  const newX = e.target.x();
-                  const newY = e.target.y();
-                  setTextElements(prev => 
-                    prev.map(el => 
-                      el.id === textEl.id 
-                        ? { ...el, x: newX, y: newY }
-                        : el
-                    )
-                  );
-                  setTimeout(updateToolbarPosition, 0);
-                }}
-                onTransformEnd={(e) => {
-                  const node = e.target;
-                  setTextElements(prev => 
-                    prev.map(el => 
-                      el.id === textEl.id 
-                        ? { 
-                            ...el, 
-                            x: node.x(),
-                            y: node.y(),
-                            rotation: node.rotation(),
-                            scaleX: node.scaleX(),
-                            scaleY: node.scaleY()
-                          }
-                        : el
-                    )
-                  );
-                  setTimeout(updateToolbarPosition, 0);
-                }}
-              />
-            ))}
-            {gradientTextElements.map((gradientEl) => (
-              <Text
-                key={gradientEl.id}
-                id={gradientEl.id}
-                text={gradientEl.text}
-                x={gradientEl.x}
-                y={gradientEl.y}
-                fontSize={gradientEl.fontSize || 24}
-                fontFamily={gradientEl.fontFamily}
-                rotation={gradientEl.rotation || 0}
-                scaleX={gradientEl.scaleX || 1}
-                scaleY={gradientEl.scaleY || 1}
-                fillLinearGradientStartPoint={{ x: 0, y: 0 }}
-                fillLinearGradientEndPoint={{ x: 0, y: 24 }}
-                fillLinearGradientColorStops={[0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B']}
-                draggable
-                onClick={() => setSelectedId(gradientEl.id)}
-                onTap={() => setSelectedId(gradientEl.id)}
-                onDragEnd={(e) => {
-                  const newX = e.target.x();
-                  const newY = e.target.y();
-                  setGradientTextElements(prev => 
-                    prev.map(el => 
-                      el.id === gradientEl.id 
-                        ? { ...el, x: newX, y: newY }
-                        : el
-                    )
-                  );
-                  setTimeout(updateToolbarPosition, 0);
-                }}
-                onTransformEnd={(e) => {
-                  const node = e.target;
-                  setGradientTextElements(prev => 
-                    prev.map(el => 
-                      el.id === gradientEl.id 
-                        ? { 
-                            ...el, 
-                            x: node.x(),
-                            y: node.y(),
-                            rotation: node.rotation(),
-                            scaleX: node.scaleX(),
-                            scaleY: node.scaleY()
-                          }
-                        : el
-                    )
-                  );
-                  setTimeout(updateToolbarPosition, 0);
-                }}
-              />
-            ))}
-            {curvedTextElements.map((curvedEl) => {
-            // Calculate center Y based on whether text is flipped
-            // For normal text: pin top edge, so center = topY + radius
-            // For flipped text: pin bottom edge, so center = topY - radius
-            const centerY = curvedEl.flipped 
-              ? curvedEl.topY - curvedEl.radius  // Bottom edge stays at topY
-              : curvedEl.topY + curvedEl.radius; // Top edge stays at topY
-            
-            // Create path for text - scale with font size
-            const fontSize = curvedEl.fontSize || 20;
-            const textLength = curvedEl.text.length * fontSize * 0.6; // Scale text length with font size
-            const angleSpan = Math.min(textLength / curvedEl.radius, Math.PI * 1.5); // Max 270 degrees
-            
-            let startAngle, endAngle, sweepFlag;
-            if (curvedEl.flipped) {
-              // Bottom arc - text reads left to right along bottom
-              // Reverse direction for proper text orientation
-              startAngle = Math.PI/2 + angleSpan/2; // Start from right side
-              endAngle = Math.PI/2 - angleSpan/2;   // End at left side
-              sweepFlag = 0; // Counter-clockwise for correct text direction
-            } else {
-              // Top arc - text reads left to right along top
-              startAngle = -Math.PI/2 - angleSpan/2; // Center around top
-              endAngle = -Math.PI/2 + angleSpan/2;
-              sweepFlag = 1; // Clockwise
-            }
-            
-            const startX = Math.cos(startAngle) * curvedEl.radius;
-            const startY = Math.sin(startAngle) * curvedEl.radius;
-            const endX = Math.cos(endAngle) * curvedEl.radius;
-            const endY = Math.sin(endAngle) * curvedEl.radius;
-            
-            const largeArcFlag = angleSpan > Math.PI ? 1 : 0;
-            const pathData = `M ${startX},${startY} A ${curvedEl.radius},${curvedEl.radius} 0 ${largeArcFlag},${sweepFlag} ${endX},${endY}`;
-            
-            return (
-              <Group
-                key={curvedEl.id}
-                id={curvedEl.id}
-                x={curvedEl.x}
-                y={centerY}
-                rotation={curvedEl.rotation || 0}
-                scaleX={curvedEl.scaleX || 1}
-                scaleY={curvedEl.scaleY || 1}
-                draggable
-                onClick={() => setSelectedId(curvedEl.id)}
-                onTap={() => setSelectedId(curvedEl.id)}
-                onDragEnd={(e) => {
-                  const newX = e.target.x();
-                  const newY = e.target.y();
-                  // Calculate topY based on whether text is flipped
-                  // For normal text: topY = centerY - radius
-                  // For flipped text: topY = centerY + radius (since bottom is pinned)
-                  const newTopY = curvedEl.flipped 
-                    ? newY + curvedEl.radius 
-                    : newY - curvedEl.radius;
-                  setCurvedTextElements(prev => 
-                    prev.map(el => 
-                      el.id === curvedEl.id 
-                        ? { ...el, x: newX, topY: newTopY }
-                        : el
-                    )
-                  );
-                  setTimeout(updateToolbarPosition, 0);
-                }}
-                onTransformEnd={(e) => {
-                  const node = e.target;
-                  setCurvedTextElements(prev => 
-                    prev.map(el => 
-                      el.id === curvedEl.id 
-                        ? { 
-                            ...el, 
-                            x: node.x(),
-                            // Calculate topY from centerY based on flip state
-                            topY: curvedEl.flipped 
-                              ? node.y() + curvedEl.radius 
-                              : node.y() - curvedEl.radius,
-                            rotation: node.rotation(),
-                            scaleX: node.scaleX(),
-                            scaleY: node.scaleY()
-                          }
-                        : el
-                    )
-                  );
-                  setTimeout(updateToolbarPosition, 0);
-                }}
-              >
-                <TextPath
-                  text={curvedEl.text}
-                  data={pathData}
-                  fontSize={curvedEl.fontSize || 20}
-                  fontFamily={curvedEl.fontFamily}
-                  fontStyle={curvedEl.fontWeight === 'bold' ? 'bold' : 'normal'}
-                  fill={curvedEl.fill === 'gold-gradient' ? undefined : (curvedEl.fill || "black")}
-                  fillLinearGradientStartPoint={curvedEl.fill === 'gold-gradient' ? { x: 0, y: 0 } : undefined}
-                  fillLinearGradientEndPoint={curvedEl.fill === 'gold-gradient' ? { x: 0, y: curvedEl.fontSize || 20 } : undefined}
-                  fillLinearGradientColorStops={curvedEl.fill === 'gold-gradient' ? [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'] : undefined}
-                  stroke={curvedEl.stroke && curvedEl.stroke !== 'transparent' ? curvedEl.stroke : undefined}
+            {/* Render all elements in z-order */}
+            {unifiedElements.map((element) => {
+              if (element.type === 'image') {
+                const imgEl = element.data;
+                return (
+                  <ImageElement
+                    key={imgEl.id}
+                    imageElement={imgEl}
+                    isSelected={selectedId === imgEl.id}
+                    onSelect={() => setSelectedId(imgEl.id)}
+                    onChange={(newAttrs) => {
+                      setImageElements(prev =>
+                        prev.map(el =>
+                          el.id === imgEl.id ? { ...el, ...newAttrs } : el
+                        )
+                      );
+                    }}
+                    onDragEnd={() => setTimeout(updateToolbarPosition, 0)}
+                    onTransformEnd={() => setTimeout(updateToolbarPosition, 0)}
+                  />
+                );
+              }
+              
+              if (element.type === 'text') {
+                const textEl = element.data;
+                return (
+                  <Text
+                    key={textEl.id}
+                    id={textEl.id}
+                    text={textEl.text}
+                    x={textEl.x}
+                    y={textEl.y}
+                    fontSize={textEl.fontSize || 24}
+                    fontFamily={textEl.fontFamily}
+                    fontStyle={textEl.fontWeight === 'bold' ? 'bold' : 'normal'}
+                    fill={textEl.fill === 'gold-gradient' ? undefined : (textEl.fill || "black")}
+                    fillLinearGradientStartPoint={textEl.fill === 'gold-gradient' ? { x: 0, y: 0 } : undefined}
+                    fillLinearGradientEndPoint={textEl.fill === 'gold-gradient' ? { x: 0, y: textEl.fontSize || 24 } : undefined}
+                    fillLinearGradientColorStops={textEl.fill === 'gold-gradient' ? [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'] : undefined}
+                    stroke={textEl.stroke && textEl.stroke !== 'transparent' ? textEl.stroke : undefined}
+                    strokeWidth={textEl.stroke && textEl.stroke !== 'transparent' ? (textEl.strokeWidth || 2) : 0}
+                    fillAfterStrokeEnabled={true}
+                    rotation={textEl.rotation || 0}
+                    scaleX={textEl.scaleX || 1}
+                    scaleY={textEl.scaleY || 1}
+                    draggable
+                    onClick={() => setSelectedId(textEl.id)}
+                    onTap={() => setSelectedId(textEl.id)}
+                    onDragEnd={(e) => {
+                      const newX = e.target.x();
+                      const newY = e.target.y();
+                      setTextElements(prev => 
+                        prev.map(el => 
+                          el.id === textEl.id 
+                            ? { ...el, x: newX, y: newY }
+                            : el
+                        )
+                      );
+                      setTimeout(updateToolbarPosition, 0);
+                    }}
+                    onTransformEnd={(e) => {
+                      const node = e.target;
+                      setTextElements(prev => 
+                        prev.map(el => 
+                          el.id === textEl.id 
+                            ? { 
+                                ...el, 
+                                x: node.x(),
+                                y: node.y(),
+                                rotation: node.rotation(),
+                                scaleX: node.scaleX(),
+                                scaleY: node.scaleY()
+                              }
+                            : el
+                        )
+                      );
+                      setTimeout(updateToolbarPosition, 0);
+                    }}
+                  />
+                );
+              }
+              
+              if (element.type === 'gradientText') {
+                const gradientEl = element.data;
+                return (
+                  <Text
+                    key={gradientEl.id}
+                    id={gradientEl.id}
+                    text={gradientEl.text}
+                    x={gradientEl.x}
+                    y={gradientEl.y}
+                    fontSize={gradientEl.fontSize || 24}
+                    fontFamily={gradientEl.fontFamily}
+                    rotation={gradientEl.rotation || 0}
+                    scaleX={gradientEl.scaleX || 1}
+                    scaleY={gradientEl.scaleY || 1}
+                    fillLinearGradientStartPoint={{ x: 0, y: 0 }}
+                    fillLinearGradientEndPoint={{ x: 0, y: 24 }}
+                    fillLinearGradientColorStops={[0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B']}
+                    draggable
+                    onClick={() => setSelectedId(gradientEl.id)}
+                    onTap={() => setSelectedId(gradientEl.id)}
+                    onDragEnd={(e) => {
+                      const newX = e.target.x();
+                      const newY = e.target.y();
+                      setGradientTextElements(prev => 
+                        prev.map(el => 
+                          el.id === gradientEl.id 
+                            ? { ...el, x: newX, y: newY }
+                            : el
+                        )
+                      );
+                      setTimeout(updateToolbarPosition, 0);
+                    }}
+                    onTransformEnd={(e) => {
+                      const node = e.target;
+                      setGradientTextElements(prev => 
+                        prev.map(el => 
+                          el.id === gradientEl.id 
+                            ? { 
+                                ...el, 
+                                x: node.x(),
+                                y: node.y(),
+                                rotation: node.rotation(),
+                                scaleX: node.scaleX(),
+                                scaleY: node.scaleY()
+                              }
+                            : el
+                        )
+                      );
+                      setTimeout(updateToolbarPosition, 0);
+                    }}
+                  />
+                );
+              }
+              
+              if (element.type === 'curvedText') {
+                const curvedEl = element.data;
+                // Calculate center Y based on whether text is flipped
+                // For normal text: pin top edge, so center = topY + radius
+                // For flipped text: pin bottom edge, so center = topY - radius
+                const centerY = curvedEl.flipped 
+                  ? curvedEl.topY - curvedEl.radius  // Bottom edge stays at topY
+                  : curvedEl.topY + curvedEl.radius; // Top edge stays at topY
+                
+                // Create path for text - scale with font size
+                const fontSize = curvedEl.fontSize || 20;
+                const textLength = curvedEl.text.length * fontSize * 0.6; // Scale text length with font size
+                const angleSpan = Math.min(textLength / curvedEl.radius, Math.PI * 1.5); // Max 270 degrees
+                
+                let startAngle, endAngle, sweepFlag;
+                if (curvedEl.flipped) {
+                  // Bottom arc - text reads left to right along bottom
+                  // Reverse direction for proper text orientation
+                  startAngle = Math.PI/2 + angleSpan/2; // Start from right side
+                  endAngle = Math.PI/2 - angleSpan/2;   // End at left side
+                  sweepFlag = 0; // Counter-clockwise for correct text direction
+                } else {
+                  // Top arc - text reads left to right along top
+                  startAngle = -Math.PI/2 - angleSpan/2; // Center around top
+                  endAngle = -Math.PI/2 + angleSpan/2;
+                  sweepFlag = 1; // Clockwise
+                }
+                
+                const startX = Math.cos(startAngle) * curvedEl.radius;
+                const startY = Math.sin(startAngle) * curvedEl.radius;
+                const endX = Math.cos(endAngle) * curvedEl.radius;
+                const endY = Math.sin(endAngle) * curvedEl.radius;
+                
+                const largeArcFlag = angleSpan > Math.PI ? 1 : 0;
+                const pathData = `M ${startX},${startY} A ${curvedEl.radius},${curvedEl.radius} 0 ${largeArcFlag},${sweepFlag} ${endX},${endY}`;
+                
+                return (
+                  <Group
+                    key={curvedEl.id}
+                    id={curvedEl.id}
+                    x={curvedEl.x}
+                    y={centerY}
+                    rotation={curvedEl.rotation || 0}
+                    scaleX={curvedEl.scaleX || 1}
+                    scaleY={curvedEl.scaleY || 1}
+                    draggable
+                    onClick={() => setSelectedId(curvedEl.id)}
+                    onTap={() => setSelectedId(curvedEl.id)}
+                    onDragEnd={(e) => {
+                      const newX = e.target.x();
+                      const newY = e.target.y();
+                      // Calculate topY based on whether text is flipped
+                      // For normal text: topY = centerY - radius
+                      // For flipped text: topY = centerY + radius (since bottom is pinned)
+                      const newTopY = curvedEl.flipped 
+                        ? newY + curvedEl.radius 
+                        : newY - curvedEl.radius;
+                      setCurvedTextElements(prev => 
+                        prev.map(el => 
+                          el.id === curvedEl.id 
+                            ? { ...el, x: newX, topY: newTopY }
+                            : el
+                        )
+                      );
+                      setTimeout(updateToolbarPosition, 0);
+                    }}
+                    onTransformEnd={(e) => {
+                      const node = e.target;
+                      setCurvedTextElements(prev => 
+                        prev.map(el => 
+                          el.id === curvedEl.id 
+                            ? { 
+                                ...el, 
+                                x: node.x(),
+                                // Calculate topY from centerY based on flip state
+                                topY: curvedEl.flipped 
+                                  ? node.y() + curvedEl.radius 
+                                  : node.y() - curvedEl.radius,
+                                rotation: node.rotation(),
+                                scaleX: node.scaleX(),
+                                scaleY: node.scaleY()
+                              }
+                            : el
+                        )
+                      );
+                      setTimeout(updateToolbarPosition, 0);
+                    }}
+                  >
+                    <TextPath
+                      text={curvedEl.text}
+                      data={pathData}
+                      fontSize={curvedEl.fontSize || 20}
+                      fontFamily={curvedEl.fontFamily}
+                      fontStyle={curvedEl.fontWeight === 'bold' ? 'bold' : 'normal'}
+                      fill={curvedEl.fill === 'gold-gradient' ? undefined : (curvedEl.fill || "black")}
+                      fillLinearGradientStartPoint={curvedEl.fill === 'gold-gradient' ? { x: 0, y: 0 } : undefined}
+                      fillLinearGradientEndPoint={curvedEl.fill === 'gold-gradient' ? { x: 0, y: curvedEl.fontSize || 20 } : undefined}
+                      fillLinearGradientColorStops={curvedEl.fill === 'gold-gradient' ? [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'] : undefined}
+                      stroke={curvedEl.stroke && curvedEl.stroke !== 'transparent' ? curvedEl.stroke : undefined}
                   strokeWidth={curvedEl.stroke && curvedEl.stroke !== 'transparent' ? (curvedEl.strokeWidth || 2) : 0}
                   fillAfterStrokeEnabled={true}
                   align="center"
-                />
-              </Group>
-            );
-          })}
+                    />
+                  </Group>
+                );
+              }
+              
+              return null; // Should never reach here
+            })}
           </Group>
           
           {/* Designable Area Overlay */}
@@ -2323,6 +2489,125 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
             title="Delete"
           >
             🗑️
+          </button>
+          
+          {/* Layer controls */}
+          <div style={{ width: '1px', background: '#e0e0e0', height: '24px', margin: '0 4px' }} />
+          
+          <button
+            onClick={moveLayerDown}
+            disabled={!selectedId || unifiedElements.findIndex(el => el.id === selectedId) === 0}
+            style={{
+              width: '36px',
+              height: '36px',
+              padding: '6px',
+              border: 'none',
+              borderRadius: '6px',
+              background: 'white',
+              cursor: !selectedId || unifiedElements.findIndex(el => el.id === selectedId) === 0 ? 'not-allowed' : 'pointer',
+              opacity: !selectedId || unifiedElements.findIndex(el => el.id === selectedId) === 0 ? 0.5 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '16px',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              if (selectedId && unifiedElements.findIndex(el => el.id === selectedId) > 0) {
+                e.currentTarget.style.backgroundColor = '#f5f5f5';
+              }
+            }}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+            title="Move Layer Down (Ctrl+[)"
+          >
+            ↓
+          </button>
+          
+          <button
+            onClick={moveLayerUp}
+            disabled={!selectedId || unifiedElements.findIndex(el => el.id === selectedId) === unifiedElements.length - 1}
+            style={{
+              width: '36px',
+              height: '36px',
+              padding: '6px',
+              border: 'none',
+              borderRadius: '6px',
+              background: 'white',
+              cursor: !selectedId || unifiedElements.findIndex(el => el.id === selectedId) === unifiedElements.length - 1 ? 'not-allowed' : 'pointer',
+              opacity: !selectedId || unifiedElements.findIndex(el => el.id === selectedId) === unifiedElements.length - 1 ? 0.5 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '16px',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              if (selectedId && unifiedElements.findIndex(el => el.id === selectedId) < unifiedElements.length - 1) {
+                e.currentTarget.style.backgroundColor = '#f5f5f5';
+              }
+            }}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+            title="Move Layer Up (Ctrl+])"
+          >
+            ↑
+          </button>
+          
+          <button
+            onClick={moveToFront}
+            disabled={!selectedId || unifiedElements.findIndex(el => el.id === selectedId) === unifiedElements.length - 1}
+            style={{
+              width: '36px',
+              height: '36px',
+              padding: '6px',
+              border: 'none',
+              borderRadius: '6px',
+              background: 'white',
+              cursor: !selectedId || unifiedElements.findIndex(el => el.id === selectedId) === unifiedElements.length - 1 ? 'not-allowed' : 'pointer',
+              opacity: !selectedId || unifiedElements.findIndex(el => el.id === selectedId) === unifiedElements.length - 1 ? 0.5 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '14px',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              if (selectedId && unifiedElements.findIndex(el => el.id === selectedId) < unifiedElements.length - 1) {
+                e.currentTarget.style.backgroundColor = '#f5f5f5';
+              }
+            }}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+            title="Move to Front"
+          >
+            ⬆️
+          </button>
+          
+          <button
+            onClick={moveToBack}
+            disabled={!selectedId || unifiedElements.findIndex(el => el.id === selectedId) === 0}
+            style={{
+              width: '36px',
+              height: '36px',
+              padding: '6px',
+              border: 'none',
+              borderRadius: '6px',
+              background: 'white',
+              cursor: !selectedId || unifiedElements.findIndex(el => el.id === selectedId) === 0 ? 'not-allowed' : 'pointer',
+              opacity: !selectedId || unifiedElements.findIndex(el => el.id === selectedId) === 0 ? 0.5 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '14px',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              if (selectedId && unifiedElements.findIndex(el => el.id === selectedId) > 0) {
+                e.currentTarget.style.backgroundColor = '#f5f5f5';
+              }
+            }}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+            title="Move to Back"
+          >
+            ⬇️
           </button>
           
           {/* Font controls - only show for text elements */}

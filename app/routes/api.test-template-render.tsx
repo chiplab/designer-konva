@@ -6,38 +6,6 @@ import db from "../db.server";
 export async function action({ request }: ActionFunctionArgs) {
   const { session } = await authenticate.admin(request);
   
-  // Dynamically import server-only dependencies
-  const { createCanvas, loadImage } = await import('@napi-rs/canvas');
-  const Konva = (await import('konva')).default;
-  const path = await import('path');
-  const fs = await import('fs/promises');
-  
-  // Helper function to safely load images
-  async function loadImageSafely(url: string): Promise<any> {
-    try {
-      if (url.startsWith('/')) {
-        // Local image - try file system
-        const publicPath = path.join(process.cwd(), 'public', url);
-        console.log('Trying to load local image:', publicPath);
-        
-        // Check if file exists
-        await fs.access(publicPath);
-        const img = await loadImage(publicPath);
-        console.log('Successfully loaded local image, dimensions:', img.width, 'x', img.height);
-        return img;
-      } else {
-        // External URL (S3, etc.)
-        console.log('Loading external image:', url);
-        const img = await loadImage(url);
-        console.log('Successfully loaded external image, dimensions:', img.width, 'x', img.height);
-        return img;
-      }
-    } catch (error) {
-      console.error('Failed to load image:', url, error);
-      return null;
-    }
-  }
-  
   try {
     const formData = await request.formData();
     const templateId = formData.get("templateId") as string;
@@ -60,32 +28,127 @@ export async function action({ request }: ActionFunctionArgs) {
     const state = JSON.parse(template.canvasData);
     const { width, height } = state.dimensions;
     
+    // Dynamically import server-only dependencies
+    const { createCanvas, loadImage } = await import('@napi-rs/canvas');
+    const Konva = (await import('konva')).default;
+    const path = await import('path');
+    const fs = await import('fs/promises');
+    
+    // Helper function to safely load images
+    async function loadImageSafely(url: string): Promise<any> {
+      try {
+        if (url.startsWith('/')) {
+          // Local image - try file system
+          const publicPath = path.join(process.cwd(), 'public', url);
+          console.log('Trying to load local image:', publicPath);
+          
+          // Check if file exists
+          await fs.access(publicPath);
+          const img = await loadImage(publicPath);
+          console.log('Successfully loaded local image, dimensions:', img.width, 'x', img.height);
+          return img;
+        } else {
+          // External URL (S3, etc.)
+          console.log('Loading external image:', url);
+          const img = await loadImage(url);
+          console.log('Successfully loaded external image, dimensions:', img.width, 'x', img.height);
+          return img;
+        }
+      } catch (error) {
+        console.error('Failed to load image:', url, error);
+        return null;
+      }
+    }
+    
     // Create canvas
     const canvas = createCanvas(width, height);
-    canvas.style = {} as any;
+    // Add style object to canvas
+    (canvas as any).style = {
+      padding: 0,
+      margin: 0,
+      border: 0,
+      background: 'transparent',
+      position: 'absolute',
+      top: 0,
+      left: 0,
+    };
     
-    // Setup Konva
-    // @ts-ignore
-    Konva.window = {
+    // Set up more complete globals for Konva
+    global.window = {
       devicePixelRatio: 1,
-    };
+      matchMedia: () => ({
+        matches: false,
+        addListener: () => {},
+        removeListener: () => {},
+      }),
+    } as any;
     
-    // @ts-ignore
-    Konva.document = {
-      createElement: () => canvas,
-      documentElement: {
-        addEventListener: () => {},
+    global.document = {
+      createElement: (tagName: string) => {
+        if (tagName === 'canvas') {
+          const c = createCanvas(1, 1);
+          (c as any).style = {};
+          return c;
+        }
+        return {
+          style: {},
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          getContext: () => null,
+        };
       },
+      documentElement: {
+        style: {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as any;
+    
+    // Configure Konva for server-side
+    (Konva as any).Util.createCanvasElement = () => {
+      const c = createCanvas(1, 1);
+      // Add style object with padding property
+      (c as any).style = {
+        padding: 0,
+        margin: 0,
+        border: 0,
+        background: 'transparent',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+      };
+      return c;
     };
     
-    // Create stage
-    const stage = new Konva.Stage({
-      width,
-      height,
-    });
+    // Create stage without container
+    console.log('Creating Konva stage...');
+    let stage, layer;
     
-    const layer = new Konva.Layer();
-    stage.add(layer);
+    try {
+      stage = new Konva.Stage({
+        width,
+        height,
+      });
+      console.log('Stage created successfully');
+      
+      layer = new Konva.Layer();
+      console.log('Layer created successfully');
+      
+      stage.add(layer);
+      console.log('Layer added to stage');
+    } catch (stageError) {
+      console.error('Error creating stage/layer:', stageError);
+      throw stageError;
+    }
+    
+    // Don't try to set the canvas - let Konva manage its own canvas
+    const konvaCanvas = layer.getCanvas();
+    console.log('Konva canvas exists:', !!konvaCanvas);
+    console.log('Konva canvas has _canvas:', !!(konvaCanvas as any)?._canvas);
+    
+    console.log('Canvas setup complete');
     
     // Render background
     console.log('Background color value:', state.backgroundColor);
@@ -124,33 +187,27 @@ export async function action({ request }: ActionFunctionArgs) {
     const bg = new Konva.Rect(bgConfig);
     layer.add(bg);
     
-    // Skip base image for now - there's a compatibility issue
+    // Load and render base image
     if (state.assets.baseImage) {
-      console.log('Base image exists but skipping due to compatibility issues:', state.assets.baseImage);
+      console.log('Loading base image:', state.assets.baseImage);
       
-      // Add a light gray placeholder rectangle instead
-      const imagePlaceholder = new Konva.Rect({
-        x: 0,
-        y: 0,
-        width: width,
-        height: height,
-        fill: '#f5f5f5',
-        opacity: 0.5,
-      });
-      layer.add(imagePlaceholder);
-      
-      // Add text to indicate this is a placeholder
-      const placeholderText = new Konva.Text({
-        x: width / 2,
-        y: height / 2,
-        text: 'Base Image Placeholder',
-        fontSize: 20,
-        fill: '#999',
-        align: 'center',
-        offsetX: 100, // Approximate half width of text
-        offsetY: 10,
-      });
-      layer.add(placeholderText);
+      const baseImg = await loadImageSafely(state.assets.baseImage);
+      if (baseImg) {
+        console.log('Creating Konva.Image with base image');
+        try {
+          const baseImage = new Konva.Image({
+            x: 0,
+            y: 0,
+            image: baseImg,
+            width: width,
+            height: height,
+          });
+          layer.add(baseImage);
+          console.log('Base image added to layer');
+        } catch (error) {
+          console.error('Failed to create Konva.Image for base image:', error);
+        }
+      }
     }
     
     // Create clipping group for designable area
@@ -189,7 +246,7 @@ export async function action({ request }: ActionFunctionArgs) {
         fontStyle: element.fontWeight === 'bold' ? 'bold' : 'normal',
         stroke: element.stroke,
         strokeWidth: element.strokeWidth,
-        fillAfterStrokeEnabled: true,  // Draw fill on top of stroke
+        fillAfterStrokeEnabled: true,
         rotation: element.rotation || 0,
         scaleX: element.scaleX || 1,
         scaleY: element.scaleY || 1,
@@ -264,10 +321,10 @@ export async function action({ request }: ActionFunctionArgs) {
         fontSize: fontSize,
         fontFamily: element.fontFamily || 'Arial',
         fontStyle: element.fontWeight === 'bold' ? 'bold' : 'normal',
-        align: 'center',  // Center align the text along the path
+        align: 'center',
         stroke: element.stroke,
         strokeWidth: element.strokeWidth,
-        fillAfterStrokeEnabled: true,  // Draw fill on top of stroke
+        fillAfterStrokeEnabled: true,
         ...fillConfig,
       });
       
@@ -275,19 +332,48 @@ export async function action({ request }: ActionFunctionArgs) {
       clipGroup.add(curvedTextGroup);
     });
     
-    // Skip user images for now until we fix the crash
+    // Render user images
     if (state.elements.imageElements?.length > 0) {
-      console.log('Skipping', state.elements.imageElements.length, 'user image elements for now');
+      console.log('Rendering', state.elements.imageElements.length, 'user image elements');
+      
+      for (const imgElement of state.elements.imageElements) {
+        console.log('Loading user image:', imgElement.url);
+        const userImg = await loadImageSafely(imgElement.url);
+        
+        if (userImg) {
+          try {
+            const image = new Konva.Image({
+              x: imgElement.x,
+              y: imgElement.y,
+              image: userImg,
+              width: imgElement.width,
+              height: imgElement.height,
+              rotation: imgElement.rotation || 0,
+            });
+            clipGroup.add(image);
+            console.log('User image added to clip group');
+          } catch (error) {
+            console.error('Failed to create Konva.Image for user image:', error);
+          }
+        }
+      }
     }
     
     // Draw everything
+    console.log('Drawing layer...');
     layer.draw();
     
-    // Get the canvas from the layer
-    const layerCanvas = layer.getCanvas()._canvas;
+    // Get the actual canvas that Konva drew to
+    console.log('Converting to buffer...');
+    const layerCanvas = layer.getCanvas();
+    const actualCanvas = (layerCanvas as any)._canvas;
     
-    // Convert to data URL
-    const buffer = await layerCanvas.toBuffer('image/png');
+    if (!actualCanvas) {
+      throw new Error('No canvas found on layer after drawing');
+    }
+    
+    console.log('Using Konva\'s canvas for buffer');
+    const buffer = actualCanvas.toBuffer('image/png');
     const dataUrl = `data:image/png;base64,${buffer.toString('base64')}`;
     
     console.log('Template render successful! Buffer size:', buffer.length);
@@ -295,7 +381,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ 
       success: true, 
       dataUrl,
-      message: 'Template rendered successfully (without images)!'
+      message: 'Template rendered successfully with images!'
     });
     
   } catch (error) {

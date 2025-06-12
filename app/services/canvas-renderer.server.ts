@@ -1,36 +1,11 @@
 /**
  * Server-side canvas rendering service using Konva and @napi-rs/canvas
  */
+import { loadImage } from '@napi-rs/canvas';
+import Konva from 'konva';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 import { fontLoader } from './font-loader';
-
-// Function to setup Konva for server-side rendering
-function setupKonvaForServer(width: number, height: number) {
-  // Create a canvas for Konva to use
-  const canvas = createCanvas(width, height);
-  canvas.style = {} as any;
-  
-  // According to Konva docs, we need to provide these globals
-  // @ts-ignore
-  Konva.window = {
-    devicePixelRatio: 1,
-    matchMedia: () => ({
-      matches: false,
-      addListener: () => {},
-      removeListener: () => {},
-    }),
-  };
-  
-  // @ts-ignore
-  Konva.document = {
-    createElement: () => canvas,
-    documentElement: {
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    },
-  };
-  
-  return canvas;
-}
 
 interface CanvasState {
   dimensions: { width: number; height: number };
@@ -150,14 +125,16 @@ export async function renderCanvasToBuffer(
 
   const { width, height } = state.dimensions;
   
-  // Setup Konva for server-side rendering
-  const canvas = setupKonvaForServer(width, height);
+  // Setup minimal globals for Konva in Node.js
+  // @ts-ignore
+  global.window = {
+    devicePixelRatio: 1,
+  };
   
-  // Create stage with our canvas
+  // Create stage WITHOUT container for server-side rendering
   const stage = new Konva.Stage({
     width,
     height,
-    container: canvas as any,
   });
   
   const layer = new Konva.Layer();
@@ -351,11 +328,14 @@ export async function renderCanvasToBuffer(
   // Draw the stage
   stage.draw();
   
+  // Get the canvas from the layer
+  const layerCanvas = layer.getCanvas()._canvas as any;
+  
   // Convert to buffer using @napi-rs/canvas methods
   const format = options.format || 'png';
   const buffer = format === 'jpeg' 
-    ? await canvas.toBuffer('image/jpeg', { quality: options.quality || 0.9 })
-    : await canvas.toBuffer('image/png');
+    ? layerCanvas.toBuffer('image/jpeg', options.quality || 0.9)
+    : layerCanvas.toBuffer('image/png');
     
   return buffer;
 }
