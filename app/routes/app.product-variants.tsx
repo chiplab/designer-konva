@@ -50,26 +50,16 @@ const GET_PRODUCT_WITH_VARIANTS = `#graphql
 `;
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
   const url = new URL(request.url);
   const productId = url.searchParams.get("productId");
   
   if (!productId) {
-    return json({ error: "Product ID is required", product: null, templates: {} });
+    return json({ error: "Product ID is required", product: null, templates: {}, productId: null });
   }
   
   try {
-    // Fetch product from Shopify
-    const response = await admin.graphql(GET_PRODUCT_WITH_VARIANTS, {
-      variables: { id: productId }
-    });
-    const data = await response.json();
-    
-    if (!data.data?.product) {
-      return json({ error: "Product not found", product: null, templates: {} });
-    }
-    
-    // Get templates for this product
+    // Get templates for this product from database only
     const templates = await db.template.findMany({
       where: { 
         shop: session.shop,
@@ -82,7 +72,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         thumbnail: true,
         isColorVariant: true,
         masterTemplateId: true,
-      }
+        colorVariant: true,
+      },
+      orderBy: [
+        { isColorVariant: 'asc' }, // Master templates first
+        { colorVariant: 'asc' },    // Then by color name
+        { name: 'asc' }
+      ]
     });
     
     // Map templates by variant ID
@@ -93,9 +89,41 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       }
     });
     
+    // Group templates by color to show a summary
+    const templatesByColor: Record<string, any[]> = {};
+    templates.forEach(template => {
+      const color = template.colorVariant || 'Unknown';
+      if (!templatesByColor[color]) {
+        templatesByColor[color] = [];
+      }
+      templatesByColor[color].push(template);
+    });
+    
+    // Create a mock product structure based on templates
+    const product = {
+      id: productId,
+      title: `Product ${productId.split('/').pop()}`,
+      variants: {
+        edges: templates
+          .filter(t => t.shopifyVariantId)
+          .map(t => ({
+            node: {
+              id: t.shopifyVariantId,
+              title: t.name.replace(' Template', ''),
+              displayName: t.name,
+              selectedOptions: [
+                { name: "Color", value: t.colorVariant || 'Unknown' }
+              ]
+            }
+          }))
+      }
+    };
+    
     return json({ 
-      product: data.data.product,
+      product,
       templates: templatesByVariant,
+      templatesByColor,
+      productId,
       error: null
     });
     
@@ -104,13 +132,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     return json({ 
       error: "Failed to load product variants",
       product: null,
-      templates: {}
+      templates: {},
+      templatesByColor: {},
+      productId,
     });
   }
 };
 
 export default function ProductVariants() {
-  const { product, templates, error } = useLoaderData<typeof loader>();
+  const { product, templates, templatesByColor, error } = useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
   
   if (error) {
@@ -149,66 +179,41 @@ export default function ProductVariants() {
     );
   }
   
-  const variants = product.variants.edges.map((edge: any) => edge.node);
-  
-  // Group variants by color
-  const variantsByColor: Record<string, any[]> = {};
-  variants.forEach((variant: any) => {
-    const colorOption = variant.selectedOptions.find((opt: any) => opt.name === "Color");
-    const color = colorOption?.value || "Unknown";
-    if (!variantsByColor[color]) {
-      variantsByColor[color] = [];
-    }
-    variantsByColor[color].push(variant);
-  });
-  
   return (
     <Page fullWidth>
       <TitleBar 
-        title={`${product.title} Variants`}
+        title={`Templates for Product ${product.id.split('/').pop()}`}
         breadcrumbs={[{ content: "Products", url: "/app/product-layouts" }]}
       />
       
       <Layout>
         <Layout.Section>
           <Card>
-            <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "16px" }}>
-              {product.featuredImage && (
-                <Thumbnail
-                  source={product.featuredImage.url}
-                  alt={product.title}
-                  size="large"
-                />
-              )}
-              <div>
-                <Text variant="headingLg" as="h2">{product.title}</Text>
-                <Text variant="bodyMd" tone="subdued">
-                  {variants.length} variants
-                </Text>
-              </div>
+            <Text variant="headingLg" as="h2">Template Summary</Text>
+            <div style={{ marginTop: "16px" }}>
+              <Text variant="bodyMd" as="p">
+                Total templates: {Object.keys(templates).length}
+              </Text>
+              <Text variant="bodyMd" as="p">
+                Colors with templates: {Object.keys(templatesByColor).length}
+              </Text>
             </div>
           </Card>
         </Layout.Section>
         
-        {Object.entries(variantsByColor).map(([color, colorVariants]) => (
+        {Object.entries(templatesByColor).map(([color, colorTemplates]) => (
           <Layout.Section key={color}>
             <Card>
-              <Text variant="headingMd" as="h3">{color} Variants</Text>
+              <Text variant="headingMd" as="h3">
+                {color.charAt(0).toUpperCase() + color.slice(1)} Templates ({colorTemplates.length})
+              </Text>
               <div style={{ marginTop: "16px" }}>
                 <ResourceList
-                  resourceName={{ singular: "variant", plural: "variants" }}
-                  items={colorVariants}
-                  renderItem={(variant) => {
-                    const template = templates[variant.id];
-                    const patternOption = variant.selectedOptions.find((opt: any) => 
-                      opt.name === "Edge Pattern" || opt.name === "Pattern"
-                    );
-                    const pattern = patternOption?.value || "";
-                    
-                    const media = variant.image ? (
-                      <Thumbnail source={variant.image.url} alt={variant.title} size="medium" />
-                    ) : template?.thumbnail ? (
-                      <Thumbnail source={template.thumbnail} alt={variant.title} size="medium" />
+                  resourceName={{ singular: "template", plural: "templates" }}
+                  items={colorTemplates}
+                  renderItem={(template) => {
+                    const media = template.thumbnail ? (
+                      <Thumbnail source={template.thumbnail} alt={template.name} size="medium" />
                     ) : (
                       <div style={{
                         width: "40px",
@@ -225,40 +230,37 @@ export default function ProductVariants() {
                     
                     return (
                       <ResourceItem
-                        id={variant.id}
+                        id={template.id}
                         media={media}
-                        accessibilityLabel={`View ${variant.displayName}`}
-                        shortcutActions={template ? [
+                        accessibilityLabel={`View ${template.name}`}
+                        shortcutActions={[
                           {
                             content: "Edit template",
                             url: `/app/designer?template=${template.id}`,
-                          }
-                        ] : [
-                          {
-                            content: "Create template",
-                            url: `/app/designer?productId=${product.id}&variantId=${variant.id}`,
                           }
                         ]}
                       >
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                           <div>
                             <Text variant="bodyMd" fontWeight="bold">
-                              {pattern || variant.title}
+                              {template.name}
                             </Text>
-                            <Text variant="bodySm" tone="subdued">
-                              {variant.price}
-                            </Text>
+                            {template.shopifyVariantId && (
+                              <Text variant="bodySm" tone="subdued">
+                                Variant ID: {template.shopifyVariantId.split('/').pop()}
+                              </Text>
+                            )}
                           </div>
                           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                            {template ? (
-                              <>
-                                <Badge tone="success">Has Template</Badge>
-                                {template.isColorVariant && (
-                                  <Badge tone="info">Color Variant</Badge>
-                                )}
-                              </>
+                            {!template.isColorVariant ? (
+                              <Badge tone="warning">Master Template</Badge>
                             ) : (
-                              <Badge tone="warning">No Template</Badge>
+                              <Badge tone="info">Color Variant</Badge>
+                            )}
+                            {template.shopifyVariantId ? (
+                              <Badge tone="success">Assigned</Badge>
+                            ) : (
+                              <Badge>Unassigned</Badge>
                             )}
                           </div>
                         </div>

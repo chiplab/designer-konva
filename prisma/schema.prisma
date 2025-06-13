@@ -104,3 +104,21 @@ model TemplateColor {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+model Job {
+  id          String   @id @default(cuid())
+  shop        String
+  type        String   // "generateVariants", etc.
+  status      String   // "pending", "processing", "completed", "failed"
+  data        String   // JSON data for the job
+  result      String?  // JSON result when completed
+  error       String?  // Error message if failed
+  progress    Int      @default(0) // Current progress
+  total       Int      @default(0) // Total items to process
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([shop, status])
+  @@index([createdAt])
+}

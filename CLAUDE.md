@@ -707,3 +707,144 @@ Preview images are stored at:
 `https://shopify-designs.s3.us-west-1.amazonaws.com/fonts/{font-id}/preview.png?v=3`
 
 The DesignerCanvas component displays these preview images in the font picker dropdown, only loading the actual font when selected.
+
+## Shopify Product-Based Template System
+
+### Overview
+Templates are now directly tied to Shopify products and variants, replacing the legacy ProductLayout model. This enables automatic color variant generation - create one template and automatically generate 48 color variants.
+
+### Data Models
+
+```prisma
+model Template {
+  id               String    @id @default(cuid())
+  name             String
+  shop             String
+  
+  // Shopify references
+  shopifyProductId String?   // Shopify product GID
+  shopifyVariantId String?   // Specific variant this template is for
+  
+  // Color variant tracking
+  masterTemplateId String?   // References the original template (for color variants)
+  isColorVariant   Boolean   @default(false)
+  colorVariant     String?   // Color name (e.g., "red", "blue")
+  
+  // Legacy field (kept for backward compatibility)
+  productLayoutId  String?
+  
+  // Template data
+  canvasData       String    // JSON string of canvas state
+  thumbnail        String?   // S3 URL for preview
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([shop])
+  @@index([shopifyProductId])
+  @@index([masterTemplateId])
+}
+
+model TemplateColor {
+  id          String @id @default(cuid())
+  chipColor   String @unique  // "white", "red", "blue", etc.
+  color1      String          // Primary color hex
+  color2      String          // Secondary color hex  
+  color3      String          // Tertiary color hex
+  color4      String?         // Optional fourth color
+  color5      String?         // Optional fifth color
+}
+```
+
+### Color Variant Generation
+
+The system uses a sophisticated color mapping system to automatically generate 48 variants from a single master template:
+
+1. **Design Once**: Create a template for one variant (e.g., "Red / 8 Spot")
+2. **Automatic Generation**: Click "Generate color variants" to create templates for all other colors
+3. **Smart Color Replacement**: The system identifies which colors from the palette are used and replaces them intelligently
+
+### Color Mapping System
+
+Each color in the TemplateColor table defines up to 5 color positions that can be used in designs:
+- **color1**: Primary color (main design color)
+- **color2**: Secondary color (accent or lighter shade)
+- **color3**: Tertiary color (darker shade or contrast)
+- **color4**: Optional fourth color
+- **color5**: Optional fifth color
+
+The color generator (`app/services/template-color-generator.server.ts`) processes:
+- Text fill colors
+- Text stroke colors
+- Background colors (solid and gradients)
+- Gradient color stops (linear and radial)
+
+### Canvas State with Background Gradients
+
+Templates now save background gradient information:
+
+```typescript
+interface CanvasState {
+  backgroundColor: string; // Can be hex color or 'linear-gradient'
+  backgroundGradient?: {
+    type: 'linear' | 'radial';
+    colorStops: number[]; // [position1, color1, position2, color2, ...]
+  };
+  // ... other properties
+}
+```
+
+### Template Management Features
+
+1. **Multi-Select and Bulk Delete**:
+   - Select multiple templates using checkboxes
+   - Bulk delete selected templates with confirmation modal
+   - Implemented in `app.templates.tsx` using Polaris ResourceList
+
+2. **Generate Color Variants**:
+   - Available on master templates (those with shopifyProductId)
+   - Creates variants for all 12 other colors automatically
+   - Maintains exact design while swapping colors
+   - Links to appropriate Shopify variants by pattern matching
+
+3. **Template Types**:
+   - **Master Template**: Original design with shopifyProductId (shows "Master Template" badge)
+   - **Color Variant**: Auto-generated from master (shows "Color Variant" badge)
+   - **Regular Template**: Standalone template without product association
+
+### Color Palette
+
+The designer includes 13 predefined colors matching the poker chip colors:
+
+```typescript
+const COLORS = [
+  { value: '#ffffff', label: 'White' },
+  { value: '#c8102e', label: 'Red' },
+  { value: '#0057b8', label: 'Blue' },
+  { value: '#009639', label: 'Green' },
+  { value: '#000000', label: 'Black' },
+  { value: '#5f259f', label: 'Purple' },
+  { value: '#fff110', label: 'Yellow' },
+  { value: '#a2aaad', label: 'Grey' },
+  { value: '#ff8200', label: 'Orange' },
+  { value: '#f1e6b2', label: 'Ivory' },
+  { value: '#71c5e8', label: 'Light Blue' },
+  { value: '#f8a3bc', label: 'Pink' },
+  { value: '#9e652e', label: 'Brown' },
+  { value: 'gold-gradient', label: 'Gold' } // Special gradient option
+];
+```
+
+### Workflow
+
+1. **Create Product in Shopify**: Set up product with all color/pattern variants
+2. **Design Master Template**: Create template for one variant
+3. **Generate Color Variants**: System creates templates for all other colors
+4. **Automatic Assignment**: Templates are matched to variants by color and pattern
+5. **Preview Sync**: Template thumbnails sync to variant images automatically
+
+### Implementation Notes
+
+- The system preserves the original ProductLayout references for backward compatibility
+- Color replacement is position-based, not value-based, ensuring consistent swapping
+- Templates track their lineage via masterTemplateId
+- Server-side rendering (`api.test-template-render.tsx`) supports all color features

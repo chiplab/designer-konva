@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData, useSubmit, useActionData } from "@remix-run/react";
+import { useLoaderData, useSubmit, useActionData, useNavigate } from "@remix-run/react";
 import { useState, useCallback, useEffect } from "react";
 import {
   Page,
@@ -301,6 +301,7 @@ export default function Templates() {
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
   const submit = useSubmit();
+  const navigate = useNavigate();
   
   useEffect(() => {
     if (actionData?.success) {
@@ -380,6 +381,13 @@ export default function Templates() {
   const handleGenerateColorVariants = useCallback(async (templateId: string) => {
     const formData = new FormData();
     formData.append("templateId", templateId);
+    formData.append("background", "true"); // Use background processing
+    
+    // Show a loading toast if available
+    // @ts-ignore - shopify is globally available in embedded apps
+    if (typeof shopify !== 'undefined' && shopify.toast) {
+      shopify.toast.show("Starting variant generation...");
+    }
     
     try {
       const response = await fetch('/api/templates/generate-variants', {
@@ -390,12 +398,59 @@ export default function Templates() {
       const result = await response.json();
       
       if (result.success) {
-        // @ts-ignore - shopify is globally available in embedded apps
-        if (typeof shopify !== 'undefined' && shopify.toast) {
-          shopify.toast.show(result.message);
+        if (result.isBackground && result.jobId) {
+          // Background job started - poll for status
+          // @ts-ignore - shopify is globally available in embedded apps
+          if (typeof shopify !== 'undefined' && shopify.toast) {
+            shopify.toast.show("Generating 49 variants in background. This will take a few minutes...", { duration: 10000 });
+          }
+          
+          // Poll for job completion
+          const checkInterval = setInterval(async () => {
+            try {
+              const statusResponse = await fetch(`/api/jobs/${result.jobId}`);
+              const jobStatus = await statusResponse.json();
+              
+              if (jobStatus.status === 'completed') {
+                clearInterval(checkInterval);
+                // @ts-ignore - shopify is globally available in embedded apps
+                if (typeof shopify !== 'undefined' && shopify.toast) {
+                  shopify.toast.show(`✅ ${jobStatus.result?.message || 'All variants generated successfully!'}`, { duration: 5000 });
+                }
+                // Refresh the page
+                navigate(".", { replace: true });
+              } else if (jobStatus.status === 'failed') {
+                clearInterval(checkInterval);
+                // @ts-ignore - shopify is globally available in embedded apps
+                if (typeof shopify !== 'undefined' && shopify.toast) {
+                  shopify.toast.show(`❌ Failed: ${jobStatus.error}`, { error: true, duration: 5000 });
+                }
+              } else if (jobStatus.status === 'processing') {
+                // Show progress if available
+                if (jobStatus.progress && jobStatus.total) {
+                  // @ts-ignore - shopify is globally available in embedded apps
+                  if (typeof shopify !== 'undefined' && shopify.toast) {
+                    shopify.toast.show(`Processing: ${jobStatus.progress}/${jobStatus.total} completed...`, { duration: 2000 });
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Error checking job status:', error);
+            }
+          }, 3000); // Check every 3 seconds
+          
+          // Stop polling after 5 minutes to prevent infinite polling
+          setTimeout(() => {
+            clearInterval(checkInterval);
+          }, 5 * 60 * 1000);
+        } else {
+          // Synchronous completion
+          // @ts-ignore - shopify is globally available in embedded apps
+          if (typeof shopify !== 'undefined' && shopify.toast) {
+            shopify.toast.show(result.message, { duration: 5000 });
+          }
+          navigate(".", { replace: true });
         }
-        // Reload the page to show new templates
-        window.location.reload();
       } else {
         // @ts-ignore - shopify is globally available in embedded apps
         if (typeof shopify !== 'undefined' && shopify.toast) {
@@ -409,7 +464,7 @@ export default function Templates() {
         shopify.toast.show('Failed to generate color variants', { error: true });
       }
     }
-  }, []);
+  }, [navigate]);
   
   const handleTestRender = useCallback(async (templateId: string) => {
     try {
@@ -485,7 +540,7 @@ export default function Templates() {
                 onAction: () => handleAssignTemplate(id),
               },
               {
-                content: "Generate color variants",
+                content: "Generate variants",
                 onAction: () => handleGenerateColorVariants(id),
                 disabled: template.isColorVariant || !template.shopifyProductId,
               },

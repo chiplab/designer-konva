@@ -124,6 +124,137 @@ function processCanvasElement(element: CanvasElement, sourceColors: ColorMapping
 }
 
 /**
+ * Normalizes color names for matching between database and Shopify
+ * Database has: "light-blue" (with hyphen) and "grey" (not gray)
+ * Shopify has: "Light Blue" (with space) and "Gray" (not grey)
+ */
+function normalizeColorName(color: string): string {
+  const normalized = color.toLowerCase().trim();
+  
+  // Special case for "Light Blue" -> "light-blue" (database format)
+  if (normalized === 'light blue') {
+    return 'light-blue';
+  }
+  
+  // Special case for "Gray" -> "grey" (database format)
+  if (normalized === 'gray') {
+    return 'grey';
+  }
+  
+  return normalized;
+}
+
+/**
+ * Gets all available pattern-color combinations from Shopify variants
+ */
+async function getAllPatternColorCombinations(
+  admin: any, 
+  productId: string
+): Promise<Array<{ pattern: string; color: string }>> {
+  const GET_PRODUCT_VARIANTS = `#graphql
+    query GetProductVariants($id: ID!) {
+      product(id: $id) {
+        variants(first: 100) {
+          edges {
+            node {
+              selectedOptions {
+                name
+                value
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  
+  try {
+    const response = await admin.graphql(GET_PRODUCT_VARIANTS, {
+      variables: { id: productId }
+    });
+    
+    const data = await response.json();
+    const variants = data.data?.product?.variants?.edges || [];
+    
+    // Extract all pattern-color combinations
+    const combinations: Array<{ pattern: string; color: string }> = [];
+    
+    variants.forEach((edge: any) => {
+      const colorOption = edge.node.selectedOptions.find((opt: any) => opt.name === "Color");
+      const patternOption = edge.node.selectedOptions.find((opt: any) => 
+        opt.name === "Edge Pattern" || opt.name === "Pattern"
+      );
+      
+      if (colorOption && patternOption) {
+        combinations.push({
+          pattern: patternOption.value,
+          color: colorOption.value
+        });
+      }
+    });
+    
+    return combinations;
+  } catch (error) {
+    console.error("Error getting pattern-color combinations:", error);
+    return [];
+  }
+}
+
+/**
+ * Gets available colors for a specific pattern by querying Shopify variants
+ */
+async function getAvailableColorsForPattern(
+  admin: any, 
+  productId: string, 
+  pattern: string
+): Promise<string[]> {
+  const GET_PRODUCT_VARIANTS = `#graphql
+    query GetProductVariants($id: ID!) {
+      product(id: $id) {
+        variants(first: 100) {
+          edges {
+            node {
+              selectedOptions {
+                name
+                value
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  
+  try {
+    const response = await admin.graphql(GET_PRODUCT_VARIANTS, {
+      variables: { id: productId }
+    });
+    
+    const data = await response.json();
+    const variants = data.data?.product?.variants?.edges || [];
+    
+    // Filter variants by pattern and extract unique colors
+    const colors = new Set<string>();
+    
+    variants.forEach((edge: any) => {
+      const colorOption = edge.node.selectedOptions.find((opt: any) => opt.name === "Color");
+      const patternOption = edge.node.selectedOptions.find((opt: any) => 
+        opt.name === "Edge Pattern" || opt.name === "Pattern"
+      );
+      
+      if (colorOption && patternOption && patternOption.value.toLowerCase() === pattern.toLowerCase()) {
+        colors.add(colorOption.value.toLowerCase());
+      }
+    });
+    
+    return Array.from(colors);
+  } catch (error) {
+    console.error("Error getting available colors for pattern:", error);
+    return [];
+  }
+}
+
+/**
  * Generates color variants for a template
  * @param masterTemplateId - The ID of the template to generate variants from
  * @param shop - The shop domain
@@ -175,6 +306,16 @@ export async function generateColorVariants(masterTemplateId: string, shop: stri
     }
   }
   
+  // Get available colors for this pattern from Shopify
+  const availableColors = await getAvailableColorsForPattern(
+    admin, 
+    masterTemplate.shopifyProductId, 
+    masterPattern
+  );
+  
+  console.log(`Available colors for pattern "${masterPattern}":`, availableColors);
+  console.log(`Master template color: ${masterTemplate.colorVariant}`);
+  
   // Get the source color mapping
   const sourceColor = await db.templateColor.findUnique({
     where: {
@@ -186,14 +327,18 @@ export async function generateColorVariants(masterTemplateId: string, shop: stri
     throw new Error(`Color mapping not found for ${masterTemplate.colorVariant}`);
   }
   
-  // Get all other colors
+  // Get target colors that exist for this pattern (excluding the master color)
   const targetColors = await db.templateColor.findMany({
     where: {
       chipColor: {
-        not: masterTemplate.colorVariant.toLowerCase(),
+        in: availableColors.filter(color => 
+          normalizeColorName(color) !== normalizeColorName(masterTemplate.colorVariant)
+        ),
       },
     },
   });
+  
+  console.log(`Found ${targetColors.length} target colors to generate for pattern "${masterPattern}"`);
   
   // Parse the canvas data
   const canvasData = JSON.parse(masterTemplate.canvasData);
@@ -243,11 +388,17 @@ export async function generateColorVariants(masterTemplateId: string, shop: stri
       // For now, we'll create with null variant ID and update later
       
       // Create the new template
+      // Format the color name properly (e.g., "light-blue" -> "Light Blue")
+      const formattedColorName = targetColor.chipColor
+        .split('-')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+      
       const newTemplate = await db.template.create({
         data: {
           name: masterTemplate.name.replace(
             new RegExp(masterTemplate.colorVariant, 'gi'), 
-            targetColor.chipColor.charAt(0).toUpperCase() + targetColor.chipColor.slice(1)
+            formattedColorName
           ),
           shop,
           shopifyProductId,
@@ -277,14 +428,186 @@ export async function generateColorVariants(masterTemplateId: string, shop: stri
 }
 
 /**
+ * Generates ALL pattern and color variants from a single master template
+ * This will create templates for ALL patterns in the product, not just the master's pattern
+ */
+export async function generateAllVariants(masterTemplateId: string, shop: string, admin: any) {
+  // Get the master template
+  const masterTemplate = await db.template.findFirst({
+    where: {
+      id: masterTemplateId,
+      shop,
+    },
+  });
+  
+  if (!masterTemplate) {
+    throw new Error("Master template not found");
+  }
+  
+  if (!masterTemplate.colorVariant || !masterTemplate.shopifyProductId) {
+    throw new Error("Master template must have a color variant and Shopify product ID");
+  }
+  
+  // Get ALL pattern-color combinations from the product
+  const allCombinations = await getAllPatternColorCombinations(
+    admin,
+    masterTemplate.shopifyProductId
+  );
+  
+  console.log(`Found ${allCombinations.length} total pattern-color combinations`);
+  
+  // Get unique patterns
+  const patterns = [...new Set(allCombinations.map(c => c.pattern))];
+  console.log(`Unique patterns: ${patterns.join(', ')}`);
+  
+  // Get the source color mapping
+  const sourceColor = await db.templateColor.findUnique({
+    where: {
+      chipColor: masterTemplate.colorVariant.toLowerCase(),
+    },
+  });
+  
+  if (!sourceColor) {
+    throw new Error(`Color mapping not found for ${masterTemplate.colorVariant}`);
+  }
+  
+  // Parse the master template's canvas data
+  const canvasData = JSON.parse(masterTemplate.canvasData);
+  const { shopifyProductId } = masterTemplate;
+  
+  // Generate templates for ALL combinations (excluding the master's own combination)
+  const createdTemplates = [];
+  const masterColorNormalized = normalizeColorName(masterTemplate.colorVariant);
+  
+  // Get the master's pattern if it has a variant ID
+  let masterPattern = "";
+  if (masterTemplate.shopifyVariantId) {
+    const GET_VARIANT = `#graphql
+      query GetVariant($id: ID!) {
+        productVariant(id: $id) {
+          selectedOptions {
+            name
+            value
+          }
+        }
+      }
+    `;
+    
+    try {
+      const response = await admin.graphql(GET_VARIANT, {
+        variables: { id: masterTemplate.shopifyVariantId }
+      });
+      const data = await response.json();
+      const patternOption = data.data?.productVariant?.selectedOptions?.find(
+        (opt: any) => opt.name === "Edge Pattern" || opt.name === "Pattern"
+      );
+      masterPattern = patternOption?.value || "";
+    } catch (error) {
+      console.error("Error getting master pattern:", error);
+    }
+  }
+  
+  for (const combination of allCombinations) {
+    // Skip the master template's own combination
+    if (normalizeColorName(combination.color) === masterColorNormalized && 
+        combination.pattern.toLowerCase() === masterPattern.toLowerCase()) {
+      console.log(`Skipping master template's combination: ${combination.color}/${combination.pattern}`);
+      continue;
+    }
+    
+    try {
+      // Get the target color mapping using proper normalization
+      const normalizedColorName = normalizeColorName(combination.color);
+      const targetColor = await db.templateColor.findUnique({
+        where: {
+          chipColor: normalizedColorName,
+        },
+      });
+      
+      if (!targetColor) {
+        console.warn(`Color mapping not found for ${combination.color}, skipping`);
+        continue;
+      }
+      
+      // Process canvas data with color replacement
+      let newCanvasData = processCanvasElement(canvasData, sourceColor, targetColor);
+      
+      // Process top-level backgroundColor
+      if (newCanvasData.backgroundColor && typeof newCanvasData.backgroundColor === 'string') {
+        const position = findColorPosition(newCanvasData.backgroundColor, sourceColor);
+        if (position) {
+          const newColor = replaceColorByPosition(position, targetColor);
+          if (newColor) {
+            newCanvasData.backgroundColor = newColor;
+          }
+        }
+      }
+      
+      // Process backgroundGradient if present
+      if (newCanvasData.backgroundGradient && newCanvasData.backgroundGradient.colorStops) {
+        const newStops = [...newCanvasData.backgroundGradient.colorStops];
+        for (let i = 1; i < newStops.length; i += 2) {
+          if (typeof newStops[i] === 'string') {
+            const position = findColorPosition(newStops[i], sourceColor);
+            if (position) {
+              const newColor = replaceColorByPosition(position, targetColor);
+              if (newColor) {
+                newStops[i] = newColor;
+              }
+            }
+          }
+        }
+        newCanvasData.backgroundGradient.colorStops = newStops;
+      }
+      
+      // Format the color and pattern names properly
+      const formattedColorName = combination.color
+        .split(/[\s-_]/)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+      
+      // Create the new template
+      const newTemplate = await db.template.create({
+        data: {
+          name: `${formattedColorName} / ${combination.pattern} Template`,
+          shop,
+          shopifyProductId,
+          shopifyVariantId: null, // Will be updated by matching function
+          canvasData: JSON.stringify(newCanvasData),
+          masterTemplateId,
+          isColorVariant: true,
+          // Legacy fields
+          productLayoutId: masterTemplate.productLayoutId,
+          colorVariant: targetColor.chipColor,
+        },
+      });
+      
+      createdTemplates.push({
+        id: newTemplate.id,
+        color: combination.color,
+        pattern: combination.pattern,
+      });
+      
+      console.log(`Created ${combination.color}/${combination.pattern} variant: ${newTemplate.id}`);
+      
+    } catch (error) {
+      console.error(`Error creating ${combination.color}/${combination.pattern} variant:`, error);
+    }
+  }
+  
+  console.log(`Successfully created ${createdTemplates.length} variants from master template`);
+  return createdTemplates;
+}
+
+/**
  * Matches generated templates to their corresponding Shopify variants
  * This should be called after generating color variants to set the correct variant IDs
  */
 export async function matchTemplatesToVariants(
   admin: any, 
   shopifyProductId: string, 
-  templates: Array<{ id: string; color: string; variantImage?: string }>,
-  masterPattern: string
+  templates: Array<{ id: string; color: string; pattern?: string; variantImage?: string }>,
+  masterPattern?: string
 ) {
   // Query Shopify for all variants of the product
   const GET_PRODUCT_VARIANTS = `#graphql
@@ -319,17 +642,29 @@ export async function matchTemplatesToVariants(
     
     // Match templates to variants by BOTH color AND pattern
     for (const template of templates) {
+      console.log(`Looking for variant match for template color: ${template.color}`);
+      
       const matchingVariant = variants.find((edge: any) => {
         const colorOption = edge.node.selectedOptions.find((opt: any) => opt.name === "Color");
         const patternOption = edge.node.selectedOptions.find((opt: any) => 
           opt.name === "Edge Pattern" || opt.name === "Pattern"
         );
         
-        // Match both color and pattern
-        return colorOption && 
-               colorOption.value.toLowerCase() === template.color.toLowerCase() &&
-               patternOption && 
-               patternOption.value.toLowerCase() === masterPattern.toLowerCase();
+        if (colorOption && patternOption) {
+          const normalizedShopifyColor = normalizeColorName(colorOption.value);
+          const normalizedTemplateColor = normalizeColorName(template.color);
+          
+          console.log(`  Comparing: Shopify "${colorOption.value}" (${normalizedShopifyColor}) vs Template "${template.color}" (${normalizedTemplateColor})`);
+          
+          // If template has pattern info, use it; otherwise use masterPattern
+          const targetPattern = template.pattern || masterPattern || "";
+          
+          // Match both color and pattern using normalized color names
+          return normalizedShopifyColor === normalizedTemplateColor &&
+                 patternOption.value.toLowerCase() === targetPattern.toLowerCase();
+        }
+        
+        return false;
       });
       
       if (matchingVariant) {
@@ -342,12 +677,14 @@ export async function matchTemplatesToVariants(
           },
         });
         
-        console.log(`Matched ${template.color}/${masterPattern} template to variant ${matchingVariant.node.id}`);
+        const patternUsed = template.pattern || masterPattern || "";
+        console.log(`Matched ${template.color}/${patternUsed} template to variant ${matchingVariant.node.id}`);
         
         // Return variant info including image URL for canvas update
         template.variantImage = matchingVariant.node.image?.url;
       } else {
-        console.warn(`No matching variant found for ${template.color}/${masterPattern}`);
+        const patternUsed = template.pattern || masterPattern || "";
+        console.warn(`No matching variant found for ${template.color}/${patternUsed}`);
       }
     }
     

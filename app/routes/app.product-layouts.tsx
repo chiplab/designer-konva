@@ -12,114 +12,78 @@ import {
   EmptyState,
   Badge,
   Banner,
-  Button,
   DataTable,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 
-const GET_TEMPLATE_PRODUCTS_QUERY = `#graphql
-  query GetTemplateProducts {
-    products(first: 50) {
-      edges {
-        node {
-          id
-          title
-          status
-          featuredImage {
-            url
-            altText
-          }
-          metafield(namespace: "custom_designer", key: "is_template_source") {
-            value
-          }
-          variants(first: 100) {
-            edges {
-              node {
-                id
-                title
-                displayName
-                image {
-                  url
-                  altText
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-`;
-
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
   
   try {
-    // Fetch template source products from Shopify
-    const response = await admin.graphql(GET_TEMPLATE_PRODUCTS_QUERY);
-    const data = await response.json();
-    
-    // Get template counts from database
+    // Get all templates with product IDs
     const templates = await db.template.findMany({
-      where: { shop: session.shop },
+      where: { 
+        shop: session.shop,
+        shopifyProductId: { not: null }
+      },
       select: { 
         shopifyProductId: true,
-        shopifyVariantId: true 
+        shopifyVariantId: true,
+        name: true,
+        thumbnail: true,
+        isColorVariant: true,
+        masterTemplateId: true,
       },
+      distinct: ['shopifyProductId']
     });
     
-    // Count templates per product
-    const templateCountByProduct: Record<string, number> = {};
-    const templatesByVariant: Record<string, boolean> = {};
+    // Group by product
+    const productMap: Record<string, any> = {};
     
     templates.forEach(template => {
-      if (template.shopifyProductId) {
-        templateCountByProduct[template.shopifyProductId] = 
-          (templateCountByProduct[template.shopifyProductId] || 0) + 1;
+      const productId = template.shopifyProductId!;
+      if (!productMap[productId]) {
+        productMap[productId] = {
+          id: productId,
+          title: `Product ${productId.split('/').pop()}`, // Extract ID number
+          templates: [],
+          variantCount: 0,
+          templatesCount: 0,
+        };
       }
-      if (template.shopifyVariantId) {
-        templatesByVariant[template.shopifyVariantId] = true;
-      }
+      productMap[productId].templates.push(template);
+      productMap[productId].templatesCount++;
     });
     
-    // Filter and transform products data - only include template sources
-    const products = data.data?.products?.edges
-      ?.filter((edge: any) => {
-        // Only include products where is_template_source metafield is "true"
-        const metafieldValue = edge.node.metafield?.value;
-        return metafieldValue === "true";
-      })
-      ?.map((edge: any) => {
-        const product = edge.node;
-        const variantCount = product.variants.edges.length;
-        const templatesCount = templateCountByProduct[product.id] || 0;
-        
-        // Count variants with templates
-        const variantsWithTemplates = product.variants.edges.filter((v: any) => 
-          templatesByVariant[v.node.id]
-        ).length;
-        
-        return {
-          id: product.id,
-          title: product.title,
-          status: product.status,
-          image: product.featuredImage?.url,
-          variantCount,
-          templatesCount,
-          variantsWithTemplates,
-          variants: product.variants.edges.map((v: any) => ({
-            id: v.node.id,
-            title: v.node.title,
-            displayName: v.node.displayName,
-            image: v.node.image?.url,
-            hasTemplate: !!templatesByVariant[v.node.id]
-          }))
-        };
-      }) || [];
+    // Get template counts per product
+    const productIds = Object.keys(productMap);
+    for (const productId of productIds) {
+      const allTemplates = await db.template.count({
+        where: {
+          shop: session.shop,
+          shopifyProductId: productId
+        }
+      });
+      productMap[productId].templatesCount = allTemplates;
+      
+      // Count unique variants
+      const variantTemplates = await db.template.findMany({
+        where: {
+          shop: session.shop,
+          shopifyProductId: productId,
+          shopifyVariantId: { not: null }
+        },
+        select: { shopifyVariantId: true },
+        distinct: ['shopifyVariantId']
+      });
+      productMap[productId].variantCount = variantTemplates.length;
+    }
     
-    return json({ products });
+    const products = Object.values(productMap);
+    
+    return json({ products, error: null });
     
   } catch (error) {
     console.error("Error loading template products:", error);
@@ -132,17 +96,15 @@ export default function ProductLayouts() {
   
   const emptyStateMarkup = (
     <EmptyState
-      heading="No template source products found"
+      heading="No products with templates found"
       action={{
-        content: "Learn how to set up products",
-        url: "https://help.shopify.com/en/manual/products",
-        external: true,
+        content: "Create your first template",
+        url: "/app/designer",
       }}
       image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
     >
       <p>
-        Mark products as template sources by setting the "Is Template Source" metafield to true
-        in your Shopify admin.
+        Start by creating templates for your products.
       </p>
     </EmptyState>
   );
@@ -152,9 +114,10 @@ export default function ProductLayouts() {
       resourceName={{ singular: "product", plural: "products" }}
       items={products}
       renderItem={(product) => {
-        const { id, title, image, variantCount, templatesCount, variantsWithTemplates, status } = product;
-        const media = image ? (
-          <Thumbnail source={image} alt={title} size="large" />
+        const { id, title, templates, variantCount, templatesCount } = product;
+        const firstTemplate = templates[0];
+        const media = firstTemplate?.thumbnail ? (
+          <Thumbnail source={firstTemplate.thumbnail} alt={title} size="large" />
         ) : (
           <Thumbnail
             source="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
@@ -162,10 +125,6 @@ export default function ProductLayouts() {
             size="large"
           />
         );
-
-        const progress = variantCount > 0 
-          ? Math.round((variantsWithTemplates / variantCount) * 100)
-          : 0;
 
         return (
           <ResourceItem
@@ -178,8 +137,8 @@ export default function ProductLayouts() {
                 url: `/app/product-variants?productId=${id}`,
               },
               {
-                content: "Create template",
-                url: `/app/designer?productId=${id}`,
+                content: "View templates",
+                url: `/app/templates`,
               },
             ]}
           >
@@ -190,35 +149,15 @@ export default function ProductLayouts() {
                 </Text>
                 <div style={{ marginTop: "4px" }}>
                   <Text variant="bodySm" tone="subdued" as="p">
-                    {variantCount} variants • {templatesCount} templates
+                    {templatesCount} templates for {variantCount} variants
                   </Text>
-                  <div style={{ marginTop: "4px" }}>
-                    <Text variant="bodySm" as="p">
-                      Progress: {variantsWithTemplates} of {variantCount} variants have templates ({progress}%)
-                    </Text>
-                    <div style={{ 
-                      marginTop: "4px", 
-                      width: "200px", 
-                      height: "8px", 
-                      backgroundColor: "#e0e0e0",
-                      borderRadius: "4px",
-                      overflow: "hidden"
-                    }}>
-                      <div style={{
-                        width: `${progress}%`,
-                        height: "100%",
-                        backgroundColor: progress === 100 ? "#008060" : "#FFC453",
-                        transition: "width 0.3s ease"
-                      }} />
-                    </div>
-                  </div>
+                  <Text variant="bodySm" as="p">
+                    Master templates: {templates.filter((t: any) => !t.isColorVariant).length}
+                  </Text>
                 </div>
               </div>
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                <Badge tone={status === 'ACTIVE' ? 'success' : 'info'}>
-                  {status}
-                </Badge>
-                <Badge tone="info">Template Source</Badge>
+                <Badge tone="success">Has Templates</Badge>
               </div>
             </div>
           </ResourceItem>
@@ -229,7 +168,7 @@ export default function ProductLayouts() {
 
   return (
     <Page fullWidth>
-      <TitleBar title="Template Products" />
+      <TitleBar title="Products with Templates" />
       
       {error && (
         <Banner tone="critical" onDismiss={() => {}}>
@@ -248,17 +187,17 @@ export default function ProductLayouts() {
           <Layout.Section>
             <Card>
               <Text variant="headingMd" as="h2">
-                Quick Stats
+                Summary
               </Text>
               <div style={{ marginTop: "16px" }}>
                 <DataTable
                   columnContentTypes={['text', 'numeric', 'numeric', 'numeric']}
-                  headings={['Product', 'Variants', 'Templates', 'Coverage']}
+                  headings={['Product ID', 'Total Templates', 'Master Templates', 'Color Variants']}
                   rows={products.map(p => [
-                    p.title,
-                    p.variantCount,
+                    p.id.split('/').pop() || p.id,
                     p.templatesCount,
-                    `${Math.round((p.variantsWithTemplates / p.variantCount) * 100)}%`
+                    p.templates.filter((t: any) => !t.isColorVariant).length,
+                    p.templates.filter((t: any) => t.isColorVariant).length,
                   ])}
                 />
               </div>
