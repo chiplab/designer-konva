@@ -66,6 +66,46 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const action = formData.get("_action");
 
+  if (action === "deleteTemplates") {
+    const templateIds = formData.getAll("templateIds[]") as string[];
+    
+    try {
+      // Verify all templates belong to this shop before deleting
+      const templates = await db.template.findMany({
+        where: {
+          id: { in: templateIds },
+          shop: session.shop,
+        },
+      });
+
+      if (templates.length !== templateIds.length) {
+        return json({ 
+          success: false, 
+          error: "Some templates not found or access denied" 
+        }, { status: 404 });
+      }
+
+      // Delete all templates
+      await db.template.deleteMany({
+        where: {
+          id: { in: templateIds },
+          shop: session.shop,
+        },
+      });
+
+      return json({ 
+        success: true, 
+        message: `${templates.length} template(s) deleted successfully` 
+      });
+    } catch (error) {
+      console.error("Error deleting templates:", error);
+      return json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Failed to delete templates" 
+      }, { status: 500 });
+    }
+  }
+
   if (action === "syncPreviews") {
     const templateId = formData.get("templateId") as string;
     
@@ -258,6 +298,8 @@ export default function Templates() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [templateToDelete, setTemplateToDelete] = useState<{ id: string; name: string } | null>(null);
   const [testRenderResult, setTestRenderResult] = useState<any>(null);
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
   const submit = useSubmit();
   
   useEffect(() => {
@@ -312,6 +354,17 @@ export default function Templates() {
     setDeleteModalOpen(false);
     setTemplateToDelete(null);
   }, [templateToDelete, submit]);
+
+  const confirmBulkDelete = useCallback(() => {
+    if (selectedItems.length > 0) {
+      const formData = new FormData();
+      selectedItems.forEach(id => formData.append("templateIds[]", id));
+      formData.append("_action", "deleteTemplates");
+      submit(formData, { method: "post" });
+      setSelectedItems([]);
+    }
+    setBulkDeleteModalOpen(false);
+  }, [selectedItems, submit]);
 
   const handleSyncPreviews = useCallback((templateId: string) => {
     const formData = new FormData();
@@ -388,10 +441,22 @@ export default function Templates() {
     </EmptyState>
   );
 
+  const bulkActions = [
+    {
+      content: `Delete ${selectedItems.length} template${selectedItems.length === 1 ? '' : 's'}`,
+      destructive: true,
+      onAction: () => setBulkDeleteModalOpen(true),
+    },
+  ];
+
   const resourceListMarkup = (
     <ResourceList
       resourceName={{ singular: "template", plural: "templates" }}
       items={templates}
+      selectedItems={selectedItems}
+      onSelectionChange={setSelectedItems}
+      bulkActions={bulkActions}
+      selectable
       renderItem={(template) => {
         const { id, name, thumbnail, createdAt, updatedAt, colorVariant, productLayout, isColorVariant, shopifyProductId } = template;
         const media = thumbnail ? (
@@ -612,6 +677,33 @@ export default function Templates() {
         <Modal.Section>
           <Text as="p">
             Are you sure you want to delete the template "{templateToDelete?.name}"? This action cannot be undone.
+          </Text>
+        </Modal.Section>
+      </Modal>
+      
+      <Modal
+        open={bulkDeleteModalOpen}
+        onClose={() => {
+          setBulkDeleteModalOpen(false);
+        }}
+        title={`Delete ${selectedItems.length} template${selectedItems.length === 1 ? '' : 's'}?`}
+        primaryAction={{
+          content: "Delete",
+          destructive: true,
+          onAction: confirmBulkDelete,
+        }}
+        secondaryActions={[
+          {
+            content: "Cancel",
+            onAction: () => {
+              setBulkDeleteModalOpen(false);
+            },
+          },
+        ]}
+      >
+        <Modal.Section>
+          <Text as="p">
+            Are you sure you want to delete {selectedItems.length} template{selectedItems.length === 1 ? '' : 's'}? This action cannot be undone.
           </Text>
         </Modal.Section>
       </Modal>

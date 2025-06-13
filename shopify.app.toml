@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://sole-sa-radio-maternity.trycloudflare.com"
+application_url = "https://ie-cleanup-mustang-tough.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://sole-sa-radio-maternity.trycloudflare.com/auth/callback",
-  "https://sole-sa-radio-maternity.trycloudflare.com/auth/shopify/callback",
-  "https://sole-sa-radio-maternity.trycloudflare.com/api/auth/callback"
+  "https://ie-cleanup-mustang-tough.trycloudflare.com/auth/callback",
+  "https://ie-cleanup-mustang-tough.trycloudflare.com/auth/shopify/callback",
+  "https://ie-cleanup-mustang-tough.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://sole-sa-radio-maternity.trycloudflare.com"
+url = "https://ie-cleanup-mustang-tough.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 

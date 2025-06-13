@@ -818,9 +818,24 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
 
   // Canvas state serialization functions
   const getCanvasState = () => {
+    // If backgroundColor is a gradient, store the gradient info
+    let backgroundGradient = undefined;
+    if (backgroundColor === 'linear-gradient') {
+      backgroundGradient = {
+        type: 'linear',
+        colorStops: [0, '#c8102e', 1, '#ffaaaa']
+      };
+    } else if (backgroundColor === 'radial-gradient') {
+      backgroundGradient = {
+        type: 'radial',
+        colorStops: [0, '#c8102e', 1, '#ffaaaa']
+      };
+    }
+    
     return {
       dimensions,
       backgroundColor,
+      backgroundGradient,
       designableArea,
       elements: {
         textElements,
@@ -841,6 +856,13 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     if (state.dimensions) setDimensions(state.dimensions);
     if (state.backgroundColor) setBackgroundColor(state.backgroundColor);
     if (state.designableArea) setDesignableArea(state.designableArea);
+    
+    // Store gradient info if present (for new format)
+    if (state.backgroundGradient) {
+      // Store gradient data for rendering
+      // We'll need to update the rendering logic to use this
+      (window as any).__tempBackgroundGradient = state.backgroundGradient;
+    }
     
     // Load elements
     if (state.elements) {
@@ -1654,7 +1676,19 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                 { name: 'Ivory', hex: '#f1e6b2' },
                 { name: 'Light Blue', hex: '#71c5e8' },
                 { name: 'Pink', hex: '#f8a3bc' },
-                { name: 'Brown', hex: '#9e652e' }
+                { name: 'Brown', hex: '#9e652e' },
+                { name: 'Light Grey', hex: '#cccccc' },
+                { name: 'Light Pink', hex: '#ffaaaa' },
+                { name: 'Sky Blue', hex: '#7fa8db' },
+                { name: 'Mint Green', hex: '#e0eed5' },
+                { name: 'Lavender', hex: '#aaaaff' },
+                { name: 'Amber', hex: '#febd11' },
+                { name: 'Olive', hex: '#97872a' },
+                { name: 'Peach', hex: '#ffcfa3' },
+                { name: 'Cream', hex: '#f7f4e8' },
+                { name: 'Powder Blue', hex: '#b8d6e0' },
+                { name: 'Blush', hex: '#ffd6e1' },
+                { name: 'Tan', hex: '#c49a73' }
               ].map((color) => (
                 <button
                   key={color.hex}
@@ -2175,12 +2209,18 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                 fill={backgroundColor === 'linear-gradient' || backgroundColor === 'radial-gradient' ? undefined : backgroundColor}
                 fillLinearGradientStartPoint={backgroundColor === 'linear-gradient' ? { x: 0, y: 0 } : undefined}
                 fillLinearGradientEndPoint={backgroundColor === 'linear-gradient' ? { x: designableArea.width, y: 0 } : undefined}
-                fillLinearGradientColorStops={backgroundColor === 'linear-gradient' ? [0, '#c8102e', 1, '#ffaaaa'] : undefined}
+                fillLinearGradientColorStops={backgroundColor === 'linear-gradient' ? 
+                  ((window as any).__tempBackgroundGradient?.type === 'linear' ? 
+                    (window as any).__tempBackgroundGradient.colorStops : 
+                    [0, '#c8102e', 1, '#ffaaaa']) : undefined}
                 fillRadialGradientStartPoint={backgroundColor === 'radial-gradient' ? { x: designableArea.width / 2, y: designableArea.height / 2 } : undefined}
                 fillRadialGradientEndPoint={backgroundColor === 'radial-gradient' ? { x: designableArea.width / 2, y: designableArea.height / 2 } : undefined}
                 fillRadialGradientStartRadius={backgroundColor === 'radial-gradient' ? 0 : undefined}
                 fillRadialGradientEndRadius={backgroundColor === 'radial-gradient' ? Math.min(designableArea.width, designableArea.height) / 2 : undefined}
-                fillRadialGradientColorStops={backgroundColor === 'radial-gradient' ? [0, '#c8102e', 1, '#ffaaaa'] : undefined}
+                fillRadialGradientColorStops={backgroundColor === 'radial-gradient' ? 
+                  ((window as any).__tempBackgroundGradient?.type === 'radial' ? 
+                    (window as any).__tempBackgroundGradient.colorStops : 
+                    [0, '#c8102e', 1, '#ffaaaa']) : undefined}
                 listening={false}
               />
             )}
@@ -3021,7 +3061,19 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                       { name: 'Ivory', hex: '#f1e6b2' },
                       { name: 'Light Blue', hex: '#71c5e8' },
                       { name: 'Pink', hex: '#f8a3bc' },
-                      { name: 'Brown', hex: '#9e652e' }
+                      { name: 'Brown', hex: '#9e652e' },
+                      { name: 'Light Grey', hex: '#cccccc' },
+                      { name: 'Light Pink', hex: '#ffaaaa' },
+                      { name: 'Sky Blue', hex: '#7fa8db' },
+                      { name: 'Mint Green', hex: '#e0eed5' },
+                      { name: 'Lavender', hex: '#aaaaff' },
+                      { name: 'Amber', hex: '#febd11' },
+                      { name: 'Olive', hex: '#97872a' },
+                      { name: 'Peach', hex: '#ffcfa3' },
+                      { name: 'Cream', hex: '#f7f4e8' },
+                      { name: 'Powder Blue', hex: '#b8d6e0' },
+                      { name: 'Blush', hex: '#ffd6e1' },
+                      { name: 'Tan', hex: '#c49a73' }
                     ].map((color) => {
                       const currentColor = 
                         textElements.find(el => el.id === selectedId)?.fill ||
@@ -3190,7 +3242,19 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                         { name: 'Ivory', hex: '#f1e6b2' },
                         { name: 'Light Blue', hex: '#71c5e8' },
                         { name: 'Pink', hex: '#f8a3bc' },
-                        { name: 'Brown', hex: '#9e652e' }
+                        { name: 'Brown', hex: '#9e652e' },
+                        { name: 'Light Grey', hex: '#cccccc' },
+                        { name: 'Light Pink', hex: '#ffaaaa' },
+                        { name: 'Sky Blue', hex: '#7fa8db' },
+                        { name: 'Mint Green', hex: '#e0eed5' },
+                        { name: 'Lavender', hex: '#aaaaff' },
+                        { name: 'Amber', hex: '#febd11' },
+                        { name: 'Olive', hex: '#97872a' },
+                        { name: 'Peach', hex: '#ffcfa3' },
+                        { name: 'Cream', hex: '#f7f4e8' },
+                        { name: 'Powder Blue', hex: '#b8d6e0' },
+                        { name: 'Blush', hex: '#ffd6e1' },
+                        { name: 'Tan', hex: '#c49a73' }
                       ].map((color) => {
                         const currentStroke = 
                           textElements.find(el => el.id === selectedId)?.stroke ||
