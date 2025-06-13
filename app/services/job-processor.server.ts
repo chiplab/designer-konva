@@ -7,7 +7,27 @@ import {
 } from "./job-queue.server";
 import { generateAllVariants, matchTemplatesToVariants } from "./template-color-generator.server";
 import { generateTemplateThumbnail } from "./template-thumbnail-generator.server";
+import { syncTemplateThumbnailToVariants } from "./template-sync.server";
 import db from "../db.server";
+
+// GraphQL mutation to set metafield
+const METAFIELD_SET_MUTATION = `#graphql
+  mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
+    metafieldsSet(metafields: $metafields) {
+      metafields {
+        id
+        namespace
+        key
+        value
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
 
 /**
  * Process a generate variants job
@@ -137,6 +157,51 @@ export async function processGenerateVariantsJob(
                 where: { id: createdTemplate.id },
                 data: updates,
               });
+            }
+            
+            // Bind template to variant and sync thumbnail
+            if (dbTemplate.shopifyVariantId && dbTemplate.thumbnail) {
+              try {
+                // Set metafield to bind template to variant
+                console.log(`Job ${jobId}: Binding template ${createdTemplate.id} to variant ${dbTemplate.shopifyVariantId}...`);
+                const metafieldResponse = await admin.graphql(METAFIELD_SET_MUTATION, {
+                  variables: {
+                    metafields: [{
+                      ownerId: dbTemplate.shopifyVariantId,
+                      namespace: "custom_designer",
+                      key: "template_id",
+                      value: createdTemplate.id,
+                      type: "single_line_text_field"
+                    }]
+                  }
+                });
+                
+                const metafieldResult = await metafieldResponse.json();
+                if (metafieldResult.data?.metafieldsSet?.userErrors?.length > 0) {
+                  console.error(`Job ${jobId}: Failed to set metafield:`, metafieldResult.data.metafieldsSet.userErrors);
+                  // Mark this template as having sync issues
+                  // For now, just log - we'll add visual indicators in the UI later
+                  console.error(`Job ${jobId}: Template ${createdTemplate.id} failed to bind to variant`);
+                } else {
+                  console.log(`Job ${jobId}: Successfully bound template to variant`);
+                  
+                  // Now sync the thumbnail to the variant
+                  console.log(`Job ${jobId}: Syncing thumbnail to variant...`);
+                  const syncResult = await syncTemplateThumbnailToVariants(admin, createdTemplate.id, dbTemplate.thumbnail);
+                  
+                  if (syncResult.success && syncResult.syncedCount > 0) {
+                    console.log(`Job ${jobId}: Successfully synced thumbnail to ${syncResult.syncedCount} variant(s)`);
+                  } else if (syncResult.errors.length > 0) {
+                    console.warn(`Job ${jobId}: Thumbnail sync had errors:`, syncResult.errors);
+                    // Log warning - we'll add visual indicators in the UI later
+                    console.warn(`Job ${jobId}: Template ${createdTemplate.id} had sync warnings`);
+                  }
+                }
+              } catch (bindError) {
+                console.error(`Job ${jobId}: Error binding/syncing template ${createdTemplate.id}:`, bindError);
+                // Log error - we'll add visual indicators in the UI later
+                console.error(`Job ${jobId}: Template ${createdTemplate.id} failed binding/syncing`);
+              }
             }
           }
           
