@@ -166,60 +166,35 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (action === "syncAllVariantThumbnails") {
     try {
-      // Get all templates with shopifyProductId (these are the ones that can be synced)
-      const templatesToSync = await db.template.findMany({
-        where: {
-          shop: session.shop,
-          shopifyProductId: { not: null },
-          thumbnail: { not: null },
-        },
-      });
-
-      console.log(`Found ${templatesToSync.length} templates to sync`);
-
-      // Dynamically import the sync service
-      const templateSyncModule = await import("../services/template-sync.server");
+      // Create a job for syncing all thumbnails
+      const { createJob } = await import("../services/job-queue.server");
+      const { processJob } = await import("../services/job-processor.server");
       
-      let totalSynced = 0;
-      let totalErrors = 0;
-      const errors: string[] = [];
-
-      for (const template of templatesToSync) {
-        try {
-          const syncResult = await templateSyncModule.syncTemplateThumbnailToVariants(
-            admin, 
-            template.id, 
-            template.thumbnail
-          );
-          
-          if (syncResult.syncedCount > 0) {
-            totalSynced += syncResult.syncedCount;
-            console.log(`Synced ${syncResult.syncedCount} variant(s) for template ${template.name}`);
-          }
-          
-          if (syncResult.errors.length > 0) {
-            totalErrors += syncResult.errors.length;
-            errors.push(...syncResult.errors);
-          }
-        } catch (error) {
-          console.error(`Error syncing template ${template.id}:`, error);
-          errors.push(`Failed to sync ${template.name}`);
-          totalErrors++;
-        }
-      }
-
+      const job = await createJob(
+        session.shop,
+        "syncAllThumbnails",
+        {},
+        0 // Will be updated during processing
+      );
+      
+      // Start processing in background
+      processJob(job.id, session.shop, admin).catch(error => {
+        console.error(`Background sync job ${job.id} failed:`, error);
+      });
+      
+      // Return immediately with job ID
       return json({ 
-        success: true, 
-        message: `Synced ${totalSynced} variant thumbnail(s) across ${templatesToSync.length} templates`,
-        errors: errors.length > 0 ? errors : undefined,
-        totalErrors
+        success: true,
+        message: "Syncing all thumbnails in background. This may take a few minutes.",
+        jobId: job.id,
+        isBackground: true,
       });
       
     } catch (error) {
-      console.error("Error syncing all variant thumbnails:", error);
+      console.error("Error starting sync job:", error);
       return json({ 
         success: false, 
-        error: error instanceof Error ? error.message : "Failed to sync all thumbnails" 
+        error: error instanceof Error ? error.message : "Failed to start sync job" 
       }, { status: 500 });
     }
   }
@@ -366,10 +341,59 @@ export default function Templates() {
   
   useEffect(() => {
     if (actionData?.success) {
-      setShowSuccessBanner(true);
-      setTimeout(() => setShowSuccessBanner(false), 5000);
+      if (actionData.isBackground && actionData.jobId) {
+        // Handle background job for sync all thumbnails
+        if (actionData._action === 'syncAllVariantThumbnails' || actionData.message?.includes('thumbnails')) {
+          // @ts-ignore - shopify is globally available in embedded apps
+          if (typeof shopify !== 'undefined' && shopify.toast) {
+            shopify.toast.show("Syncing thumbnails in background...", { duration: 10000 });
+          }
+          
+          // Poll for job completion
+          const checkInterval = setInterval(async () => {
+            try {
+              const statusResponse = await fetch(`/api/jobs/${actionData.jobId}`);
+              const jobStatus = await statusResponse.json();
+              
+              if (jobStatus.status === 'completed') {
+                clearInterval(checkInterval);
+                // @ts-ignore - shopify is globally available in embedded apps
+                if (typeof shopify !== 'undefined' && shopify.toast) {
+                  shopify.toast.show(`✅ ${jobStatus.result?.message || 'Sync completed!'}`, { duration: 5000 });
+                }
+                // Refresh the page to show updated data
+                navigate(".", { replace: true });
+              } else if (jobStatus.status === 'failed') {
+                clearInterval(checkInterval);
+                // @ts-ignore - shopify is globally available in embedded apps
+                if (typeof shopify !== 'undefined' && shopify.toast) {
+                  shopify.toast.show(`❌ Sync failed: ${jobStatus.error}`, { error: true, duration: 5000 });
+                }
+              } else if (jobStatus.status === 'processing') {
+                // Show progress if available
+                if (jobStatus.progress && jobStatus.total) {
+                  // @ts-ignore - shopify is globally available in embedded apps
+                  if (typeof shopify !== 'undefined' && shopify.toast) {
+                    shopify.toast.show(`Syncing: ${jobStatus.progress}/${jobStatus.total} templates...`, { duration: 2000 });
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Error checking sync job status:', error);
+            }
+          }, 3000); // Check every 3 seconds
+          
+          // Stop polling after 10 minutes to prevent infinite polling
+          setTimeout(() => {
+            clearInterval(checkInterval);
+          }, 10 * 60 * 1000);
+        }
+      } else {
+        setShowSuccessBanner(true);
+        setTimeout(() => setShowSuccessBanner(false), 5000);
+      }
     }
-  }, [actionData]);
+  }, [actionData, navigate]);
 
   const handleAssignTemplate = useCallback(async (templateId: string) => {
     setSelectedTemplate(templateId);
@@ -682,13 +706,14 @@ export default function Templates() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Text variant="headingMd" as="h2">Bulk Actions</Text>
                 <Button
-                  onClick={() => {
+                  onClick={async () => {
                     const formData = new FormData();
                     formData.append("_action", "syncAllVariantThumbnails");
                     submit(formData, { method: "post" });
+                    
                     // @ts-ignore - shopify is globally available in embedded apps
                     if (typeof shopify !== 'undefined' && shopify.toast) {
-                      shopify.toast.show("Syncing all variant thumbnails... This may take a moment.");
+                      shopify.toast.show("Starting thumbnail sync job...");
                     }
                   }}
                 >

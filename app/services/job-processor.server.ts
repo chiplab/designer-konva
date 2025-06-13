@@ -261,6 +261,107 @@ export async function processGenerateVariantsJob(
 }
 
 /**
+ * Process a sync all thumbnails job
+ */
+export async function processSyncAllThumbnailsJob(
+  jobId: string,
+  shop: string,
+  data: JobData,
+  admin: any
+) {
+  try {
+    // Mark job as processing
+    await startJob(jobId);
+    
+    // Get all templates with shopifyProductId (these are the ones that can be synced)
+    const templatesToSync = await db.template.findMany({
+      where: {
+        shop,
+        shopifyProductId: { not: null },
+        thumbnail: { not: null },
+      },
+    });
+    
+    console.log(`Job ${jobId}: Found ${templatesToSync.length} templates to sync`);
+    await updateJobProgress(jobId, 0, templatesToSync.length);
+    
+    let totalSynced = 0;
+    let totalErrors = 0;
+    const errors: string[] = [];
+    const syncResults: any[] = [];
+    
+    // Process templates in batches
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < templatesToSync.length; i += BATCH_SIZE) {
+      const batch = templatesToSync.slice(i, i + BATCH_SIZE);
+      console.log(`Job ${jobId}: Processing batch ${Math.floor(i/BATCH_SIZE) + 1} of ${Math.ceil(templatesToSync.length/BATCH_SIZE)}`);
+      
+      await Promise.all(batch.map(async (template) => {
+        try {
+          const syncResult = await syncTemplateThumbnailToVariants(
+            admin, 
+            template.id, 
+            template.thumbnail
+          );
+          
+          if (syncResult.syncedCount > 0) {
+            totalSynced += syncResult.syncedCount;
+            console.log(`Job ${jobId}: Synced ${syncResult.syncedCount} variant(s) for template ${template.name}`);
+            syncResults.push({
+              templateId: template.id,
+              templateName: template.name,
+              synced: true,
+              count: syncResult.syncedCount
+            });
+          } else {
+            syncResults.push({
+              templateId: template.id,
+              templateName: template.name,
+              synced: false,
+              reason: "No variants found"
+            });
+          }
+          
+          if (syncResult.errors.length > 0) {
+            totalErrors += syncResult.errors.length;
+            errors.push(...syncResult.errors);
+          }
+        } catch (error) {
+          console.error(`Job ${jobId}: Error syncing template ${template.id}:`, error);
+          errors.push(`Failed to sync ${template.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          totalErrors++;
+          syncResults.push({
+            templateId: template.id,
+            templateName: template.name,
+            synced: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
+      }));
+      
+      // Update progress after each batch
+      await updateJobProgress(jobId, Math.min(i + BATCH_SIZE, templatesToSync.length), templatesToSync.length);
+    }
+    
+    // Complete the job
+    await completeJob(jobId, {
+      message: `Synced ${totalSynced} variant thumbnail(s) across ${templatesToSync.length} templates`,
+      totalSynced,
+      totalTemplates: templatesToSync.length,
+      totalErrors,
+      errors: errors.length > 0 ? errors : undefined,
+      syncResults
+    });
+    
+    console.log(`Job ${jobId}: Completed successfully`);
+    
+  } catch (error) {
+    console.error(`Job ${jobId}: Failed with error:`, error);
+    await failJob(jobId, error instanceof Error ? error.message : "Unknown error");
+  }
+}
+
+/**
  * Main job processor - can be called from a background worker or API endpoint
  */
 export async function processJob(jobId: string, shop: string, admin: any) {
@@ -281,6 +382,9 @@ export async function processJob(jobId: string, shop: string, admin: any) {
   switch (job.type) {
     case "generateVariants":
       await processGenerateVariantsJob(jobId, shop, data, admin);
+      break;
+    case "syncAllThumbnails":
+      await processSyncAllThumbnailsJob(jobId, shop, data, admin);
       break;
     default:
       throw new Error(`Unknown job type: ${job.type}`);
