@@ -16,6 +16,7 @@ import {
   ChoiceList,
   Banner,
   Button,
+  BlockStack,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -159,6 +160,66 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return json({ 
         success: false, 
         error: error instanceof Error ? error.message : "Failed to sync previews" 
+      }, { status: 500 });
+    }
+  }
+
+  if (action === "syncAllVariantThumbnails") {
+    try {
+      // Get all templates with shopifyProductId (these are the ones that can be synced)
+      const templatesToSync = await db.template.findMany({
+        where: {
+          shop: session.shop,
+          shopifyProductId: { not: null },
+          thumbnail: { not: null },
+        },
+      });
+
+      console.log(`Found ${templatesToSync.length} templates to sync`);
+
+      // Dynamically import the sync service
+      const templateSyncModule = await import("../services/template-sync.server");
+      
+      let totalSynced = 0;
+      let totalErrors = 0;
+      const errors: string[] = [];
+
+      for (const template of templatesToSync) {
+        try {
+          const syncResult = await templateSyncModule.syncTemplateThumbnailToVariants(
+            admin, 
+            template.id, 
+            template.thumbnail
+          );
+          
+          if (syncResult.syncedCount > 0) {
+            totalSynced += syncResult.syncedCount;
+            console.log(`Synced ${syncResult.syncedCount} variant(s) for template ${template.name}`);
+          }
+          
+          if (syncResult.errors.length > 0) {
+            totalErrors += syncResult.errors.length;
+            errors.push(...syncResult.errors);
+          }
+        } catch (error) {
+          console.error(`Error syncing template ${template.id}:`, error);
+          errors.push(`Failed to sync ${template.name}`);
+          totalErrors++;
+        }
+      }
+
+      return json({ 
+        success: true, 
+        message: `Synced ${totalSynced} variant thumbnail(s) across ${templatesToSync.length} templates`,
+        errors: errors.length > 0 ? errors : undefined,
+        totalErrors
+      });
+      
+    } catch (error) {
+      console.error("Error syncing all variant thumbnails:", error);
+      return json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Failed to sync all thumbnails" 
       }, { status: 500 });
     }
   }
@@ -616,7 +677,30 @@ export default function Templates() {
       </TitleBar>
       <Layout>
         <Layout.Section>
-          <Card padding="0">
+          {templates.some(t => t.shopifyProductId) && (
+            <Card>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text variant="headingMd" as="h2">Bulk Actions</Text>
+                <Button
+                  onClick={() => {
+                    const formData = new FormData();
+                    formData.append("_action", "syncAllVariantThumbnails");
+                    submit(formData, { method: "post" });
+                    // @ts-ignore - shopify is globally available in embedded apps
+                    if (typeof shopify !== 'undefined' && shopify.toast) {
+                      shopify.toast.show("Syncing all variant thumbnails... This may take a moment.");
+                    }
+                  }}
+                >
+                  Sync all variant thumbnails
+                </Button>
+              </div>
+              <Text variant="bodySm" tone="subdued" as="p" style={{ marginTop: '8px' }}>
+                This will sync thumbnails for all templates to their corresponding product variants
+              </Text>
+            </Card>
+          )}
+          <Card padding="0" style={{ marginTop: '16px' }}>
             {templates.length === 0 ? emptyStateMarkup : resourceListMarkup}
           </Card>
         </Layout.Section>
