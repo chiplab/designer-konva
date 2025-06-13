@@ -104,11 +104,15 @@ export async function processGenerateVariantsJob(
             let canvasData = JSON.parse(dbTemplate.canvasData);
             let updates: any = {};
             
-            // Update the base image URL if we have a variant image
-            if (createdTemplate.variantImage && canvasData.assets) {
-              canvasData.assets.baseImage = createdTemplate.variantImage;
-              updates.canvasData = JSON.stringify(canvasData);
-            }
+            // NOTE: We intentionally DO NOT update the base image URL
+            // The base images should come from the unpublished source product
+            // Only the thumbnail (customized design) syncs to the selling product variants
+            // This maintains separation between source assets and customer-facing products
+            
+            // if (createdTemplate.variantImage && canvasData.assets) {
+            //   canvasData.assets.baseImage = createdTemplate.variantImage;
+            //   updates.canvasData = JSON.stringify(canvasData);
+            // }
             
             // Generate thumbnail
             console.log(`Job ${jobId}: Generating thumbnail for ${createdTemplate.color}/${createdTemplate.pattern || masterPattern} variant...`);
