@@ -210,7 +210,8 @@ export async function action({ request }: ActionFunctionArgs) {
           ...bgConfig,
           fillLinearGradientStartPoint: { x: 0, y: 0 },
           fillLinearGradientEndPoint: { x: state.designableArea.width, y: 0 },
-          fillLinearGradientColorStops: [0, '#c8102e', 1, '#ffaaaa'],
+          fillLinearGradientColorStops: state.backgroundGradient?.type === 'linear' && state.backgroundGradient?.colorStops ? 
+            state.backgroundGradient.colorStops : [0, '#c8102e', 1, '#ffaaaa'],
         };
       } else if (state.backgroundColor === 'radial-gradient') {
         bgConfig = {
@@ -219,7 +220,8 @@ export async function action({ request }: ActionFunctionArgs) {
           fillRadialGradientEndPoint: { x: state.designableArea.width / 2, y: state.designableArea.height / 2 },
           fillRadialGradientStartRadius: 0,
           fillRadialGradientEndRadius: Math.min(state.designableArea.width, state.designableArea.height) / 2,
-          fillRadialGradientColorStops: [0, '#c8102e', 1, '#ffaaaa'],
+          fillRadialGradientColorStops: state.backgroundGradient?.type === 'radial' && state.backgroundGradient?.colorStops ? 
+            state.backgroundGradient.colorStops : [0, '#c8102e', 1, '#ffaaaa'],
         };
       } else {
         bgConfig.fill = state.backgroundColor;

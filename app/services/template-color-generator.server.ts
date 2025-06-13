@@ -73,6 +73,42 @@ function processCanvasElement(element: CanvasElement, sourceColors: ColorMapping
     }
   }
   
+  // Process fillLinearGradientColorStops for gradient fills
+  if (processed.fillLinearGradientColorStops && Array.isArray(processed.fillLinearGradientColorStops)) {
+    const newStops = [...processed.fillLinearGradientColorStops];
+    // Process color stops (they alternate between position and color)
+    for (let i = 1; i < newStops.length; i += 2) {
+      if (typeof newStops[i] === 'string') {
+        const position = findColorPosition(newStops[i], sourceColors);
+        if (position) {
+          const newColor = replaceColorByPosition(position, targetColors);
+          if (newColor) {
+            newStops[i] = newColor;
+          }
+        }
+      }
+    }
+    processed.fillLinearGradientColorStops = newStops;
+  }
+  
+  // Process fillRadialGradientColorStops for radial gradient fills
+  if (processed.fillRadialGradientColorStops && Array.isArray(processed.fillRadialGradientColorStops)) {
+    const newStops = [...processed.fillRadialGradientColorStops];
+    // Process color stops (they alternate between position and color)
+    for (let i = 1; i < newStops.length; i += 2) {
+      if (typeof newStops[i] === 'string') {
+        const position = findColorPosition(newStops[i], sourceColors);
+        if (position) {
+          const newColor = replaceColorByPosition(position, targetColors);
+          if (newColor) {
+            newStops[i] = newColor;
+          }
+        }
+      }
+    }
+    processed.fillRadialGradientColorStops = newStops;
+  }
+  
   // Process nested elements recursively
   Object.keys(processed).forEach(key => {
     if (Array.isArray(processed[key])) {
@@ -171,7 +207,36 @@ export async function generateColorVariants(masterTemplateId: string, shop: stri
   for (const targetColor of targetColors) {
     try {
       // Process canvas data with color replacement
-      const newCanvasData = processCanvasElement(canvasData, sourceColor, targetColor);
+      let newCanvasData = processCanvasElement(canvasData, sourceColor, targetColor);
+      
+      // Process top-level backgroundColor
+      if (newCanvasData.backgroundColor && typeof newCanvasData.backgroundColor === 'string') {
+        const position = findColorPosition(newCanvasData.backgroundColor, sourceColor);
+        if (position) {
+          const newColor = replaceColorByPosition(position, targetColor);
+          if (newColor) {
+            newCanvasData.backgroundColor = newColor;
+          }
+        }
+      }
+      
+      // Process backgroundGradient if present
+      if (newCanvasData.backgroundGradient && newCanvasData.backgroundGradient.colorStops) {
+        const newStops = [...newCanvasData.backgroundGradient.colorStops];
+        // Process color stops (they alternate between position and color)
+        for (let i = 1; i < newStops.length; i += 2) {
+          if (typeof newStops[i] === 'string') {
+            const position = findColorPosition(newStops[i], sourceColor);
+            if (position) {
+              const newColor = replaceColorByPosition(position, targetColor);
+              if (newColor) {
+                newStops[i] = newColor;
+              }
+            }
+          }
+        }
+        newCanvasData.backgroundGradient.colorStops = newStops;
+      }
       
       // Find the corresponding Shopify variant ID
       // This is a simplified version - in production you'd query Shopify API
