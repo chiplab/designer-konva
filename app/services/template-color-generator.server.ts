@@ -560,6 +560,21 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
         newCanvasData.backgroundGradient.colorStops = newStops;
       }
       
+      // Get the correct base image for this color/pattern combination
+      const baseImageUrl = await getBaseImageForVariant(
+        admin,
+        shopifyProductId,
+        combination.color,
+        combination.pattern
+      );
+      
+      if (baseImageUrl && newCanvasData.assets) {
+        console.log(`Setting base image for ${combination.color}/${combination.pattern}: ${baseImageUrl}`);
+        newCanvasData.assets.baseImage = baseImageUrl;
+      } else {
+        console.warn(`No base image found for ${combination.color}/${combination.pattern}, using fallback`);
+      }
+      
       // Format the color and pattern names properly
       const formattedColorName = combination.color
         .split(/[\s-_]/)
@@ -597,6 +612,69 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
   
   console.log(`Successfully created ${createdTemplates.length} variants from master template`);
   return createdTemplates;
+}
+
+/**
+ * Gets the base image URL for a specific color/pattern combination from the source product
+ */
+async function getBaseImageForVariant(
+  admin: any,
+  sourceProductId: string,
+  color: string,
+  pattern: string
+): Promise<string | null> {
+  const GET_PRODUCT_VARIANTS = `#graphql
+    query GetProductVariants($id: ID!) {
+      product(id: $id) {
+        variants(first: 100) {
+          edges {
+            node {
+              id
+              image {
+                url
+              }
+              selectedOptions {
+                name
+                value
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  
+  try {
+    const response = await admin.graphql(GET_PRODUCT_VARIANTS, {
+      variables: { id: sourceProductId }
+    });
+    
+    const data = await response.json();
+    const variants = data.data?.product?.variants?.edges || [];
+    
+    // Find the variant that matches both color and pattern
+    const matchingVariant = variants.find((edge: any) => {
+      const colorOption = edge.node.selectedOptions.find((opt: any) => opt.name === "Color");
+      const patternOption = edge.node.selectedOptions.find((opt: any) => 
+        opt.name === "Edge Pattern" || opt.name === "Pattern"
+      );
+      
+      if (colorOption && patternOption) {
+        const normalizedShopifyColor = normalizeColorName(colorOption.value);
+        const normalizedTargetColor = normalizeColorName(color);
+        
+        return normalizedShopifyColor === normalizedTargetColor &&
+               patternOption.value.toLowerCase() === pattern.toLowerCase();
+      }
+      
+      return false;
+    });
+    
+    return matchingVariant?.node?.image?.url || null;
+  } catch (error) {
+    console.error(`Error getting base image for ${color}/${pattern}:`, error);
+    return null;
+  }
 }
 
 /**

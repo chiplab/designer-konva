@@ -98,9 +98,16 @@ export async function processGenerateVariantsJob(
     let templatesWithImages = createdTemplates;
     if (template.shopifyProductId) {
       console.log(`Job ${jobId}: Matching templates to Shopify variants...`);
+      
+      // IMPORTANT: We need to match against the SELLING product, not the source product
+      // The source product (e.g., 9797597331751) has the base images for templates
+      // The selling product (e.g., 9852686237991) is what we're creating variants for
+      // For now, we'll use the same product ID, but this should be configurable
+      // TODO: Add a separate "sellingProductId" field to templates or make this configurable
+      
       templatesWithImages = await matchTemplatesToVariants(
         admin,
-        template.shopifyProductId,
+        template.shopifyProductId, // This should ideally be the selling product ID
         createdTemplates,
         masterPattern
       );
