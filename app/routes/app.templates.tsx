@@ -324,6 +324,40 @@ export default function Templates() {
     }
   }, [submit]);
   
+  const handleGenerateColorVariants = useCallback(async (templateId: string) => {
+    const formData = new FormData();
+    formData.append("templateId", templateId);
+    
+    try {
+      const response = await fetch('/api/templates/generate-variants', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // @ts-ignore - shopify is globally available in embedded apps
+        if (typeof shopify !== 'undefined' && shopify.toast) {
+          shopify.toast.show(result.message);
+        }
+        // Reload the page to show new templates
+        window.location.reload();
+      } else {
+        // @ts-ignore - shopify is globally available in embedded apps
+        if (typeof shopify !== 'undefined' && shopify.toast) {
+          shopify.toast.show(result.error, { error: true });
+        }
+      }
+    } catch (error) {
+      console.error('Error generating color variants:', error);
+      // @ts-ignore - shopify is globally available in embedded apps
+      if (typeof shopify !== 'undefined' && shopify.toast) {
+        shopify.toast.show('Failed to generate color variants', { error: true });
+      }
+    }
+  }, []);
+  
   const handleTestRender = useCallback(async (templateId: string) => {
     try {
       const formData = new FormData();
@@ -359,7 +393,7 @@ export default function Templates() {
       resourceName={{ singular: "template", plural: "templates" }}
       items={templates}
       renderItem={(template) => {
-        const { id, name, thumbnail, createdAt, updatedAt, colorVariant, productLayout } = template;
+        const { id, name, thumbnail, createdAt, updatedAt, colorVariant, productLayout, isColorVariant, shopifyProductId } = template;
         const media = thumbnail ? (
           <Thumbnail
             source={thumbnail}
@@ -384,6 +418,11 @@ export default function Templates() {
               {
                 content: "Assign to products",
                 onAction: () => handleAssignTemplate(id),
+              },
+              {
+                content: "Generate color variants",
+                onAction: () => handleGenerateColorVariants(id),
+                disabled: template.isColorVariant || !template.shopifyProductId,
               },
               {
                 content: "Re-sync preview images",
@@ -421,7 +460,13 @@ export default function Templates() {
                 {colorVariant && (
                   <Badge tone="success">{colorVariant.charAt(0).toUpperCase() + colorVariant.slice(1)}</Badge>
                 )}
-                <Badge tone="info">Template</Badge>
+                {template.isColorVariant ? (
+                  <Badge tone="info">Color Variant</Badge>
+                ) : template.shopifyProductId ? (
+                  <Badge tone="warning">Master Template</Badge>
+                ) : (
+                  <Badge tone="info">Template</Badge>
+                )}
               </div>
             </div>
           </ResourceItem>
