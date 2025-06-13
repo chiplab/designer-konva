@@ -274,16 +274,26 @@ export async function processSyncAllThumbnailsJob(
     // Mark job as processing
     await startJob(jobId);
     
-    // Get all templates with shopifyProductId (these are the ones that can be synced)
+    // Get all templates that have shopifyVariantId (these are the ones that can be synced)
+    // We need shopifyVariantId to know which variant to sync to
     const templatesToSync = await db.template.findMany({
       where: {
         shop,
-        shopifyProductId: { not: null },
+        shopifyVariantId: { not: null },
         thumbnail: { not: null },
       },
+      orderBy: [
+        { name: 'asc' }
+      ]
     });
     
     console.log(`Job ${jobId}: Found ${templatesToSync.length} templates to sync`);
+    console.log(`Job ${jobId}: Templates to sync:`, templatesToSync.map(t => ({ 
+      name: t.name, 
+      id: t.id,
+      hasThumbnail: !!t.thumbnail,
+      shopifyVariantId: t.shopifyVariantId 
+    })));
     await updateJobProgress(jobId, 0, templatesToSync.length);
     
     let totalSynced = 0;

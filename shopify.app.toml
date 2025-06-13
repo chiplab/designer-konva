@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://physically-concepts-acquisition-qualities.trycloudflare.com"
+application_url = "https://barbados-appendix-husband-hearts.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://physically-concepts-acquisition-qualities.trycloudflare.com/auth/callback",
-  "https://physically-concepts-acquisition-qualities.trycloudflare.com/auth/shopify/callback",
-  "https://physically-concepts-acquisition-qualities.trycloudflare.com/api/auth/callback"
+  "https://barbados-appendix-husband-hearts.trycloudflare.com/auth/callback",
+  "https://barbados-appendix-husband-hearts.trycloudflare.com/auth/shopify/callback",
+  "https://barbados-appendix-husband-hearts.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://physically-concepts-acquisition-qualities.trycloudflare.com"
+url = "https://barbados-appendix-husband-hearts.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 
