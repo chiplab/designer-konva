@@ -18,6 +18,12 @@ export async function action({ request }: ActionFunctionArgs) {
     const canvasData = formData.get("canvasData") as string;
     const thumbnail = formData.get("thumbnail") as string | null;
     const templateId = formData.get("templateId") as string | null;
+    
+    // New Shopify references
+    const shopifyProductId = formData.get("shopifyProductId") as string | null;
+    const shopifyVariantId = formData.get("shopifyVariantId") as string | null;
+    
+    // Legacy support
     const productLayoutId = formData.get("productLayoutId") as string | null;
     const colorVariant = formData.get("colorVariant") as string | null;
 
@@ -47,14 +53,23 @@ export async function action({ request }: ActionFunctionArgs) {
         data: {
           name,
           canvasData,
+          // Update Shopify references if provided
+          ...(shopifyProductId && { shopifyProductId }),
+          ...(shopifyVariantId && { shopifyVariantId }),
+          // Keep legacy fields for now
           colorVariant: colorVariant || existingTemplate.colorVariant,
           updatedAt: new Date(),
         },
       });
     } else {
-      // Create new template - require productLayoutId and colorVariant
-      if (!productLayoutId || !colorVariant) {
-        return json({ error: "Product layout and color variant are required for new templates" }, { status: 400 });
+      // Create new template
+      // Prefer Shopify references but support legacy for backward compatibility
+      if (!shopifyProductId && !productLayoutId) {
+        return json({ error: "Product reference is required for new templates" }, { status: 400 });
+      }
+      
+      if (shopifyProductId && !shopifyVariantId) {
+        return json({ error: "Variant ID is required when using Shopify product" }, { status: 400 });
       }
       
       template = await db.template.create({
@@ -62,6 +77,10 @@ export async function action({ request }: ActionFunctionArgs) {
           name,
           shop: session.shop,
           canvasData,
+          // New Shopify references
+          shopifyProductId,
+          shopifyVariantId,
+          // Legacy fields (will be null if using Shopify references)
           productLayoutId,
           colorVariant,
           thumbnail: null, // We'll update this after S3 upload

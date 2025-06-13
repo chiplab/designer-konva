@@ -104,6 +104,23 @@ interface DesignerCanvasProps {
     designableArea: any;
     variantImages?: any;
   } | null;
+  shopifyProduct?: {
+    id: string;
+    title: string;
+  } | null;
+  shopifyVariant?: {
+    id: string;
+    title: string;
+    displayName: string;
+    image?: {
+      url: string;
+      altText?: string;
+    };
+    selectedOptions: Array<{
+      name: string;
+      value: string;
+    }>;
+  } | null;
   initialState?: {
     templateId?: string;
     variantId?: string;
@@ -112,17 +129,23 @@ interface DesignerCanvasProps {
   } | null;
 }
 
-const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, productLayout, initialState }) => {
+const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, productLayout, shopifyProduct, shopifyVariant, initialState }) => {
   const shapeRef = React.useRef(null);
   const stageRef = React.useRef<any>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = React.useState({ 
-    width: productLayout?.width || 1000, 
-    height: productLayout?.height || 1000 
+    width: shopifyVariant ? 1368 : (productLayout?.width || 1000), 
+    height: shopifyVariant ? 1368 : (productLayout?.height || 1000)
   });
   const [containerSize, setContainerSize] = React.useState({ width: 800, height: 600 });
   // Support for S3 URLs - use variant-specific image if available
   const getVariantImage = () => {
+    // Priority 1: Use Shopify variant image if creating new template
+    if (shopifyVariant?.image?.url) {
+      return shopifyVariant.image.url;
+    }
+    
+    // Priority 2: Use variant image from productLayout if available
     if (productLayout && initialTemplate?.colorVariant) {
       // Try to find a variant image for the template's color
       // We'll need to match against all patterns since we don't know which one yet
@@ -136,7 +159,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         }
       }
     }
-    // Fall back to base image
+    
+    // Priority 3: Fall back to base image
     return productLayout?.baseImageUrl || '/media/images/8-spot-red-base-image.png';
   };
   
@@ -175,8 +199,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     }
     
     // Default fallback
-    const canvasWidth = productLayout?.width || 1000;
-    const canvasHeight = productLayout?.height || 1000;
+    const canvasWidth = shopifyVariant ? 1368 : (productLayout?.width || 1000);
+    const canvasHeight = shopifyVariant ? 1368 : (productLayout?.height || 1000);
     const diameter = Math.min(canvasWidth, canvasHeight) * 0.744;
     const radius = diameter / 2;
     
@@ -234,8 +258,11 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   );
 
   React.useEffect(() => {
-    // Fixed canvas size - 1000x1000 square
-    const newDimensions = {
+    // Fixed canvas size - 1368x1368 for Shopify variants, 1000x1000 for others
+    const newDimensions = shopifyVariant ? {
+      width: 1368,
+      height: 1368
+    } : {
       width: 1000,
       height: 1000
     };
@@ -880,8 +907,18 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     const templateName = initialTemplate?.name || prompt('Enter template name:');
     if (!templateName) return;
 
-    // If we have a productLayout but no colorVariant, prompt for it
+    // Extract color from variant or use legacy colorVariant
     let colorVariant = initialTemplate?.colorVariant;
+    
+    // If we have a Shopify variant, extract color from it
+    if (shopifyVariant && !colorVariant) {
+      const colorOption = shopifyVariant.selectedOptions?.find(opt => opt.name === "Color");
+      if (colorOption) {
+        colorVariant = colorOption.value.toLowerCase();
+      }
+    }
+    
+    // If we have a productLayout but no colorVariant, prompt for it (legacy)
     if (productLayout && !colorVariant) {
       const availableColors = productLayout.attributes?.colors || [];
       if (availableColors.length > 0) {
@@ -1006,11 +1043,30 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       } else {
         console.warn('No thumbnail generated for template');
       }
+      
+      // Debug logging
+      console.log('Save Template Debug:', {
+        shopifyProduct,
+        shopifyVariant,
+        productLayout,
+        colorVariant,
+        initialTemplate
+      });
+      
       // Include template ID if we're updating an existing template
       if (initialTemplate?.id) {
         formData.append('templateId', initialTemplate.id);
       }
-      // Include productLayoutId and colorVariant for new templates
+      
+      // Include Shopify references if available (new system)
+      if (shopifyProduct?.id) {
+        formData.append('shopifyProductId', shopifyProduct.id);
+      }
+      if (shopifyVariant?.id) {
+        formData.append('shopifyVariantId', shopifyVariant.id);
+      }
+      
+      // Include productLayoutId and colorVariant for legacy support
       if (productLayout?.id) {
         formData.append('productLayoutId', productLayout.id);
       }
@@ -2079,8 +2135,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
               image={baseImage}
               x={0} // Fill entire canvas
               y={0}
-              width={1000}
-              height={1000}
+              width={dimensions.width}
+              height={dimensions.height}
             />
           )}
           

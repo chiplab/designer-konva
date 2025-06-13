@@ -62,25 +62,45 @@ model ProductLayout {
 }
 
 model Template {
-  id             String         @id @default(cuid())
-  name           String
-  shop           String         // Link to Shopify shop
+  id               String    @id @default(cuid())
+  name             String
+  shop             String    // Link to Shopify shop
   
-  // Reference to product layout
-  productLayoutId String
-  productLayout   ProductLayout  @relation(fields: [productLayoutId], references: [id])
+  // New Shopify references (replacing productLayoutId)
+  shopifyProductId String?   // Shopify product GID (optional during migration)
+  shopifyVariantId String?   // Specific variant this template is for (optional during migration)
   
-  // Which color variant this template is for (e.g., "red", "blue", "gold")
-  colorVariant   String         // Required: templates are color-specific
+  // Color variant tracking
+  masterTemplateId String?   // References the original template (for color variants)
+  isColorVariant   Boolean   @default(false)
+  
+  // Legacy field - will be removed after migration
+  productLayoutId  String?
+  productLayout    ProductLayout?  @relation(fields: [productLayoutId], references: [id])
+  colorVariant     String?         // Will be removed after migration
   
   // Canvas data without base image (just the design elements)
-  canvasData     String         // JSON string of canvas state
-  thumbnail      String?        // Base64 or URL for preview
+  canvasData       String    // JSON string of canvas state
+  thumbnail        String?   // Base64 or URL for preview
   
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@index([shop])
+  @@index([shopifyProductId])
+  @@index([masterTemplateId])
   @@index([productLayoutId])
-  @@index([productLayoutId, colorVariant])
+}
+
+model TemplateColor {
+  id          String  @id @default(cuid())
+  chipColor   String  @unique  // "white", "red", "blue", etc.
+  color1      String           // Primary color hex
+  color2      String           // Secondary color hex  
+  color3      String           // Tertiary color hex
+  color4      String?          // Optional fourth color
+  color5      String?          // Optional fifth color
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
