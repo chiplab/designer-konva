@@ -164,6 +164,43 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   }
 
+  if (action === "syncProductThumbnails") {
+    const productId = formData.get("productId") as string;
+    
+    try {
+      // Create a job for syncing thumbnails for a specific product
+      const { createJob } = await import("../services/job-queue.server");
+      const { processJob } = await import("../services/job-processor.server");
+      
+      const job = await createJob(
+        session.shop,
+        "syncProductThumbnails",
+        { productId },
+        0 // Will be updated during processing
+      );
+      
+      // Start processing in background
+      processJob(job.id, session.shop, admin).catch(error => {
+        console.error(`Background sync job ${job.id} failed:`, error);
+      });
+      
+      // Return immediately with job ID
+      return json({ 
+        success: true,
+        message: "Syncing product thumbnails in background.",
+        jobId: job.id,
+        isBackground: true,
+      });
+      
+    } catch (error) {
+      console.error("Error starting sync job:", error);
+      return json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Failed to start sync job" 
+      }, { status: 500 });
+    }
+  }
+
   if (action === "syncAllVariantThumbnails") {
     try {
       // Create a job for syncing all thumbnails
@@ -305,7 +342,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
 
   const templates = await db.template.findMany({
     where: {
@@ -318,12 +355,52 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       updatedAt: "desc",
     },
   });
+  
+  // Get unique product IDs from templates
+  const productIds = [...new Set(templates
+    .filter(t => t.shopifyProductId)
+    .map(t => t.shopifyProductId!)
+  )];
+  
+  // Fetch product names from Shopify
+  const productNames: Record<string, string> = {};
+  
+  if (productIds.length > 0) {
+    try {
+      const PRODUCTS_QUERY = `#graphql
+        query GetProductNames($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            ... on Product {
+              id
+              title
+            }
+          }
+        }
+      `;
+      
+      const response = await admin.graphql(PRODUCTS_QUERY, {
+        variables: { ids: productIds }
+      });
+      
+      const data = await response.json();
+      
+      if (data.data?.nodes) {
+        data.data.nodes.forEach((node: any) => {
+          if (node?.id && node?.title) {
+            productNames[node.id] = node.title;
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching product names:", error);
+    }
+  }
 
-  return json({ templates });
+  return json({ templates, productNames });
 };
 
 export default function Templates() {
-  const { templates } = useLoaderData<typeof loader>();
+  const { templates, productNames } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -703,26 +780,94 @@ export default function Templates() {
         <Layout.Section>
           {templates.some(t => t.shopifyProductId) && (
             <Card>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text variant="headingMd" as="h2">Bulk Actions</Text>
-                <Button
-                  onClick={async () => {
-                    const formData = new FormData();
-                    formData.append("_action", "syncAllVariantThumbnails");
-                    submit(formData, { method: "post" });
-                    
-                    // @ts-ignore - shopify is globally available in embedded apps
-                    if (typeof shopify !== 'undefined' && shopify.toast) {
-                      shopify.toast.show("Checking which variants need thumbnails...");
+              <BlockStack gap="400">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text variant="headingMd" as="h2">Bulk Actions</Text>
+                  <Button
+                    onClick={async () => {
+                      const formData = new FormData();
+                      formData.append("_action", "syncAllVariantThumbnails");
+                      submit(formData, { method: "post" });
+                      
+                      // @ts-ignore - shopify is globally available in embedded apps
+                      if (typeof shopify !== 'undefined' && shopify.toast) {
+                        shopify.toast.show("Checking which variants need thumbnails...");
+                      }
+                    }}
+                  >
+                    Sync ALL missing thumbnails
+                  </Button>
+                </div>
+                <Text variant="bodySm" tone="subdued" as="p">
+                  This will sync thumbnails to all variants that don't have images yet
+                </Text>
+                
+                {/* Group templates by product */}
+                {(() => {
+                  const productGroups = templates.reduce((acc, template) => {
+                    if (template.shopifyProductId) {
+                      if (!acc[template.shopifyProductId]) {
+                        // Get product name from Shopify data or fallback
+                        const productName = productNames[template.shopifyProductId] || 
+                          `Product ${template.shopifyProductId.split('/').pop()}`;
+                        
+                        acc[template.shopifyProductId] = {
+                          productId: template.shopifyProductId,
+                          productName: productName,
+                          templates: []
+                        };
+                      }
+                      acc[template.shopifyProductId].templates.push(template);
                     }
-                  }}
-                >
-                  Sync missing variant thumbnails
-                </Button>
-              </div>
-              <Text variant="bodySm" tone="subdued" as="p" style={{ marginTop: '8px' }}>
-                This will sync thumbnails only to variants that don't have images yet
-              </Text>
+                    return acc;
+                  }, {} as Record<string, any>);
+                  
+                  const groups = Object.values(productGroups).sort((a, b) => 
+                    a.productName.localeCompare(b.productName)
+                  );
+                  
+                  return groups.length > 0 ? (
+                    <>
+                      <Text variant="headingSm" as="h3">Sync by Product</Text>
+                      {groups.map((group) => (
+                        <div key={group.productId} style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center',
+                          padding: '12px',
+                          backgroundColor: '#f6f6f7',
+                          borderRadius: '8px'
+                        }}>
+                          <div>
+                            <Text variant="bodyMd" fontWeight="semibold" as="p">
+                              {group.productName}
+                            </Text>
+                            <Text variant="bodySm" tone="subdued" as="p">
+                              {group.templates.length} templates
+                            </Text>
+                          </div>
+                          <Button
+                            size="slim"
+                            onClick={async () => {
+                              const formData = new FormData();
+                              formData.append("_action", "syncProductThumbnails");
+                              formData.append("productId", group.productId);
+                              submit(formData, { method: "post" });
+                              
+                              // @ts-ignore - shopify is globally available in embedded apps
+                              if (typeof shopify !== 'undefined' && shopify.toast) {
+                                shopify.toast.show(`Syncing thumbnails for ${group.productName}...`);
+                              }
+                            }}
+                          >
+                            Sync this product
+                          </Button>
+                        </div>
+                      ))}
+                    </>
+                  ) : null;
+                })()}
+              </BlockStack>
             </Card>
           )}
           <Card padding="0" style={{ marginTop: '16px' }}>

@@ -262,6 +262,179 @@ export async function processGenerateVariantsJob(
 }
 
 /**
+ * Process a sync product thumbnails job
+ */
+export async function processSyncProductThumbnailsJob(
+  jobId: string,
+  shop: string,
+  data: JobData,
+  admin: any
+) {
+  try {
+    // Mark job as processing
+    await startJob(jobId);
+    
+    const { productId } = data;
+    if (!productId) {
+      throw new Error("Product ID is required");
+    }
+    
+    console.log(`Job ${jobId}: Syncing thumbnails for product ${productId}...`);
+    
+    // Get all templates for this specific product that have thumbnails
+    const allTemplates = await db.template.findMany({
+      where: {
+        shop,
+        shopifyProductId: productId,
+        shopifyVariantId: { not: null },
+        thumbnail: { not: null },
+      },
+      orderBy: [
+        { name: 'asc' }
+      ]
+    });
+    
+    console.log(`Job ${jobId}: Found ${allTemplates.length} templates for product ${productId}`);
+    
+    // First, get variants FOR THIS PRODUCT to check which ones already have images
+    console.log(`Job ${jobId}: Checking which variants already have images for product ${productId}...`);
+    const variantCheckQuery = `#graphql
+      query CheckProductVariantImages($productId: ID!) {
+        product(id: $productId) {
+          id
+          variants(first: 250) {
+            edges {
+              node {
+                id
+                media(first: 1) {
+                  edges {
+                    node {
+                      ... on MediaImage {
+                        id
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+    
+    const variantCheckResponse = await admin.graphql(variantCheckQuery, {
+      variables: { productId }
+    });
+    const { data: variantData } = await variantCheckResponse.json();
+    
+    // Create a set of variant IDs that already have images
+    const variantsWithImages = new Set(
+      variantData.product?.variants?.edges
+        ?.filter((edge: any) => edge.node.media.edges.length > 0)
+        ?.map((edge: any) => edge.node.id) || []
+    );
+    
+    console.log(`Job ${jobId}: Found ${variantsWithImages.size} variants with existing images`);
+    console.log(`Job ${jobId}: Total variants in product: ${variantData.product?.variants?.edges?.length || 0}`);
+    
+    // Filter to only templates whose variants don't have images yet
+    const templatesToSync = allTemplates.filter(
+      template => !variantsWithImages.has(template.shopifyVariantId!)
+    );
+    
+    // Debug: log a few examples
+    if (templatesToSync.length === 0 && allTemplates.length > 0) {
+      console.log(`Job ${jobId}: All variants appear to have images. First few variant checks:`);
+      allTemplates.slice(0, 3).forEach(template => {
+        console.log(`  Template ${template.name}: variant ${template.shopifyVariantId} has image: ${variantsWithImages.has(template.shopifyVariantId!)}`);
+      });
+    }
+    
+    console.log(`Job ${jobId}: ${allTemplates.length} total templates, ${templatesToSync.length} need syncing`);
+    await updateJobProgress(jobId, 0, templatesToSync.length);
+    
+    let totalSynced = 0;
+    let totalErrors = 0;
+    const errors: string[] = [];
+    const syncResults: any[] = [];
+    
+    // Process templates in batches
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < templatesToSync.length; i += BATCH_SIZE) {
+      const batch = templatesToSync.slice(i, i + BATCH_SIZE);
+      console.log(`Job ${jobId}: Processing batch ${Math.floor(i/BATCH_SIZE) + 1} of ${Math.ceil(templatesToSync.length/BATCH_SIZE)}`);
+      
+      await Promise.all(batch.map(async (template) => {
+        try {
+          // Dynamically import to avoid module initialization issues
+          const { syncTemplateThumbnailToVariants } = await import("./template-sync.server");
+          const syncResult = await syncTemplateThumbnailToVariants(
+            admin, 
+            template.id, 
+            template.thumbnail
+          );
+          
+          if (syncResult.syncedCount > 0) {
+            totalSynced += syncResult.syncedCount;
+            console.log(`Job ${jobId}: Synced ${syncResult.syncedCount} variant(s) for template ${template.name}`);
+            syncResults.push({
+              templateId: template.id,
+              templateName: template.name,
+              synced: true,
+              count: syncResult.syncedCount
+            });
+          } else {
+            syncResults.push({
+              templateId: template.id,
+              templateName: template.name,
+              synced: false,
+              reason: "No variants found"
+            });
+          }
+          
+          if (syncResult.errors.length > 0) {
+            totalErrors += syncResult.errors.length;
+            errors.push(...syncResult.errors);
+          }
+        } catch (error) {
+          console.error(`Job ${jobId}: Error syncing template ${template.id}:`, error);
+          errors.push(`Failed to sync ${template.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          totalErrors++;
+          syncResults.push({
+            templateId: template.id,
+            templateName: template.name,
+            synced: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
+      }));
+      
+      // Update progress after each batch
+      await updateJobProgress(jobId, Math.min(i + BATCH_SIZE, templatesToSync.length), templatesToSync.length);
+    }
+    
+    // Complete the job
+    await completeJob(jobId, {
+      message: templatesToSync.length === 0 
+        ? `All variants for this product already have images. Nothing to sync.`
+        : `Synced ${totalSynced} variant thumbnail(s) for product.`,
+      totalSynced,
+      totalTemplates: templatesToSync.length,
+      totalErrors,
+      errors: errors.length > 0 ? errors : undefined,
+      syncResults,
+      productId
+    });
+    
+    console.log(`Job ${jobId}: Completed successfully`);
+    
+  } catch (error) {
+    console.error(`Job ${jobId}: Failed with error:`, error);
+    await failJob(jobId, error instanceof Error ? error.message : "Unknown error");
+  }
+}
+
+/**
  * Process a sync all thumbnails job
  */
 export async function processSyncAllThumbnailsJob(
@@ -490,6 +663,9 @@ export async function processJob(jobId: string, shop: string, admin: any) {
       break;
     case "syncAllThumbnails":
       await processSyncAllThumbnailsJob(jobId, shop, data, admin);
+      break;
+    case "syncProductThumbnails":
+      await processSyncProductThumbnailsJob(jobId, shop, data, admin);
       break;
     default:
       throw new Error(`Unknown job type: ${job.type}`);

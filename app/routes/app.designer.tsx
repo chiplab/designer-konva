@@ -221,13 +221,64 @@ export default function Designer() {
           }
         }
         
-        // Extract color from displayName (e.g., "8 Spot / Red" -> "red")
+        // Extract color from displayName or selectedOptions
         if (selectedVariantDisplayName) {
-          const parts = selectedVariantDisplayName.split('/');
-          if (parts.length >= 2) {
-            colorVariant = parts[parts.length - 1].trim().toLowerCase();
-            console.log('Extracted color variant:', colorVariant);
+          console.log('Full variant display name:', selectedVariantDisplayName);
+          
+          // First try to get color from selectedOptions if we have the full variant data
+          let extractedColor = null;
+          
+          // Try to find the variant in products to get selectedOptions
+          for (const product of products) {
+            const variantEdge = product.variants.edges.find(
+              (edge: any) => edge.node.id === selectedVariantId
+            );
+            if (variantEdge && variantEdge.node.selectedOptions) {
+              console.log('Variant selectedOptions:', variantEdge.node.selectedOptions);
+              
+              // Look for a "Color" option
+              const colorOption = variantEdge.node.selectedOptions.find(
+                (opt: any) => opt.name.toLowerCase() === 'color'
+              );
+              if (colorOption) {
+                extractedColor = colorOption.value.toLowerCase();
+                console.log('Found color from selectedOptions:', extractedColor);
+                break;
+              }
+            }
           }
+          
+          // If no color option found, try parsing the display name
+          if (!extractedColor) {
+            const parts = selectedVariantDisplayName.split('/');
+            console.log('Display name parts:', parts);
+            
+            if (parts.length >= 2) {
+              // Try both first and last parts, see which one looks like a color
+              const firstPart = parts[0].trim().toLowerCase();
+              const lastPart = parts[parts.length - 1].trim().toLowerCase();
+              
+              // Common color names
+              const colors = ['red', 'blue', 'green', 'black', 'white', 'purple', 'yellow', 'grey', 'gray', 'orange', 'ivory', 'pink', 'brown'];
+              
+              if (colors.includes(firstPart)) {
+                extractedColor = firstPart;
+              } else if (colors.includes(lastPart)) {
+                extractedColor = lastPart;
+              } else {
+                // Try to find a color word in the full display name
+                for (const color of colors) {
+                  if (selectedVariantDisplayName.toLowerCase().includes(color)) {
+                    extractedColor = color;
+                    break;
+                  }
+                }
+              }
+            }
+          }
+          
+          colorVariant = extractedColor;
+          console.log('Final extracted color variant:', colorVariant);
         }
         
         if (selectedProductId) {
