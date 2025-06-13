@@ -127,9 +127,11 @@ interface DesignerCanvasProps {
     textUpdates?: Record<string, string>;
     fromModal?: boolean;
   } | null;
+  onSave?: (canvasData: any, thumbnail: string | undefined) => Promise<void>;
+  isAdminView?: boolean;
 }
 
-const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, productLayout, shopifyProduct, shopifyVariant, initialState }) => {
+const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, productLayout, shopifyProduct, shopifyVariant, initialState, onSave, isAdminView = true }) => {
   const shapeRef = React.useRef(null);
   const stageRef = React.useRef<any>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -925,6 +927,125 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
 
   // Save template function
   const saveTemplate = async () => {
+    // If onSave prop is provided, use it instead of internal save logic
+    if (onSave) {
+      setIsSaving(true);
+      try {
+        // Get canvas state
+        const canvasState = getCanvasState();
+        
+        // Deselect everything to hide transformer before generating thumbnail
+        setSelectedId(null);
+        
+        // Force transformer to detach
+        if (transformerRef.current) {
+          transformerRef.current.nodes([]);
+          transformerRef.current.getLayer()?.batchDraw();
+        }
+        
+        // Wait for the UI to update
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Wait for all images to be loaded
+        const stage = stageRef.current;
+        if (stage) {
+          const allImages = stage.find('Image');
+          const imageLoadPromises = allImages.map((imageNode: any) => {
+            return new Promise((resolve) => {
+              const img = imageNode.image();
+              if (!img) {
+                // No image loaded yet - wait a bit
+                setTimeout(() => resolve(true), 500);
+                return;
+              }
+              
+              if (img.complete) {
+                resolve(true);
+              } else {
+                // Set up both load and error handlers
+                const onLoad = () => {
+                  img.removeEventListener('load', onLoad);
+                  img.removeEventListener('error', onError);
+                  resolve(true);
+                };
+                const onError = () => {
+                  console.warn('Image failed to load for thumbnail:', img.src);
+                  img.removeEventListener('load', onLoad);
+                  img.removeEventListener('error', onError);
+                  resolve(true); // Continue even if image fails
+                };
+                
+                img.addEventListener('load', onLoad);
+                img.addEventListener('error', onError);
+                
+                // Timeout after 5 seconds
+                setTimeout(() => {
+                  img.removeEventListener('load', onLoad);
+                  img.removeEventListener('error', onError);
+                  resolve(true);
+                }, 5000);
+              }
+            });
+          });
+          
+          // Wait for all images to load
+          await Promise.all(imageLoadPromises);
+          
+          // Force a redraw to ensure all images are rendered
+          stage.batchDraw();
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        
+        // Generate thumbnail
+        let thumbnail: string | undefined;
+        try {
+          thumbnail = stageRef.current?.toDataURL({ 
+            x: 0,
+            y: 0,
+            width: dimensions.width * scale,
+            height: dimensions.height * scale,
+            pixelRatio: 1 / scale,
+            mimeType: 'image/png'
+          });
+        } catch (thumbnailError) {
+          console.error('Error generating thumbnail:', thumbnailError);
+          // Try to generate a lower quality thumbnail as fallback
+          try {
+            thumbnail = stageRef.current?.toDataURL({ 
+              x: 0,
+              y: 0,
+              width: dimensions.width * scale,
+              height: dimensions.height * scale,
+              pixelRatio: 0.6 / scale,
+              mimeType: 'image/png'
+            });
+          } catch (fallbackError) {
+            console.error('Fallback thumbnail generation also failed:', fallbackError);
+          }
+        }
+        
+        // Call the onSave prop with canvas data and thumbnail
+        await onSave(canvasState, thumbnail);
+        
+        setNotification({ 
+          message: 'Template saved successfully!', 
+          type: 'success' 
+        });
+        setTimeout(() => setNotification(null), 3000);
+      } catch (error) {
+        console.error('Error saving template:', error);
+        setNotification({ 
+          message: 'Failed to save template: ' + (error instanceof Error ? error.message : 'Unknown error'), 
+          type: 'error' 
+        });
+        setTimeout(() => setNotification(null), 5000);
+      } finally {
+        setIsSaving(false);
+      }
+      return;
+    }
+    
+    // Original save logic (for backward compatibility)
     // If editing existing template, use its name, otherwise prompt for new name
     const templateName = initialTemplate?.name || prompt('Enter template name:');
     if (!templateName) return;
@@ -1525,10 +1646,11 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
           {designableArea.visible ? 'Hide' : 'Show'} Design Area
         </button>
         
-        {/* Save/Load Controls */}
-        <div style={{ display: 'inline-block', marginLeft: '20px', borderLeft: '2px solid #ddd', paddingLeft: '20px' }}>
-          <button 
-            onClick={saveTemplate} 
+        {/* Save/Load Controls - Only show in admin view */}
+        {isAdminView && (
+          <div style={{ display: 'inline-block', marginLeft: '20px', borderLeft: '2px solid #ddd', paddingLeft: '20px' }}>
+            <button 
+              onClick={saveTemplate} 
             disabled={isSaving}
             style={{ 
               padding: '8px 16px', 
@@ -1563,10 +1685,11 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                 {template.name}
               </option>
             ))}
-          </select>
-          
-          {isLoading && <span style={{ fontSize: '14px', color: '#666' }}>Loading...</span>}
-        </div>
+            </select>
+            
+            {isLoading && <span style={{ fontSize: '14px', color: '#666' }}>Loading...</span>}
+          </div>
+        )}
         
         {/* Background Color Control in Top Nav */}
         <div style={{ display: 'inline-block', marginLeft: '20px', position: 'relative' }}>

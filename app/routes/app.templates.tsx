@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData, useSubmit, useActionData } from "@remix-run/react";
+import { useLoaderData, useSubmit, useActionData, useNavigate } from "@remix-run/react";
 import { useState, useCallback, useEffect } from "react";
 import {
   Page,
@@ -16,6 +16,7 @@ import {
   ChoiceList,
   Banner,
   Button,
+  BlockStack,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -163,6 +164,78 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   }
 
+  if (action === "syncProductThumbnails") {
+    const productId = formData.get("productId") as string;
+    
+    try {
+      // Create a job for syncing thumbnails for a specific product
+      const { createJob } = await import("../services/job-queue.server");
+      const { processJob } = await import("../services/job-processor.server");
+      
+      const job = await createJob(
+        session.shop,
+        "syncProductThumbnails",
+        { productId },
+        0 // Will be updated during processing
+      );
+      
+      // Start processing in background
+      processJob(job.id, session.shop, admin).catch(error => {
+        console.error(`Background sync job ${job.id} failed:`, error);
+      });
+      
+      // Return immediately with job ID
+      return json({ 
+        success: true,
+        message: "Syncing product thumbnails in background.",
+        jobId: job.id,
+        isBackground: true,
+      });
+      
+    } catch (error) {
+      console.error("Error starting sync job:", error);
+      return json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Failed to start sync job" 
+      }, { status: 500 });
+    }
+  }
+
+  if (action === "syncAllVariantThumbnails") {
+    try {
+      // Create a job for syncing all thumbnails
+      const { createJob } = await import("../services/job-queue.server");
+      const { processJob } = await import("../services/job-processor.server");
+      
+      const job = await createJob(
+        session.shop,
+        "syncAllThumbnails",
+        {},
+        0 // Will be updated during processing
+      );
+      
+      // Start processing in background
+      processJob(job.id, session.shop, admin).catch(error => {
+        console.error(`Background sync job ${job.id} failed:`, error);
+      });
+      
+      // Return immediately with job ID
+      return json({ 
+        success: true,
+        message: "Syncing all thumbnails in background. This may take a few minutes.",
+        jobId: job.id,
+        isBackground: true,
+      });
+      
+    } catch (error) {
+      console.error("Error starting sync job:", error);
+      return json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Failed to start sync job" 
+      }, { status: 500 });
+    }
+  }
+
   if (action === "deleteTemplate") {
     const templateId = formData.get("templateId") as string;
     
@@ -269,7 +342,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
 
   const templates = await db.template.findMany({
     where: {
@@ -282,12 +355,52 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       updatedAt: "desc",
     },
   });
+  
+  // Get unique product IDs from templates
+  const productIds = [...new Set(templates
+    .filter(t => t.shopifyProductId)
+    .map(t => t.shopifyProductId!)
+  )];
+  
+  // Fetch product names from Shopify
+  const productNames: Record<string, string> = {};
+  
+  if (productIds.length > 0) {
+    try {
+      const PRODUCTS_QUERY = `#graphql
+        query GetProductNames($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            ... on Product {
+              id
+              title
+            }
+          }
+        }
+      `;
+      
+      const response = await admin.graphql(PRODUCTS_QUERY, {
+        variables: { ids: productIds }
+      });
+      
+      const data = await response.json();
+      
+      if (data.data?.nodes) {
+        data.data.nodes.forEach((node: any) => {
+          if (node?.id && node?.title) {
+            productNames[node.id] = node.title;
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching product names:", error);
+    }
+  }
 
-  return json({ templates });
+  return json({ templates, productNames });
 };
 
 export default function Templates() {
-  const { templates } = useLoaderData<typeof loader>();
+  const { templates, productNames } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -301,13 +414,63 @@ export default function Templates() {
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
   const submit = useSubmit();
+  const navigate = useNavigate();
   
   useEffect(() => {
     if (actionData?.success) {
-      setShowSuccessBanner(true);
-      setTimeout(() => setShowSuccessBanner(false), 5000);
+      if (actionData.isBackground && actionData.jobId) {
+        // Handle background job for sync all thumbnails
+        if (actionData._action === 'syncAllVariantThumbnails' || actionData.message?.includes('thumbnails')) {
+          // @ts-ignore - shopify is globally available in embedded apps
+          if (typeof shopify !== 'undefined' && shopify.toast) {
+            shopify.toast.show("Syncing thumbnails in background...", { duration: 10000 });
+          }
+          
+          // Poll for job completion
+          const checkInterval = setInterval(async () => {
+            try {
+              const statusResponse = await fetch(`/api/jobs/${actionData.jobId}`);
+              const jobStatus = await statusResponse.json();
+              
+              if (jobStatus.status === 'completed') {
+                clearInterval(checkInterval);
+                // @ts-ignore - shopify is globally available in embedded apps
+                if (typeof shopify !== 'undefined' && shopify.toast) {
+                  shopify.toast.show(`✅ ${jobStatus.result?.message || 'Sync completed!'}`, { duration: 5000 });
+                }
+                // Refresh the page to show updated data
+                navigate(".", { replace: true });
+              } else if (jobStatus.status === 'failed') {
+                clearInterval(checkInterval);
+                // @ts-ignore - shopify is globally available in embedded apps
+                if (typeof shopify !== 'undefined' && shopify.toast) {
+                  shopify.toast.show(`❌ Sync failed: ${jobStatus.error}`, { error: true, duration: 5000 });
+                }
+              } else if (jobStatus.status === 'processing') {
+                // Show progress if available
+                if (jobStatus.progress && jobStatus.total) {
+                  // @ts-ignore - shopify is globally available in embedded apps
+                  if (typeof shopify !== 'undefined' && shopify.toast) {
+                    shopify.toast.show(`Syncing: ${jobStatus.progress}/${jobStatus.total} templates...`, { duration: 2000 });
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Error checking sync job status:', error);
+            }
+          }, 3000); // Check every 3 seconds
+          
+          // Stop polling after 10 minutes to prevent infinite polling
+          setTimeout(() => {
+            clearInterval(checkInterval);
+          }, 10 * 60 * 1000);
+        }
+      } else {
+        setShowSuccessBanner(true);
+        setTimeout(() => setShowSuccessBanner(false), 5000);
+      }
     }
-  }, [actionData]);
+  }, [actionData, navigate]);
 
   const handleAssignTemplate = useCallback(async (templateId: string) => {
     setSelectedTemplate(templateId);
@@ -380,6 +543,13 @@ export default function Templates() {
   const handleGenerateColorVariants = useCallback(async (templateId: string) => {
     const formData = new FormData();
     formData.append("templateId", templateId);
+    formData.append("background", "true"); // Use background processing
+    
+    // Show a loading toast if available
+    // @ts-ignore - shopify is globally available in embedded apps
+    if (typeof shopify !== 'undefined' && shopify.toast) {
+      shopify.toast.show("Starting variant generation...");
+    }
     
     try {
       const response = await fetch('/api/templates/generate-variants', {
@@ -390,12 +560,59 @@ export default function Templates() {
       const result = await response.json();
       
       if (result.success) {
-        // @ts-ignore - shopify is globally available in embedded apps
-        if (typeof shopify !== 'undefined' && shopify.toast) {
-          shopify.toast.show(result.message);
+        if (result.isBackground && result.jobId) {
+          // Background job started - poll for status
+          // @ts-ignore - shopify is globally available in embedded apps
+          if (typeof shopify !== 'undefined' && shopify.toast) {
+            shopify.toast.show("Generating 49 variants in background. This will take a few minutes...", { duration: 10000 });
+          }
+          
+          // Poll for job completion
+          const checkInterval = setInterval(async () => {
+            try {
+              const statusResponse = await fetch(`/api/jobs/${result.jobId}`);
+              const jobStatus = await statusResponse.json();
+              
+              if (jobStatus.status === 'completed') {
+                clearInterval(checkInterval);
+                // @ts-ignore - shopify is globally available in embedded apps
+                if (typeof shopify !== 'undefined' && shopify.toast) {
+                  shopify.toast.show(`✅ ${jobStatus.result?.message || 'All variants generated successfully!'}`, { duration: 5000 });
+                }
+                // Refresh the page
+                navigate(".", { replace: true });
+              } else if (jobStatus.status === 'failed') {
+                clearInterval(checkInterval);
+                // @ts-ignore - shopify is globally available in embedded apps
+                if (typeof shopify !== 'undefined' && shopify.toast) {
+                  shopify.toast.show(`❌ Failed: ${jobStatus.error}`, { error: true, duration: 5000 });
+                }
+              } else if (jobStatus.status === 'processing') {
+                // Show progress if available
+                if (jobStatus.progress && jobStatus.total) {
+                  // @ts-ignore - shopify is globally available in embedded apps
+                  if (typeof shopify !== 'undefined' && shopify.toast) {
+                    shopify.toast.show(`Processing: ${jobStatus.progress}/${jobStatus.total} completed...`, { duration: 2000 });
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Error checking job status:', error);
+            }
+          }, 3000); // Check every 3 seconds
+          
+          // Stop polling after 5 minutes to prevent infinite polling
+          setTimeout(() => {
+            clearInterval(checkInterval);
+          }, 5 * 60 * 1000);
+        } else {
+          // Synchronous completion
+          // @ts-ignore - shopify is globally available in embedded apps
+          if (typeof shopify !== 'undefined' && shopify.toast) {
+            shopify.toast.show(result.message, { duration: 5000 });
+          }
+          navigate(".", { replace: true });
         }
-        // Reload the page to show new templates
-        window.location.reload();
       } else {
         // @ts-ignore - shopify is globally available in embedded apps
         if (typeof shopify !== 'undefined' && shopify.toast) {
@@ -409,7 +626,7 @@ export default function Templates() {
         shopify.toast.show('Failed to generate color variants', { error: true });
       }
     }
-  }, []);
+  }, [navigate]);
   
   const handleTestRender = useCallback(async (templateId: string) => {
     try {
@@ -485,7 +702,7 @@ export default function Templates() {
                 onAction: () => handleAssignTemplate(id),
               },
               {
-                content: "Generate color variants",
+                content: "Generate variants",
                 onAction: () => handleGenerateColorVariants(id),
                 disabled: template.isColorVariant || !template.shopifyProductId,
               },
@@ -561,7 +778,99 @@ export default function Templates() {
       </TitleBar>
       <Layout>
         <Layout.Section>
-          <Card padding="0">
+          {templates.some(t => t.shopifyProductId) && (
+            <Card>
+              <BlockStack gap="400">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text variant="headingMd" as="h2">Bulk Actions</Text>
+                  <Button
+                    onClick={async () => {
+                      const formData = new FormData();
+                      formData.append("_action", "syncAllVariantThumbnails");
+                      submit(formData, { method: "post" });
+                      
+                      // @ts-ignore - shopify is globally available in embedded apps
+                      if (typeof shopify !== 'undefined' && shopify.toast) {
+                        shopify.toast.show("Checking which variants need thumbnails...");
+                      }
+                    }}
+                  >
+                    Sync ALL missing thumbnails
+                  </Button>
+                </div>
+                <Text variant="bodySm" tone="subdued" as="p">
+                  This will sync thumbnails to all variants that don't have images yet
+                </Text>
+                
+                {/* Group templates by product */}
+                {(() => {
+                  const productGroups = templates.reduce((acc, template) => {
+                    if (template.shopifyProductId) {
+                      if (!acc[template.shopifyProductId]) {
+                        // Get product name from Shopify data or fallback
+                        const productName = productNames[template.shopifyProductId] || 
+                          `Product ${template.shopifyProductId.split('/').pop()}`;
+                        
+                        acc[template.shopifyProductId] = {
+                          productId: template.shopifyProductId,
+                          productName: productName,
+                          templates: []
+                        };
+                      }
+                      acc[template.shopifyProductId].templates.push(template);
+                    }
+                    return acc;
+                  }, {} as Record<string, any>);
+                  
+                  const groups = Object.values(productGroups).sort((a, b) => 
+                    a.productName.localeCompare(b.productName)
+                  );
+                  
+                  return groups.length > 0 ? (
+                    <>
+                      <Text variant="headingSm" as="h3">Sync by Product</Text>
+                      {groups.map((group) => (
+                        <div key={group.productId} style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center',
+                          padding: '12px',
+                          backgroundColor: '#f6f6f7',
+                          borderRadius: '8px'
+                        }}>
+                          <div>
+                            <Text variant="bodyMd" fontWeight="semibold" as="p">
+                              {group.productName}
+                            </Text>
+                            <Text variant="bodySm" tone="subdued" as="p">
+                              {group.templates.length} templates
+                            </Text>
+                          </div>
+                          <Button
+                            size="slim"
+                            onClick={async () => {
+                              const formData = new FormData();
+                              formData.append("_action", "syncProductThumbnails");
+                              formData.append("productId", group.productId);
+                              submit(formData, { method: "post" });
+                              
+                              // @ts-ignore - shopify is globally available in embedded apps
+                              if (typeof shopify !== 'undefined' && shopify.toast) {
+                                shopify.toast.show(`Syncing thumbnails for ${group.productName}...`);
+                              }
+                            }}
+                          >
+                            Sync this product
+                          </Button>
+                        </div>
+                      ))}
+                    </>
+                  ) : null;
+                })()}
+              </BlockStack>
+            </Card>
+          )}
+          <Card padding="0" style={{ marginTop: '16px' }}>
             {templates.length === 0 ? emptyStateMarkup : resourceListMarkup}
           </Card>
         </Layout.Section>

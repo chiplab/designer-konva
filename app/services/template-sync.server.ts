@@ -5,7 +5,7 @@ import db from "../db.server";
 
 const PRODUCT_VARIANTS_QUERY = `#graphql
   query GetProductVariantsWithMetafields {
-    productVariants(first: 100) {
+    productVariants(first: 250) {
       edges {
         node {
           id
@@ -52,9 +52,29 @@ export async function syncTemplateThumbnailToVariants(
     const response = await admin.graphql(PRODUCT_VARIANTS_QUERY);
     const { data } = await response.json();
     
-    const variantsToSync = data.productVariants.edges
+    let variantsToSync = data.productVariants.edges
       .filter((edge: any) => edge.node.metafield?.value === templateId)
       .map((edge: any) => edge.node);
+
+    // If no variants found with metafield, try to find by template's shopifyVariantId
+    if (variantsToSync.length === 0) {
+      // Get the template to check if it has a shopifyVariantId
+      const template = await db.template.findUnique({
+        where: { id: templateId }
+      });
+      
+      if (template?.shopifyVariantId) {
+        // Find the specific variant this template is for
+        const variant = data.productVariants.edges.find(
+          (edge: any) => edge.node.id === template.shopifyVariantId
+        );
+        
+        if (variant) {
+          variantsToSync = [variant.node];
+          console.log(`Found variant by shopifyVariantId fallback: ${template.shopifyVariantId}`);
+        }
+      }
+    }
 
     if (variantsToSync.length === 0) {
       return {

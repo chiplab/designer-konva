@@ -1,7 +1,8 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { generateColorVariants, matchTemplatesToVariants } from "../services/template-color-generator.server";
+import { createJob } from "../services/job-queue.server";
+import { processJob } from "../services/job-processor.server";
 import db from "../db.server";
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -14,6 +15,7 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     const formData = await request.formData();
     const templateId = formData.get("templateId") as string;
+    const processInBackground = formData.get("background") !== "false";
     
     if (!templateId) {
       return json({ error: "Template ID is required" }, { status: 400 });
@@ -44,84 +46,59 @@ export async function action({ request }: ActionFunctionArgs) {
       }, { status: 400 });
     }
     
-    // Generate color variants
-    console.log(`Generating color variants for template ${templateId}...`);
-    const createdTemplates = await generateColorVariants(templateId, session.shop, admin);
+    // Create a job for generating variants
+    const job = await createJob(
+      session.shop,
+      "generateVariants",
+      { templateId },
+      49 // Estimated total (will be updated during processing)
+    );
     
-    // Match templates to Shopify variants and get variant images
-    if (template.shopifyProductId) {
-      console.log("Matching templates to Shopify variants...");
+    if (processInBackground) {
+      // Start processing in background (fire and forget)
+      processJob(job.id, session.shop, admin).catch(error => {
+        console.error(`Background job ${job.id} failed:`, error);
+      });
       
-      // Get the pattern from the master template
-      let masterPattern = "";
-      if (template.shopifyVariantId) {
-        const GET_VARIANT = `#graphql
-          query GetVariant($id: ID!) {
-            productVariant(id: $id) {
-              selectedOptions {
-                name
-                value
-              }
-            }
-          }
-        `;
-        
-        const response = await admin.graphql(GET_VARIANT, {
-          variables: { id: template.shopifyVariantId }
+      // Return immediately with job ID
+      return json({ 
+        success: true,
+        message: "Generating variants in background. This may take a few minutes.",
+        jobId: job.id,
+        isBackground: true,
+      });
+    } else {
+      // Process synchronously (for testing)
+      await processJob(job.id, session.shop, admin);
+      
+      // Get the completed job
+      const completedJob = await db.job.findUnique({
+        where: { id: job.id }
+      });
+      
+      if (completedJob?.status === "completed") {
+        const result = JSON.parse(completedJob.result || "{}");
+        return json({ 
+          success: true,
+          message: result.message || "Variants generated successfully",
+          jobId: job.id,
+          isBackground: false,
+          result,
         });
-        const data = await response.json();
-        const patternOption = data.data?.productVariant?.selectedOptions?.find(
-          (opt: any) => opt.name === "Edge Pattern" || opt.name === "Pattern"
-        );
-        masterPattern = patternOption?.value || "";
-      }
-      
-      const templatesWithImages = await matchTemplatesToVariants(
-        admin, 
-        template.shopifyProductId, 
-        createdTemplates,
-        masterPattern
-      );
-      
-      // Update canvas data with new base images
-      for (const createdTemplate of templatesWithImages) {
-        if (createdTemplate.variantImage) {
-          try {
-            const dbTemplate = await db.template.findUnique({
-              where: { id: createdTemplate.id }
-            });
-            
-            if (dbTemplate) {
-              const canvasData = JSON.parse(dbTemplate.canvasData);
-              // Update the base image URL in canvas data
-              if (canvasData.assets) {
-                canvasData.assets.baseImage = createdTemplate.variantImage;
-              }
-              
-              await db.template.update({
-                where: { id: createdTemplate.id },
-                data: {
-                  canvasData: JSON.stringify(canvasData)
-                }
-              });
-            }
-          } catch (error) {
-            console.error(`Error updating base image for template ${createdTemplate.id}:`, error);
-          }
-        }
+      } else {
+        const error = completedJob?.error || "Job failed";
+        return json({ 
+          success: false,
+          error,
+          jobId: job.id,
+        }, { status: 500 });
       }
     }
     
-    return json({ 
-      success: true,
-      message: `Successfully generated ${createdTemplates.length} color variants`,
-      templates: createdTemplates,
-    });
-    
   } catch (error) {
-    console.error("Error generating color variants:", error);
+    console.error("Error in generate variants action:", error);
     return json({ 
-      error: error instanceof Error ? error.message : "Failed to generate color variants" 
+      error: error instanceof Error ? error.message : "Failed to generate variants" 
     }, { status: 500 });
   }
 }
