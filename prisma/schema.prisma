@@ -66,9 +66,9 @@ model Template {
   name             String
   shop             String    // Link to Shopify shop
   
-  // New Shopify references (replacing productLayoutId)
-  shopifyProductId String?   // Shopify product GID (optional during migration)
-  shopifyVariantId String?   // Specific variant this template is for (optional during migration)
+  // Shopify references
+  shopifyProductId String?   // Shopify product GID
+  shopifyVariantId String?   // Specific variant this template is for
   
   // Color variant tracking
   masterTemplateId String?   // References the original template (for color variants)
@@ -88,6 +88,7 @@ model Template {
 
   @@index([shop])
   @@index([shopifyProductId])
+  @@index([shopifyVariantId])
   @@index([masterTemplateId])
   @@index([productLayoutId])
 }

@@ -713,15 +713,15 @@ export default function Templates() {
                     
                     // @ts-ignore - shopify is globally available in embedded apps
                     if (typeof shopify !== 'undefined' && shopify.toast) {
-                      shopify.toast.show("Starting thumbnail sync job...");
+                      shopify.toast.show("Checking which variants need thumbnails...");
                     }
                   }}
                 >
-                  Sync all variant thumbnails
+                  Sync missing variant thumbnails
                 </Button>
               </div>
               <Text variant="bodySm" tone="subdued" as="p" style={{ marginTop: '8px' }}>
-                This will sync thumbnails for all templates to their corresponding product variants
+                This will sync thumbnails only to variants that don't have images yet
               </Text>
             </Card>
           )}

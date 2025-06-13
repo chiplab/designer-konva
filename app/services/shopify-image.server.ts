@@ -226,7 +226,7 @@ export async function updateVariantImage(
   if (existingMedia.length > 0) {
     console.log(`Variant has ${existingMedia.length} existing media items. Removing them first...`);
     
-    // Detach existing media from variant
+    // First detach media from variant
     const detachMediaMutation = `#graphql
       mutation productVariantDetachMedia($productId: ID!, $variantMedia: [ProductVariantDetachMediaInput!]!) {
         productVariantDetachMedia(productId: $productId, variantMedia: $variantMedia) {
@@ -259,6 +259,40 @@ export async function updateVariantImage(
       console.warn('Warning: Failed to detach some existing media:', detachData.productVariantDetachMedia.userErrors);
     } else {
       console.log('Successfully detached existing media from variant');
+      
+      // Now delete the media to prevent accumulation
+      const deleteMediaMutation = `#graphql
+        mutation productDeleteMedia($productId: ID!, $mediaIds: [ID!]!) {
+          productDeleteMedia(productId: $productId, mediaIds: $mediaIds) {
+            deletedMediaIds
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `;
+      
+      const mediaIdsToDelete = existingMedia.map((edge: any) => edge.node.id);
+      
+      try {
+        const deleteResponse = await admin.graphql(deleteMediaMutation, {
+          variables: {
+            productId: productId,
+            mediaIds: mediaIdsToDelete
+          }
+        });
+        
+        const { data: deleteData } = await deleteResponse.json();
+        
+        if (deleteData?.productDeleteMedia?.userErrors?.length > 0) {
+          console.warn('Warning: Failed to delete some media:', deleteData.productDeleteMedia.userErrors);
+        } else {
+          console.log(`Successfully deleted ${mediaIdsToDelete.length} old media item(s)`);
+        }
+      } catch (deleteError) {
+        console.warn('Warning: Failed to delete old media, it will remain in product media:', deleteError);
+      }
     }
   }
   

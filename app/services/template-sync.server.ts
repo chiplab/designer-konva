@@ -5,7 +5,7 @@ import db from "../db.server";
 
 const PRODUCT_VARIANTS_QUERY = `#graphql
   query GetProductVariantsWithMetafields {
-    productVariants(first: 100) {
+    productVariants(first: 250) {
       edges {
         node {
           id

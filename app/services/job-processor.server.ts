@@ -274,9 +274,43 @@ export async function processSyncAllThumbnailsJob(
     // Mark job as processing
     await startJob(jobId);
     
-    // Get all templates that have shopifyVariantId (these are the ones that can be synced)
-    // We need shopifyVariantId to know which variant to sync to
-    const templatesToSync = await db.template.findMany({
+    // First, get all variants to check which ones already have images
+    console.log(`Job ${jobId}: Checking which variants already have images...`);
+    const variantCheckQuery = `#graphql
+      query CheckVariantImages {
+        productVariants(first: 250) {
+          edges {
+            node {
+              id
+              media(first: 1) {
+                edges {
+                  node {
+                    ... on MediaImage {
+                      id
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+    
+    const variantCheckResponse = await admin.graphql(variantCheckQuery);
+    const { data: variantData } = await variantCheckResponse.json();
+    
+    // Create a set of variant IDs that already have images
+    const variantsWithImages = new Set(
+      variantData.productVariants.edges
+        .filter((edge: any) => edge.node.media.edges.length > 0)
+        .map((edge: any) => edge.node.id)
+    );
+    
+    console.log(`Job ${jobId}: Found ${variantsWithImages.size} variants that already have images`);
+    
+    // Get all templates that have shopifyVariantId and need syncing
+    const allTemplates = await db.template.findMany({
       where: {
         shop,
         shopifyVariantId: { not: null },
@@ -286,6 +320,13 @@ export async function processSyncAllThumbnailsJob(
         { name: 'asc' }
       ]
     });
+    
+    // Filter to only templates whose variants don't have images yet
+    const templatesToSync = allTemplates.filter(
+      template => !variantsWithImages.has(template.shopifyVariantId!)
+    );
+    
+    console.log(`Job ${jobId}: ${allTemplates.length} total templates, ${templatesToSync.length} need syncing`);
     
     console.log(`Job ${jobId}: Found ${templatesToSync.length} templates to sync`);
     console.log(`Job ${jobId}: Templates to sync:`, templatesToSync.map(t => ({ 
@@ -306,6 +347,12 @@ export async function processSyncAllThumbnailsJob(
     for (let i = 0; i < templatesToSync.length; i += BATCH_SIZE) {
       const batch = templatesToSync.slice(i, i + BATCH_SIZE);
       console.log(`Job ${jobId}: Processing batch ${Math.floor(i/BATCH_SIZE) + 1} of ${Math.ceil(templatesToSync.length/BATCH_SIZE)}`);
+      console.log(`Job ${jobId}: Batch templates:`, batch.map(t => ({ name: t.name, id: t.id })));
+      
+      if (batch.length === 0) {
+        console.error(`Job ${jobId}: WARNING - Empty batch at index ${i}`);
+        continue;
+      }
       
       await Promise.all(batch.map(async (template) => {
         try {
@@ -356,14 +403,58 @@ export async function processSyncAllThumbnailsJob(
       await updateJobProgress(jobId, Math.min(i + BATCH_SIZE, templatesToSync.length), templatesToSync.length);
     }
     
+    // Verify which variants actually have images
+    console.log(`Job ${jobId}: Verifying sync results...`);
+    const finalVerificationQuery = `#graphql
+      query VerifyVariantImages {
+        productVariants(first: 250) {
+          edges {
+            node {
+              id
+              displayName
+              media(first: 10) {
+                edges {
+                  node {
+                    ... on MediaImage {
+                      id
+                      image {
+                        url
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+    
+    const verifyResponse = await admin.graphql(finalVerificationQuery);
+    const { data: verifyData } = await verifyResponse.json();
+    
+    const variantsWithImagesAfterSync = verifyData.productVariants.edges.filter(
+      (edge: any) => edge.node.media.edges.length > 0
+    );
+    
+    console.log(`Job ${jobId}: Verification complete - ${variantsWithImagesAfterSync.length} variants have images`);
+    console.log(`Job ${jobId}: Variants with images:`, variantsWithImagesAfterSync.map((v: any) => ({
+      id: v.node.id,
+      name: v.node.displayName,
+      imageCount: v.node.media.edges.length
+    })));
+    
     // Complete the job
     await completeJob(jobId, {
-      message: `Synced ${totalSynced} variant thumbnail(s) across ${templatesToSync.length} templates`,
+      message: templatesToSync.length === 0 
+        ? `All variants already have images. Nothing to sync.`
+        : `Synced ${totalSynced} variant thumbnail(s) across ${templatesToSync.length} templates. Verified ${variantsWithImagesAfterSync.length} variants have images.`,
       totalSynced,
       totalTemplates: templatesToSync.length,
       totalErrors,
       errors: errors.length > 0 ? errors : undefined,
-      syncResults
+      syncResults,
+      verifiedVariantsWithImages: variantsWithImagesAfterSync.length
     });
     
     console.log(`Job ${jobId}: Completed successfully`);
@@ -378,6 +469,7 @@ export async function processSyncAllThumbnailsJob(
  * Main job processor - can be called from a background worker or API endpoint
  */
 export async function processJob(jobId: string, shop: string, admin: any) {
+  // @ts-ignore - Job model exists in Prisma schema
   const job = await db.job.findFirst({
     where: {
       id: jobId,

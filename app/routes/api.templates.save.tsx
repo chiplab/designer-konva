@@ -26,6 +26,16 @@ export async function action({ request }: ActionFunctionArgs) {
     // Legacy support
     const productLayoutId = formData.get("productLayoutId") as string | null;
     const colorVariant = formData.get("colorVariant") as string | null;
+    
+    console.log("Save API received:", {
+      name,
+      templateId,
+      shopifyProductId,
+      shopifyVariantId,
+      productLayoutId,
+      hasCanvasData: !!canvasData,
+      hasThumbnail: !!thumbnail
+    });
 
     if (!name || !canvasData) {
       return json({ error: "Name and canvas data are required" }, { status: 400 });
