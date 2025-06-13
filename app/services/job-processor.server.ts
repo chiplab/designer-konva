@@ -7,7 +7,6 @@ import {
 } from "./job-queue.server";
 import { generateAllVariants, matchTemplatesToVariants } from "./template-color-generator.server";
 import { generateTemplateThumbnail } from "./template-thumbnail-generator.server";
-import { syncTemplateThumbnailToVariants } from "./template-sync.server";
 import db from "../db.server";
 
 // GraphQL mutation to set metafield
@@ -194,6 +193,8 @@ export async function processGenerateVariantsJob(
                   
                   // Now sync the thumbnail to the variant
                   console.log(`Job ${jobId}: Syncing thumbnail to variant...`);
+                  // Dynamically import to avoid module initialization issues
+                  const { syncTemplateThumbnailToVariants } = await import("./template-sync.server");
                   const syncResult = await syncTemplateThumbnailToVariants(admin, createdTemplate.id, dbTemplate.thumbnail);
                   
                   if (syncResult.success && syncResult.syncedCount > 0) {
@@ -298,6 +299,8 @@ export async function processSyncAllThumbnailsJob(
       
       await Promise.all(batch.map(async (template) => {
         try {
+          // Dynamically import to avoid module initialization issues
+          const { syncTemplateThumbnailToVariants } = await import("./template-sync.server");
           const syncResult = await syncTemplateThumbnailToVariants(
             admin, 
             template.id, 
