@@ -96,20 +96,29 @@ export async function processGenerateVariantsJob(
     // Match templates to Shopify variants if product ID exists
     let templatesWithImages = createdTemplates;
     if (template.shopifyProductId) {
+      console.log(`\nJob ${jobId}: ========== VARIANT MATCHING SECTION ==========`);
       console.log(`Job ${jobId}: Matching templates to Shopify variants...`);
+      console.log(`Job ${jobId}: Master template has shopifyProductId: ${template.shopifyProductId}`);
+      console.log(`Job ${jobId}: Master pattern extracted: "${masterPattern}"`);
       
-      // IMPORTANT: We need to match against the SELLING product, not the source product
-      // The source product (e.g., 9797597331751) has the base images for templates
-      // The selling product (e.g., 9852686237991) is what we're creating variants for
-      // For now, we'll use the same product ID, but this should be configurable
-      // TODO: Add a separate "sellingProductId" field to templates or make this configurable
+      // Import product mapping helper
+      const { getSellingProductId } = await import("../config/product-mappings");
+      
+      // Get the selling product ID (customer-facing) from the source product ID
+      const sellingProductId = getSellingProductId(template.shopifyProductId);
+      console.log(`Job ${jobId}: Product mapping:`);
+      console.log(`Job ${jobId}:   - Source product (with base images): ${template.shopifyProductId}`);
+      console.log(`Job ${jobId}:   - Selling product (customer-facing): ${sellingProductId}`);
+      console.log(`Job ${jobId}:   - Using ${sellingProductId === template.shopifyProductId ? 'SAME PRODUCT (no mapping)' : 'MAPPED PRODUCT'}`);
       
       templatesWithImages = await matchTemplatesToVariants(
         admin,
-        template.shopifyProductId, // This should ideally be the selling product ID
+        sellingProductId, // Use the selling product ID for variant matching
         createdTemplates,
         masterPattern
       );
+      
+      console.log(`Job ${jobId}: ========== END VARIANT MATCHING SECTION ==========\n`);
     }
     
     // Process templates in batches for base image updates and thumbnails
@@ -165,15 +174,17 @@ export async function processGenerateVariantsJob(
               });
             }
             
-            // Bind template to variant and sync thumbnail
-            if (dbTemplate.shopifyVariantId && dbTemplate.thumbnail) {
+            // Bind template to variant - do this AFTER updates are saved
+            const finalTemplate = updates.shopifyVariantId || dbTemplate.shopifyVariantId;
+            if (finalTemplate) {
               try {
                 // Set metafield to bind template to variant
-                console.log(`Job ${jobId}: Binding template ${createdTemplate.id} to variant ${dbTemplate.shopifyVariantId}...`);
+                console.log(`Job ${jobId}: Setting metafield for template ${createdTemplate.id} to variant ${finalTemplate}...`);
+                
                 const metafieldResponse = await admin.graphql(METAFIELD_SET_MUTATION, {
                   variables: {
                     metafields: [{
-                      ownerId: dbTemplate.shopifyVariantId,
+                      ownerId: finalTemplate,
                       namespace: "custom_designer",
                       key: "template_id",
                       value: createdTemplate.id,
@@ -183,32 +194,28 @@ export async function processGenerateVariantsJob(
                 });
                 
                 const metafieldResult = await metafieldResponse.json();
+                
                 if (metafieldResult.data?.metafieldsSet?.userErrors?.length > 0) {
                   console.error(`Job ${jobId}: Failed to set metafield:`, metafieldResult.data.metafieldsSet.userErrors);
-                  // Mark this template as having sync issues
-                  // For now, just log - we'll add visual indicators in the UI later
-                  console.error(`Job ${jobId}: Template ${createdTemplate.id} failed to bind to variant`);
                 } else {
                   console.log(`Job ${jobId}: Successfully bound template to variant`);
                   
-                  // Now sync the thumbnail to the variant
-                  console.log(`Job ${jobId}: Syncing thumbnail to variant...`);
-                  // Dynamically import to avoid module initialization issues
-                  const { syncTemplateThumbnailToVariants } = await import("./template-sync.server");
-                  const syncResult = await syncTemplateThumbnailToVariants(admin, createdTemplate.id, dbTemplate.thumbnail);
-                  
-                  if (syncResult.success && syncResult.syncedCount > 0) {
-                    console.log(`Job ${jobId}: Successfully synced thumbnail to ${syncResult.syncedCount} variant(s)`);
-                  } else if (syncResult.errors.length > 0) {
-                    console.warn(`Job ${jobId}: Thumbnail sync had errors:`, syncResult.errors);
-                    // Log warning - we'll add visual indicators in the UI later
-                    console.warn(`Job ${jobId}: Template ${createdTemplate.id} had sync warnings`);
+                  // Sync thumbnail if available
+                  const thumbnailToSync = updates.thumbnail || dbTemplate.thumbnail;
+                  if (thumbnailToSync) {
+                    console.log(`Job ${jobId}: Syncing thumbnail to variant...`);
+                    const { syncTemplateThumbnailToVariants } = await import("./template-sync.server");
+                    const syncResult = await syncTemplateThumbnailToVariants(admin, createdTemplate.id, thumbnailToSync);
+                    
+                    if (syncResult.success && syncResult.syncedCount > 0) {
+                      console.log(`Job ${jobId}: Successfully synced thumbnail to ${syncResult.syncedCount} variant(s)`);
+                    } else if (syncResult.errors.length > 0) {
+                      console.warn(`Job ${jobId}: Thumbnail sync had errors:`, syncResult.errors);
+                    }
                   }
                 }
               } catch (bindError) {
-                console.error(`Job ${jobId}: Error binding/syncing template ${createdTemplate.id}:`, bindError);
-                // Log error - we'll add visual indicators in the UI later
-                console.error(`Job ${jobId}: Template ${createdTemplate.id} failed binding/syncing`);
+                console.error(`Job ${jobId}: Error binding template ${createdTemplate.id}:`, bindError);
               }
             }
           }

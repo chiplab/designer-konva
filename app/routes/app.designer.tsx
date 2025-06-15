@@ -258,19 +258,33 @@ export default function Designer() {
               const firstPart = parts[0].trim().toLowerCase();
               const lastPart = parts[parts.length - 1].trim().toLowerCase();
               
-              // Common color names
-              const colors = ['red', 'blue', 'green', 'black', 'white', 'purple', 'yellow', 'grey', 'gray', 'orange', 'ivory', 'pink', 'brown'];
+              // Common color names - include multi-word colors first
+              const multiWordColors = ['light blue'];
+              const singleWordColors = ['red', 'blue', 'green', 'black', 'white', 'purple', 'yellow', 'grey', 'gray', 'orange', 'ivory', 'pink', 'brown'];
               
-              if (colors.includes(firstPart)) {
-                extractedColor = firstPart;
-              } else if (colors.includes(lastPart)) {
-                extractedColor = lastPart;
-              } else {
-                // Try to find a color word in the full display name
-                for (const color of colors) {
-                  if (selectedVariantDisplayName.toLowerCase().includes(color)) {
-                    extractedColor = color;
-                    break;
+              // First check for multi-word colors in the full display name
+              let foundMultiWord = false;
+              for (const color of multiWordColors) {
+                if (selectedVariantDisplayName.toLowerCase().includes(color)) {
+                  extractedColor = color.replace(' ', '-'); // Convert "light blue" to "light-blue"
+                  foundMultiWord = true;
+                  break;
+                }
+              }
+              
+              // If no multi-word color found, check single-word colors
+              if (!foundMultiWord) {
+                if (singleWordColors.includes(firstPart)) {
+                  extractedColor = firstPart;
+                } else if (singleWordColors.includes(lastPart)) {
+                  extractedColor = lastPart;
+                } else {
+                  // Try to find a color word in the full display name
+                  for (const color of singleWordColors) {
+                    if (selectedVariantDisplayName.toLowerCase().includes(color)) {
+                      extractedColor = color;
+                      break;
+                    }
                   }
                 }
               }
