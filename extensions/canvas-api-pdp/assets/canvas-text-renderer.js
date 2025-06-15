@@ -217,7 +217,7 @@ if (typeof CanvasTextRenderer === 'undefined') {
   render() {
     if (!this.template) return;
 
-    const { backgroundColor, designableArea, elements } = this.template;
+    const { backgroundColor, backgroundGradient, designableArea, elements } = this.template;
 
     // Clear layers
     this.backgroundLayer.destroyChildren();
@@ -263,7 +263,7 @@ if (typeof CanvasTextRenderer === 'undefined') {
     if (backgroundColor && backgroundColor !== 'transparent' && designableArea) {
       let bgRect;
       
-      if (backgroundColor === 'linear-gradient') {
+      if (backgroundColor === 'linear-gradient' && backgroundGradient) {
         bgRect = new Konva.Rect({
           x: designableArea.x,
           y: designableArea.y,
@@ -272,9 +272,9 @@ if (typeof CanvasTextRenderer === 'undefined') {
           cornerRadius: designableArea.cornerRadius,
           fillLinearGradientStartPoint: { x: 0, y: 0 },
           fillLinearGradientEndPoint: { x: designableArea.width, y: 0 },
-          fillLinearGradientColorStops: [0, '#c8102e', 1, '#ffaaaa']
+          fillLinearGradientColorStops: backgroundGradient.colorStops || [0, '#c8102e', 1, '#ffaaaa']
         });
-      } else if (backgroundColor === 'radial-gradient') {
+      } else if (backgroundColor === 'radial-gradient' && backgroundGradient) {
         bgRect = new Konva.Rect({
           x: designableArea.x,
           y: designableArea.y,
@@ -285,7 +285,7 @@ if (typeof CanvasTextRenderer === 'undefined') {
           fillRadialGradientEndPoint: { x: designableArea.width / 2, y: designableArea.height / 2 },
           fillRadialGradientStartRadius: 0,
           fillRadialGradientEndRadius: Math.min(designableArea.width, designableArea.height) / 2,
-          fillRadialGradientColorStops: [0, '#c8102e', 1, '#ffaaaa']
+          fillLinearGradientColorStops: backgroundGradient.colorStops || [0, '#c8102e', 1, '#ffaaaa']
         });
       } else {
         bgRect = new Konva.Rect({
@@ -329,7 +329,7 @@ if (typeof CanvasTextRenderer === 'undefined') {
         y: el.y,
         fontSize: el.fontSize || 24,
         fontFamily: el.fontFamily || 'Arial',
-        fontWeight: el.fontWeight || 'normal',
+        fontStyle: el.fontWeight === 'bold' ? 'bold' : 'normal',
         rotation: el.rotation || 0,
         scaleX: el.scaleX || 1,
         scaleY: el.scaleY || 1
@@ -365,7 +365,7 @@ if (typeof CanvasTextRenderer === 'undefined') {
         y: el.y,
         fontSize: el.fontSize || 24,
         fontFamily: el.fontFamily || 'Arial',
-        fontWeight: el.fontWeight || 'normal',
+        fontStyle: el.fontWeight === 'bold' ? 'bold' : 'normal',
         rotation: el.rotation || 0,
         scaleX: el.scaleX || 1,
         scaleY: el.scaleY || 1,
@@ -424,7 +424,7 @@ if (typeof CanvasTextRenderer === 'undefined') {
         data: pathData,
         fontSize: fontSize,
         fontFamily: el.fontFamily || 'Arial',
-        fontWeight: el.fontWeight || 'normal',
+        fontStyle: el.fontWeight === 'bold' ? 'bold' : 'normal',
         align: 'center'
       };
 

@@ -53,12 +53,6 @@ if (typeof ProductCustomizerModal === 'undefined') {
               </div>
               
               <div class="pcm-actions">
-                <button class="pcm-btn pcm-btn-secondary" id="customizeMore">
-                  Advanced Editor
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M6 12l4-4-4-4" stroke="currentColor" stroke-width="2"/>
-                  </svg>
-                </button>
                 <button class="pcm-btn pcm-btn-primary" id="saveCustomization">
                   Add to Cart
                 </button>
@@ -253,7 +247,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
         .pcm-actions {
           display: flex;
           gap: 12px;
-          justify-content: space-between;
+          justify-content: flex-end;
           padding-top: 20px;
           border-top: 1px solid #e5e5e5;
         }
@@ -274,21 +268,11 @@ if (typeof ProductCustomizerModal === 'undefined') {
         .pcm-btn-primary {
           background: #000;
           color: white;
-          flex: 1;
+          min-width: 150px;
         }
 
         .pcm-btn-primary:hover {
           background: #333;
-        }
-
-        .pcm-btn-secondary {
-          background: white;
-          color: #000;
-          border: 1px solid #ddd;
-        }
-
-        .pcm-btn-secondary:hover {
-          background: #f5f5f5;
         }
 
         @keyframes fadeIn {
@@ -321,9 +305,6 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Save button
     document.getElementById('saveCustomization').addEventListener('click', () => this.save());
-    
-    // Customize More button
-    document.getElementById('customizeMore').addEventListener('click', () => this.openFullDesigner());
   }
 
   async open() {
@@ -695,24 +676,6 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.close();
   }
 
-  openFullDesigner() {
-    // Save current state
-    const currentState = {
-      templateId: this.options.templateId,
-      variantId: this.options.variantId,
-      textUpdates: {}
-    };
-    
-    this.renderer.getAllTextElements().forEach(el => {
-      currentState.textUpdates[el.id] = el.text;
-    });
-    
-    // Encode state for URL
-    const stateParam = btoa(JSON.stringify(currentState));
-    
-    // Navigate to full designer
-    window.location.href = `/apps/designer/customizer/full?state=${stateParam}`;
-  }
   }
 
   // Export for use in theme
