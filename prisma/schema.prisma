@@ -1,13 +1,7 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
-// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
-// enough when changing adapters.
-// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -32,94 +26,69 @@ model Session {
 }
 
 model ProductLayout {
-  id            String   @id @default(cuid())
-  name          String   // e.g., "Composite Poker Chip"
-  shop          String
-  
-  // Physical dimensions of the print area
-  width         Int
-  height        Int
-  
-  // Base image URL (S3) - default/fallback image
-  baseImageUrl  String
-  
-  // Variant attributes (e.g., {colors: ["red", "blue"], edgePatterns: ["8-spot", "solid"]})
-  attributes    Json
-  
-  // Variant-specific images (e.g., {"red-8-spot": "https://...", "red-solid": "https://..."})
-  variantImages Json @default("{}")
-  
-  // Designable area configuration (e.g., {shape: "circle", diameter: 744} or {shape: "rect", width: 400, height: 300})
+  id             String     @id @default(cuid())
+  name           String
+  shop           String
+  width          Int
+  height         Int
+  baseImageUrl   String
+  attributes     Json
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
   designableArea Json
-  
-  // Relations
-  templates     Template[]
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
+  variantImages  Json       @default("{}")
+  templates      Template[]
+
   @@index([shop])
 }
 
 model Template {
-  id               String    @id @default(cuid())
+  id               String         @id @default(cuid())
   name             String
-  shop             String    // Link to Shopify shop
-  
-  // Shopify references
-  shopifyProductId String?   // Shopify product GID
-  shopifyVariantId String?   // Specific variant this template is for
-  
-  // Color variant tracking
-  masterTemplateId String?   // References the original template (for color variants)
-  isColorVariant   Boolean   @default(false)
-  
-  // Legacy field - will be removed after migration
+  shop             String
+  canvasData       String
+  thumbnail        String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
   productLayoutId  String?
-  productLayout    ProductLayout?  @relation(fields: [productLayoutId], references: [id])
-  colorVariant     String?         // Will be removed after migration
-  
-  // Canvas data without base image (just the design elements)
-  canvasData       String    // JSON string of canvas state
-  thumbnail        String?   // Base64 or URL for preview
-  
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  colorVariant     String?
+  isColorVariant   Boolean        @default(false)
+  masterTemplateId String?
+  shopifyProductId String?
+  shopifyVariantId String?
+  productLayout    ProductLayout? @relation(fields: [productLayoutId], references: [id])
 
   @@index([shop])
   @@index([shopifyProductId])
-  @@index([shopifyVariantId])
   @@index([masterTemplateId])
   @@index([productLayoutId])
 }
 
 model TemplateColor {
-  id          String  @id @default(cuid())
-  chipColor   String  @unique  // "white", "red", "blue", etc.
-  color1      String           // Primary color hex
-  color2      String           // Secondary color hex  
-  color3      String           // Tertiary color hex
-  color4      String?          // Optional fourth color
-  color5      String?          // Optional fifth color
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  chipColor String   @unique
+  color1    String
+  color2    String
+  color3    String
+  color4    String?
+  color5    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Job {
-  id          String   @id @default(cuid())
-  shop        String
-  type        String   // "generateVariants", etc.
-  status      String   // "pending", "processing", "completed", "failed"
-  data        String   // JSON data for the job
-  result      String?  // JSON result when completed
-  error       String?  // Error message if failed
-  progress    Int      @default(0) // Current progress
-  total       Int      @default(0) // Total items to process
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
+  id        String   @id @default(cuid())
+  shop      String
+  type      String
+  status    String
+  data      String
+  result    String?
+  error     String?
+  progress  Int      @default(0)
+  total     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([shop, status])
   @@index([createdAt])
 }

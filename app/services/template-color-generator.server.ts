@@ -593,7 +593,7 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
           isColorVariant: true,
           // Legacy fields
           productLayoutId: masterTemplate.productLayoutId,
-          colorVariant: targetColor.chipColor,
+          colorVariant: combination.color, // Use the actual color name, not chipColor
         },
       });
       
@@ -687,10 +687,19 @@ export async function matchTemplatesToVariants(
   templates: Array<{ id: string; color: string; pattern?: string; variantImage?: string }>,
   masterPattern?: string
 ) {
+  console.log("\n========== START matchTemplatesToVariants DEBUG ==========");
+  console.log("Input Parameters:");
+  console.log("  - shopifyProductId:", shopifyProductId);
+  console.log("  - masterPattern:", masterPattern);
+  console.log("  - templates count:", templates.length);
+  console.log("  - template colors:", templates.map(t => t.color).join(", "));
+  
   // Query Shopify for all variants of the product
   const GET_PRODUCT_VARIANTS = `#graphql
     query GetProductVariants($id: ID!) {
       product(id: $id) {
+        id
+        title
         variants(first: 100) {
           edges {
             node {
@@ -711,42 +720,94 @@ export async function matchTemplatesToVariants(
   `;
   
   try {
+    console.log("\nFetching variants from Shopify...");
     const response = await admin.graphql(GET_PRODUCT_VARIANTS, {
       variables: { id: shopifyProductId }
     });
     
     const data = await response.json();
+    console.log("\nGraphQL Response:");
+    console.log("  - Has product data:", !!data.data?.product);
+    console.log("  - Product title:", data.data?.product?.title);
+    console.log("  - Product ID from response:", data.data?.product?.id);
+    
     const variants = data.data?.product?.variants?.edges || [];
+    console.log("  - Variants found:", variants.length);
+    
+    // Log all variants for debugging
+    console.log("\nAll Shopify Variants:");
+    variants.forEach((edge: any, index: number) => {
+      const colorOption = edge.node.selectedOptions.find((opt: any) => opt.name === "Color");
+      const patternOption = edge.node.selectedOptions.find((opt: any) => 
+        opt.name === "Edge Pattern" || opt.name === "Pattern"
+      );
+      console.log(`  [${index}] ID: ${edge.node.id}`);
+      console.log(`       Title: ${edge.node.title}`);
+      console.log(`       Color: ${colorOption?.value || 'NO COLOR OPTION'}`);
+      console.log(`       Pattern: ${patternOption?.value || 'NO PATTERN OPTION'}`);
+      console.log(`       All options:`, edge.node.selectedOptions);
+    });
     
     // Match templates to variants by BOTH color AND pattern
+    console.log("\n--- Starting Template Matching ---");
     for (const template of templates) {
-      console.log(`Looking for variant match for template color: ${template.color}`);
+      console.log(`\nLooking for variant match for template:`);
+      console.log(`  - Template ID: ${template.id}`);
+      console.log(`  - Template Color: ${template.color}`);
+      console.log(`  - Template Pattern: ${template.pattern || 'none specified'}`);
+      console.log(`  - Using Master Pattern: ${masterPattern || 'none'}`);
       
+      let foundMatch = false;
       const matchingVariant = variants.find((edge: any) => {
         const colorOption = edge.node.selectedOptions.find((opt: any) => opt.name === "Color");
         const patternOption = edge.node.selectedOptions.find((opt: any) => 
           opt.name === "Edge Pattern" || opt.name === "Pattern"
         );
         
+        console.log(`\n  Checking variant ${edge.node.id}:`);
+        console.log(`    - Has color option: ${!!colorOption}`);
+        console.log(`    - Has pattern option: ${!!patternOption}`);
+        
         if (colorOption && patternOption) {
           const normalizedShopifyColor = normalizeColorName(colorOption.value);
           const normalizedTemplateColor = normalizeColorName(template.color);
           
-          console.log(`  Comparing: Shopify "${colorOption.value}" (${normalizedShopifyColor}) vs Template "${template.color}" (${normalizedTemplateColor})`);
+          console.log(`    - Raw Shopify Color: "${colorOption.value}"`);
+          console.log(`    - Normalized Shopify Color: "${normalizedShopifyColor}"`);
+          console.log(`    - Raw Template Color: "${template.color}"`);
+          console.log(`    - Normalized Template Color: "${normalizedTemplateColor}"`);
+          console.log(`    - Colors match: ${normalizedShopifyColor === normalizedTemplateColor}`);
           
           // If template has pattern info, use it; otherwise use masterPattern
           const targetPattern = template.pattern || masterPattern || "";
+          console.log(`    - Target Pattern: "${targetPattern}"`);
+          console.log(`    - Shopify Pattern: "${patternOption.value}"`);
+          console.log(`    - Pattern lowercase comparison: "${patternOption.value.toLowerCase()}" === "${targetPattern.toLowerCase()}"`);
+          console.log(`    - Patterns match: ${patternOption.value.toLowerCase() === targetPattern.toLowerCase()}`);
           
           // Match both color and pattern using normalized color names
-          return normalizedShopifyColor === normalizedTemplateColor &&
-                 patternOption.value.toLowerCase() === targetPattern.toLowerCase();
+          const isMatch = normalizedShopifyColor === normalizedTemplateColor &&
+                         patternOption.value.toLowerCase() === targetPattern.toLowerCase();
+          
+          console.log(`    - FINAL MATCH RESULT: ${isMatch}`);
+          
+          if (isMatch) {
+            foundMatch = true;
+          }
+          
+          return isMatch;
+        } else {
+          console.log(`    - Skipping: Missing color or pattern option`);
         }
         
         return false;
       });
       
       if (matchingVariant) {
+        console.log(`\n  ✓ MATCH FOUND! Variant ${matchingVariant.node.id}`);
+        
         // Update the template with the correct variant ID and image
+        console.log(`  Updating template ${template.id} with shopifyVariantId...`);
         await db.template.update({
           where: { id: template.id },
           data: { 
@@ -756,19 +817,22 @@ export async function matchTemplatesToVariants(
         });
         
         const patternUsed = template.pattern || masterPattern || "";
-        console.log(`Matched ${template.color}/${patternUsed} template to variant ${matchingVariant.node.id}`);
+        console.log(`  Successfully matched ${template.color}/${patternUsed} template to variant ${matchingVariant.node.id}`);
         
         // Return variant info including image URL for canvas update
         template.variantImage = matchingVariant.node.image?.url;
       } else {
         const patternUsed = template.pattern || masterPattern || "";
-        console.warn(`No matching variant found for ${template.color}/${patternUsed}`);
+        console.log(`\n  ✗ NO MATCH FOUND for ${template.color}/${patternUsed}`);
       }
     }
     
+    console.log("\n========== END matchTemplatesToVariants DEBUG ==========\n");
     return templates;
   } catch (error) {
-    console.error("Error matching templates to variants:", error);
+    console.error("ERROR in matchTemplatesToVariants:", error);
+    console.error("Error details:", JSON.stringify(error, null, 2));
+    console.log("========== END matchTemplatesToVariants DEBUG (WITH ERROR) ==========\n");
     return templates;
   }
 }

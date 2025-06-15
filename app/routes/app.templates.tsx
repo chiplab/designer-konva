@@ -17,7 +17,18 @@ import {
   Banner,
   Button,
   BlockStack,
+  Collapsible,
+  Icon,
+  ButtonGroup,
+  Tabs,
+  InlineStack,
 } from "@shopify/polaris";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  DeleteIcon,
+  RefreshIcon,
+} from "@shopify/polaris-icons";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
@@ -103,6 +114,48 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return json({ 
         success: false, 
         error: error instanceof Error ? error.message : "Failed to delete templates" 
+      }, { status: 500 });
+    }
+  }
+
+  if (action === "deleteAllVariants") {
+    const masterTemplateId = formData.get("masterTemplateId") as string;
+    
+    try {
+      // First verify the master template exists and belongs to this shop
+      const masterTemplate = await db.template.findFirst({
+        where: {
+          id: masterTemplateId,
+          shop: session.shop,
+          isColorVariant: false,
+        },
+      });
+
+      if (!masterTemplate) {
+        return json({ 
+          success: false, 
+          error: "Master template not found or access denied" 
+        }, { status: 404 });
+      }
+
+      // Find and delete all variants of this master template
+      const deleteResult = await db.template.deleteMany({
+        where: {
+          masterTemplateId: masterTemplateId,
+          shop: session.shop,
+          isColorVariant: true,
+        },
+      });
+
+      return json({ 
+        success: true, 
+        message: `Deleted ${deleteResult.count} color variant(s) of "${masterTemplate.name}"` 
+      });
+    } catch (error) {
+      console.error("Error deleting color variants:", error);
+      return json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Failed to delete color variants" 
       }, { status: 500 });
     }
   }
@@ -362,10 +415,23 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     .map(t => t.shopifyProductId!)
   )];
   
-  // Fetch product names from Shopify
-  const productNames: Record<string, string> = {};
+  // Import product mappings
+  const { getSellingProductId } = await import("../config/product-mappings");
   
-  if (productIds.length > 0) {
+  // Fetch product names from Shopify - including mapped selling products
+  const productNames: Record<string, string> = {};
+  const allProductIds = new Set<string>();
+  
+  // Add both source and selling product IDs
+  productIds.forEach(id => {
+    allProductIds.add(id);
+    const sellingId = getSellingProductId(id);
+    if (sellingId !== id) {
+      allProductIds.add(sellingId);
+    }
+  });
+  
+  if (allProductIds.size > 0) {
     try {
       const PRODUCTS_QUERY = `#graphql
         query GetProductNames($ids: [ID!]!) {
@@ -379,7 +445,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       `;
       
       const response = await admin.graphql(PRODUCTS_QUERY, {
-        variables: { ids: productIds }
+        variables: { ids: Array.from(allProductIds) }
       });
       
       const data = await response.json();
@@ -391,16 +457,68 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           }
         });
       }
+      
+      // Map source product names to selling product names if available
+      productIds.forEach(sourceId => {
+        const sellingId = getSellingProductId(sourceId);
+        if (sellingId !== sourceId && productNames[sellingId] && !productNames[sourceId]) {
+          productNames[sourceId] = productNames[sellingId] + " (Source)";
+        }
+      });
     } catch (error) {
       console.error("Error fetching product names:", error);
     }
   }
 
-  return json({ templates, productNames });
+  // Group templates by master template
+  const templateGroups: Record<string, {
+    master: typeof templates[0];
+    variants: typeof templates;
+  }> = {};
+
+  // First, identify all master templates and create groups
+  templates.forEach(template => {
+    if (!template.isColorVariant && template.shopifyProductId) {
+      templateGroups[template.id] = {
+        master: template,
+        variants: []
+      };
+    }
+  });
+
+  // Then, assign variants to their master templates
+  templates.forEach(template => {
+    if (template.isColorVariant && template.masterTemplateId) {
+      if (templateGroups[template.masterTemplateId]) {
+        templateGroups[template.masterTemplateId].variants.push(template);
+      }
+    }
+  });
+
+  // Sort variants within each group by color name
+  Object.values(templateGroups).forEach(group => {
+    group.variants.sort((a, b) => {
+      const colorA = a.colorVariant || '';
+      const colorB = b.colorVariant || '';
+      return colorA.localeCompare(colorB);
+    });
+  });
+
+  // Include standalone templates (no product association) as a separate list
+  const standaloneTemplates = templates.filter(t => 
+    !t.shopifyProductId && !t.isColorVariant
+  );
+
+  return json({ 
+    templates, 
+    templateGroups, 
+    standaloneTemplates,
+    productNames 
+  });
 };
 
 export default function Templates() {
-  const { templates, productNames } = useLoaderData<typeof loader>();
+  const { templates, templateGroups, standaloneTemplates, productNames } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -413,6 +531,10 @@ export default function Templates() {
   const [testRenderResult, setTestRenderResult] = useState<any>(null);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [deleteAllVariantsModalOpen, setDeleteAllVariantsModalOpen] = useState(false);
+  const [masterToDeleteVariants, setMasterToDeleteVariants] = useState<{ id: string; name: string; variantCount: number } | null>(null);
+  const [filter, setFilter] = useState<'all' | 'masters' | 'variants' | 'standalone'>('all');
   const submit = useSubmit();
   const navigate = useNavigate();
   
@@ -528,6 +650,34 @@ export default function Templates() {
     }
     setBulkDeleteModalOpen(false);
   }, [selectedItems, submit]);
+
+  const handleDeleteAllVariants = useCallback((masterId: string, masterName: string, variantCount: number) => {
+    setMasterToDeleteVariants({ id: masterId, name: masterName, variantCount });
+    setDeleteAllVariantsModalOpen(true);
+  }, []);
+
+  const confirmDeleteAllVariants = useCallback(() => {
+    if (masterToDeleteVariants) {
+      const formData = new FormData();
+      formData.append("masterTemplateId", masterToDeleteVariants.id);
+      formData.append("_action", "deleteAllVariants");
+      submit(formData, { method: "post" });
+    }
+    setDeleteAllVariantsModalOpen(false);
+    setMasterToDeleteVariants(null);
+  }, [masterToDeleteVariants, submit]);
+
+  const toggleGroupExpanded = useCallback((groupId: string) => {
+    setExpandedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(groupId)) {
+        newSet.delete(groupId);
+      } else {
+        newSet.add(groupId);
+      }
+      return newSet;
+    });
+  }, []);
 
   const handleSyncPreviews = useCallback((templateId: string) => {
     const formData = new FormData();
@@ -658,103 +808,192 @@ export default function Templates() {
     </EmptyState>
   );
 
-  const bulkActions = [
-    {
-      content: `Delete ${selectedItems.length} template${selectedItems.length === 1 ? '' : 's'}`,
-      destructive: true,
-      onAction: () => setBulkDeleteModalOpen(true),
-    },
-  ];
+  // Color mapping for color chips
+  const colorChips: Record<string, string> = {
+    'red': '🔴',
+    'blue': '🔵',
+    'green': '🟢',
+    'yellow': '🟡',
+    'black': '⚫',
+    'white': '⚪',
+    'purple': '🟣',
+    'orange': '🟠',
+    'pink': '🩷',
+    'brown': '🟤',
+    'grey': '⚪',
+    'gray': '⚪',
+    'light blue': '🩵',
+    'ivory': '🟡',
+  };
 
-  const resourceListMarkup = (
-    <ResourceList
-      resourceName={{ singular: "template", plural: "templates" }}
-      items={templates}
-      selectedItems={selectedItems}
-      onSelectionChange={setSelectedItems}
-      bulkActions={bulkActions}
-      selectable
-      renderItem={(template) => {
-        const { id, name, thumbnail, createdAt, updatedAt, colorVariant, productLayout, isColorVariant, shopifyProductId } = template;
-        const media = thumbnail ? (
-          <Thumbnail
-            source={thumbnail}
-            alt={name}
-            size="large"
-          />
-        ) : (
-          <Thumbnail
-            source="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
-            alt="No preview"
-            size="large"
-          />
-        );
+  const renderTemplateItem = (template: any, isVariant: boolean = false) => {
+    const { id, name, thumbnail, colorVariant, shopifyVariantId, isColorVariant } = template;
+    const media = thumbnail ? (
+      <Thumbnail
+        source={thumbnail}
+        alt={name}
+        size="medium"
+      />
+    ) : (
+      <Thumbnail
+        source="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+        alt="No preview"
+        size="medium"
+      />
+    );
 
-        return (
-          <ResourceItem
-            id={id}
+    const needsAssignment = isColorVariant && !shopifyVariantId;
+
+    return (
+      <div 
+        key={id}
+        style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '12px',
+          padding: '12px',
+          marginLeft: isVariant ? '40px' : '0',
+          backgroundColor: isVariant ? '#f9fafb' : 'transparent',
+          borderRadius: '8px',
+          marginBottom: '4px',
+          border: needsAssignment ? '2px solid #ffcc00' : 'none'
+        }}
+      >
+        {media}
+        <div style={{ flex: 1 }}>
+          <InlineStack gap="200" align="start">
+            <Text variant="bodyMd" as="span">
+              {name}
+            </Text>
+            {colorVariant && (
+              <span>{colorChips[colorVariant.toLowerCase()] || ''} {colorVariant}</span>
+            )}
+            {needsAssignment && (
+              <Badge tone="warning">Unassigned</Badge>
+            )}
+          </InlineStack>
+        </div>
+        <ButtonGroup>
+          <Button
+            size="slim"
             url={`/app/designer?template=${id}`}
-            media={media}
-            accessibilityLabel={`View details for ${name}`}
-            shortcutActions={[
-              {
-                content: "Assign to products",
-                onAction: () => handleAssignTemplate(id),
-              },
-              {
-                content: "Generate variants",
-                onAction: () => handleGenerateColorVariants(id),
-                disabled: template.isColorVariant || !template.shopifyProductId,
-              },
-              {
-                content: "Re-sync preview images",
-                onAction: () => handleSyncPreviews(id),
-              },
-              {
-                content: "Test server render",
-                onAction: () => handleTestRender(id),
-              },
-              {
-                content: "Delete",
-                destructive: true,
-                onAction: () => handleDeleteTemplate(id, name),
-              },
-            ]}
           >
-            <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between" }}>
-              <div>
-                <Text variant="bodyMd" fontWeight="bold" as="h3">
-                  {name}
-                </Text>
-                <div style={{ marginTop: "4px" }}>
-                  {productLayout && (
-                    <Text variant="bodySm" tone="subdued" as="p">
-                      Layout: {productLayout.name}
-                    </Text>
-                  )}
-                  <Text variant="bodySm" tone="subdued" as="p">
-                    Created: {new Date(createdAt).toLocaleDateString()}
-                    {updatedAt !== createdAt && ` • Updated: ${new Date(updatedAt).toLocaleDateString()}`}
+            Edit
+          </Button>
+          <Button
+            size="slim"
+            onClick={() => handleAssignTemplate(id)}
+          >
+            Assign
+          </Button>
+          <Button
+            size="slim"
+            tone="critical"
+            onClick={() => handleDeleteTemplate(id, name)}
+          >
+            Delete
+          </Button>
+        </ButtonGroup>
+      </div>
+    );
+  };
+
+  const groupedTemplatesMarkup = (
+    <BlockStack gap="400">
+      {Object.entries(templateGroups).map(([masterId, group]) => {
+        const isExpanded = expandedGroups.has(masterId);
+        const productName = group.master.shopifyProductId ? 
+          productNames[group.master.shopifyProductId] || 'Unknown Product' : 
+          'No Product';
+        
+        // Count unassigned variants
+        const unassignedVariants = group.variants.filter(v => !v.shopifyVariantId);
+        const hasUnassignedVariants = unassignedVariants.length > 0;
+        
+        return (
+          <Card key={masterId}>
+            <BlockStack gap="300">
+              <InlineStack align="space-between">
+                <InlineStack gap="200" align="center">
+                  <Button
+                    variant="plain"
+                    onClick={() => toggleGroupExpanded(masterId)}
+                    icon={isExpanded ? ChevronDownIcon : ChevronRightIcon}
+                  />
+                  <Text variant="headingMd" as="h3">
+                    {group.master.name}
                   </Text>
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                {colorVariant && (
-                  <Badge tone="success">{colorVariant.charAt(0).toUpperCase() + colorVariant.slice(1)}</Badge>
-                )}
-                {template.isColorVariant ? (
-                  <Badge tone="info">Color Variant</Badge>
-                ) : template.shopifyProductId ? (
                   <Badge tone="warning">Master Template</Badge>
-                ) : (
-                  <Badge tone="info">Template</Badge>
-                )}
-              </div>
-            </div>
-          </ResourceItem>
+                  <Text variant="bodySm" tone="subdued">
+                    ({group.variants.length} variants)
+                  </Text>
+                  {hasUnassignedVariants && (
+                    <Badge tone="critical">
+                      {unassignedVariants.length} unassigned
+                    </Badge>
+                  )}
+                </InlineStack>
+                <ButtonGroup>
+                  <Button
+                    onClick={() => handleGenerateColorVariants(masterId)}
+                    disabled={group.variants.length > 0}
+                  >
+                    Generate variants
+                  </Button>
+                  {group.variants.length > 0 && (
+                    <Button
+                      tone="critical"
+                      onClick={() => handleDeleteAllVariants(masterId, group.master.name, group.variants.length)}
+                    >
+                      Delete all variants
+                    </Button>
+                  )}
+                  <Button
+                    url={`/app/designer?template=${masterId}`}
+                  >
+                    Edit master
+                  </Button>
+                </ButtonGroup>
+              </InlineStack>
+              
+              <Text variant="bodySm" tone="subdued">
+                Product: {productName}
+              </Text>
+              
+              {hasUnassignedVariants && (
+                <Banner tone="warning">
+                  <p>
+                    {unassignedVariants.length} template variant{unassignedVariants.length > 1 ? 's' : ''} not assigned to product variants. 
+                    This usually means the color/pattern matching failed during generation.
+                  </p>
+                </Banner>
+              )}
+
+              {renderTemplateItem(group.master)}
+
+              <Collapsible
+                open={isExpanded}
+                id={`group-${masterId}`}
+                transition={{duration: '150ms', timingFunction: 'ease-in-out'}}
+              >
+                <BlockStack gap="200">
+                  {group.variants.map(variant => renderTemplateItem(variant, true))}
+                </BlockStack>
+              </Collapsible>
+            </BlockStack>
+          </Card>
         );
-      }}
-    />
+      })}
+
+      {standaloneTemplates.length > 0 && (
+        <Card>
+          <BlockStack gap="300">
+            <Text variant="headingMd" as="h3">Standalone Templates</Text>
+            {standaloneTemplates.map(template => renderTemplateItem(template))}
+          </BlockStack>
+        </Card>
+      )}
+    </BlockStack>
   );
 
   return (
@@ -870,9 +1109,13 @@ export default function Templates() {
               </BlockStack>
             </Card>
           )}
-          <Card padding="0" style={{ marginTop: '16px' }}>
-            {templates.length === 0 ? emptyStateMarkup : resourceListMarkup}
-          </Card>
+          {templates.length === 0 ? (
+            <Card padding="0" style={{ marginTop: '16px' }}>
+              {emptyStateMarkup}
+            </Card>
+          ) : (
+            groupedTemplatesMarkup
+          )}
         </Layout.Section>
       </Layout>
       
@@ -1049,6 +1292,38 @@ export default function Templates() {
           </Modal.Section>
         </Modal>
       )}
+      
+      <Modal
+        open={deleteAllVariantsModalOpen}
+        onClose={() => {
+          setDeleteAllVariantsModalOpen(false);
+          setMasterToDeleteVariants(null);
+        }}
+        title="Delete all color variants?"
+        primaryAction={{
+          content: "Delete all variants",
+          destructive: true,
+          onAction: confirmDeleteAllVariants,
+        }}
+        secondaryActions={[
+          {
+            content: "Cancel",
+            onAction: () => {
+              setDeleteAllVariantsModalOpen(false);
+              setMasterToDeleteVariants(null);
+            },
+          },
+        ]}
+      >
+        <Modal.Section>
+          <Text as="p">
+            Are you sure you want to delete all {masterToDeleteVariants?.variantCount} color variants of "{masterToDeleteVariants?.name}"? 
+          </Text>
+          <Text as="p" tone="subdued">
+            This will only delete the color variants, not the master template. This action cannot be undone.
+          </Text>
+        </Modal.Section>
+      </Modal>
     </Page>
   );
 }

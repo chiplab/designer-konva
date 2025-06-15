@@ -13,7 +13,7 @@ import {
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 
-// Simplified query without visibleToStorefrontApi
+// GraphQL query to check if metafield definition exists
 const CHECK_METAFIELD_DEFINITION = `#graphql
   query CheckMetafieldDefinition($namespace: String!, $key: String!, $ownerType: MetafieldOwnerType!) {
     metafieldDefinitions(namespace: $namespace, key: $key, ownerType: $ownerType, first: 1) {
@@ -23,13 +23,14 @@ const CHECK_METAFIELD_DEFINITION = `#graphql
           name
           namespace
           key
+          visibleToStorefrontApi
         }
       }
     }
   }
 `;
 
-// Simplified mutation without visibleToStorefrontApi
+// GraphQL mutation to create metafield definition
 const CREATE_METAFIELD_DEFINITION = `#graphql
   mutation CreateMetafieldDefinition($definition: MetafieldDefinitionInput!) {
     metafieldDefinitionCreate(definition: $definition) {
@@ -41,6 +42,7 @@ const CREATE_METAFIELD_DEFINITION = `#graphql
         type {
           name
         }
+        visibleToStorefrontApi
       }
       userErrors {
         field
@@ -68,11 +70,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const data = await response.json();
     const definition = data.data?.metafieldDefinitions?.edges?.[0]?.node;
     const exists = !!definition;
+    const hasStorefrontVisibility = definition?.visibleToStorefrontApi || false;
     
-    return json({ exists });
+    return json({ exists, hasStorefrontVisibility });
   } catch (error) {
     console.error("Error checking metafield:", error);
-    return json({ exists: false });
+    return json({ exists: false, hasStorefrontVisibility: false });
   }
 };
 
@@ -100,7 +103,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         error: "Metafield definition already exists. You can now assign templates to product variants." 
       });
     }
-    
     const response = await admin.graphql(
       CREATE_METAFIELD_DEFINITION,
       {
@@ -112,7 +114,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             description: "ID of the designer template associated with this product variant",
             type: "single_line_text_field",
             ownerType: "PRODUCTVARIANT",
-            validations: []
+            validations: [],
+            visibleToStorefrontApi: true
           }
         }
       }
@@ -135,7 +138,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     console.error("Error creating metafield definition:", error);
     return json({ 
       success: false, 
-      error: error instanceof Error ? error.message : "Failed to create metafield definition" 
+      error: "Failed to create metafield definition" 
     }, { status: 500 });
   }
 };
@@ -167,23 +170,21 @@ export default function MetafieldSetup() {
                 <Text as="p">• Key: <strong>template_id</strong></Text>
                 <Text as="p">• Type: <strong>Single line text</strong></Text>
                 <Text as="p">• Owner: <strong>Product Variant</strong></Text>
+                <Text as="p">• Storefront Access: <strong>Enabled</strong></Text>
               </BlockStack>
               
               <Banner tone="info">
                 <p>
-                  After creating the metafield definition, you'll need to:
+                  Once created, you'll be able to see and edit this metafield 
+                  directly in the Shopify admin when viewing product variants.
+                  It will also be accessible in your theme and storefront.
                 </p>
-                <ol>
-                  <li>Go to Settings → Custom data → Product variants in your Shopify admin</li>
-                  <li>Find the "Designer Template ID" metafield</li>
-                  <li>Enable "Storefront access" if you want it to work in themes</li>
-                </ol>
               </Banner>
               
               {actionData?.success && (
                 <Banner tone="success">
                   <p>Metafield definition created successfully!</p>
-                  <p>Remember to enable "Storefront access" in the Shopify admin for the metafield to work in themes.</p>
+                  <p>You can now assign templates to product variants.</p>
                 </Banner>
               )}
               
@@ -203,10 +204,18 @@ export default function MetafieldSetup() {
               )}
               
               {loaderData?.exists ? (
-                <Banner tone="success">
-                  <p>Metafield definition already exists!</p>
-                  <p>Make sure "Storefront access" is enabled in Settings → Custom data → Product variants.</p>
-                </Banner>
+                loaderData.hasStorefrontVisibility ? (
+                  <Banner tone="success">
+                    <p>Metafield definition already exists with storefront visibility!</p>
+                    <p>You can now assign templates to product variants from the Templates page.</p>
+                  </Banner>
+                ) : (
+                  <Banner tone="warning">
+                    <p>Metafield definition exists but does not have storefront visibility enabled.</p>
+                    <p>The product customizer on your storefront may not work properly.</p>
+                    <p>You may need to manually update the metafield definition in your Shopify admin to enable "Storefront access".</p>
+                  </Banner>
+                )
               ) : (
                 <Form method="post">
                   <Button

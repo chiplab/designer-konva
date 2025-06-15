@@ -21,6 +21,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run prisma` - Access Prisma CLI directly
 - Prisma migrations are handled automatically during `npm run dev`
 - For production: `npm run setup` handles both `prisma generate` and `prisma migrate deploy`
+- **Database Access**: PostgreSQL via AWS RDS, accessed through SSH tunnel on localhost:5432
+- **RDS Tunnel**: Use `npm run db:tunnel` or `./scripts/rds-tunnel.sh` to establish SSH tunnel
+- **Database Studio**: Use `npm run db:studio` to open Prisma Studio UI
 
 ## Architecture Overview
 
@@ -28,7 +31,7 @@ See `VISION.md` for the complete product vision and architecture roadmap for bui
 
 ### Tech Stack
 - **Framework**: Remix (React-based full-stack framework)
-- **Database**: SQLite with Prisma ORM (easily configurable for other databases)
+- **Database**: PostgreSQL with Prisma ORM (AWS RDS hosted, accessed via localhost:5432 tunnel)
 - **UI**: Shopify Polaris components + App Bridge for embedded Shopify admin integration
 - **API**: Shopify Admin GraphQL API (January 2025 version)
 - **Authentication**: Shopify App OAuth with session storage via Prisma

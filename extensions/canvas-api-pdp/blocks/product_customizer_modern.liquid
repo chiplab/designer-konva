@@ -3,13 +3,82 @@
   This block integrates with the new Horizons 2025 themes
 {% endcomment %}
 
-{% if product.selected_or_first_available_variant.metafields.custom_designer.template_id %}
+{% comment %} Debug output - checking metafield access {% endcomment %}
+<div style="background: #f0f0f0; padding: 10px; margin: 10px 0; border: 1px solid #ccc; font-family: monospace; font-size: 12px;">
+  <p><strong>Metafield Debug (Block File):</strong></p>
+  <p>Product ID: {{ product.id }}</p>
+  <p>Variant ID: {{ product.selected_or_first_available_variant.id }}</p>
+  
+  {% comment %} Try multiple ways to access the metafield {% endcomment %}
+  <p><strong>Method 1 - Direct access:</strong></p>
+  <p>custom_designer.template_id = {{ product.selected_or_first_available_variant.metafields.custom_designer.template_id | default: "NOT FOUND" }}</p>
+  
+  <p><strong>Method 2 - With .value:</strong></p>
+  <p>custom_designer.template_id.value = {{ product.selected_or_first_available_variant.metafields.custom_designer.template_id.value | default: "NOT FOUND" }}</p>
+  
+  <p><strong>Method 3 - Square brackets:</strong></p>
+  <p>['custom_designer']['template_id'] = {{ product.selected_or_first_available_variant.metafields['custom_designer']['template_id'] | default: "NOT FOUND" }}</p>
+  
+  <p><strong>Method 4 - Metafield singular:</strong></p>
+  <p>metafield.custom_designer.template_id = {{ product.selected_or_first_available_variant.metafield.custom_designer.template_id | default: "NOT FOUND" }}</p>
+  
+  <p><strong>Method 5 - Global metafields object:</strong></p>
+  <p>shop.metafields.custom_designer.template_id = {{ shop.metafields.custom_designer.template_id | default: "NOT FOUND" }}</p>
+  
+  <p><strong>Method 6 - Variant loop metafield access:</strong></p>
+  {% assign current_variant = product.selected_or_first_available_variant %}
+  {% for variant in product.variants %}
+    {% if variant.id == current_variant.id %}
+      <p>Found variant {{ variant.id }}: metafields.custom_designer.template_id = {{ variant.metafields.custom_designer.template_id | default: "NOT FOUND" }}</p>
+    {% endif %}
+  {% endfor %}
+  
+  <p><strong>All assigned variants (checking which have templates):</strong></p>
+  {% for variant in product.variants %}
+    {% if variant.metafields.custom_designer.template_id %}
+      <p style="color: green;">✓ Variant {{ variant.id }} ({{ variant.title }}) HAS template: {{ variant.metafields.custom_designer.template_id }}</p>
+    {% elsif variant.metafields.custom_designer.template_id.value %}
+      <p style="color: green;">✓ Variant {{ variant.id }} ({{ variant.title }}) HAS template (via .value): {{ variant.metafields.custom_designer.template_id.value }}</p>
+    {% else %}
+      <p style="color: red;">✗ Variant {{ variant.id }} ({{ variant.title }}) has NO template</p>
+    {% endif %}
+  {% endfor %}
+  
+  <p><strong>Current variant details:</strong></p>
+  <p>Title: <span id="debug-variant-title">{{ product.selected_or_first_available_variant.title }}</span></p>
+  <p>Available: <span id="debug-variant-available">{{ product.selected_or_first_available_variant.available }}</span></p>
+  
+  <p><strong>Template ID Resolution:</strong></p>
+  <p>Selected variant ID: <span id="debug-selected-variant">{{ selected_variant_id }}</span></p>
+  <p>Found template ID: <span id="debug-found-template">{{ template_id | default: "NOT FOUND" }}</span></p>
+  
+  <p><strong>Script Version:</strong> v5 (with dynamic updates)</p>
+  <p><strong>Current Time:</strong> <span id="debug-time">Loading...</span></p>
+  <p><strong>Variant Changes Detected:</strong> <span id="debug-variant-changes">0</span></p>
+  <p><strong>Last Variant ID:</strong> <span id="debug-last-variant">None</span></p>
+  <p><strong>Button State:</strong> <span id="debug-button-state">Checking...</span></p>
+</div>
+
+{% comment %} Find the template ID for the selected variant {% endcomment %}
+{% assign selected_variant_id = product.selected_or_first_available_variant.id %}
+{% assign template_id = null %}
+{% for variant in product.variants %}
+  {% if variant.id == selected_variant_id %}
+    {% if variant.metafields.custom_designer.template_id %}
+      {% assign template_id = variant.metafields.custom_designer.template_id %}
+    {% elsif variant.metafields.custom_designer.template_id.value %}
+      {% assign template_id = variant.metafields.custom_designer.template_id.value %}
+    {% endif %}
+  {% endif %}
+{% endfor %}
+
+{% if template_id %}
   <div class="product-customizer-wrapper" data-product-customizer>
     <button 
       id="customize-product-btn" 
       class="product-customizer-button button button--secondary"
       data-variant-id="{{ product.selected_or_first_available_variant.id }}"
-      data-template-id="{{ product.selected_or_first_available_variant.metafields.custom_designer.template_id }}"
+      data-template-id="{{ template_id }}"
     >
       <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" class="icon icon--edit">
         <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/>
@@ -23,9 +92,44 @@
   <script src="{{ 'product-customizer-modal.js' | asset_url }}" defer></script>
   
   <script>
+    // Update debug info
+    let variantChangeCount = 0;
+    
     document.addEventListener('DOMContentLoaded', function() {
+      // Update debug elements
+      const debugTime = document.getElementById('debug-time');
+      const debugChanges = document.getElementById('debug-variant-changes');
+      const debugLastVariant = document.getElementById('debug-last-variant');
+      const debugButtonState = document.getElementById('debug-button-state');
+      const debugVariantTitle = document.getElementById('debug-variant-title');
+      const debugVariantAvailable = document.getElementById('debug-variant-available');
+      const debugSelectedVariant = document.getElementById('debug-selected-variant');
+      const debugFoundTemplate = document.getElementById('debug-found-template');
+      
+      // Create a map of variant data
+      const variantData = {
+        {% for variant in product.variants %}
+          '{{ variant.id }}': {
+            title: '{{ variant.title }}',
+            available: {{ variant.available }},
+            templateId: {% if variant.metafields.custom_designer.template_id %}'{{ variant.metafields.custom_designer.template_id }}'{% else %}null{% endif %}
+          }{% unless forloop.last %},{% endunless %}
+        {% endfor %}
+      };
+      
+      if (debugTime) {
+        debugTime.textContent = new Date().toLocaleTimeString();
+      }
+      
       const customizeBtn = document.getElementById('customize-product-btn');
-      if (!customizeBtn) return;
+      if (!customizeBtn) {
+        if (debugButtonState) debugButtonState.textContent = 'Button not found';
+        return;
+      }
+      
+      if (debugButtonState) {
+        debugButtonState.textContent = customizeBtn.parentElement.style.display === 'none' ? 'Hidden' : 'Visible';
+      }
       
       // Get the variant's featured image if available
       let productImageUrl = null;
@@ -100,6 +204,87 @@
         customizeBtn.addEventListener('click', function(e) {
           e.preventDefault();
           customizer.open();
+        });
+        
+        // Function to handle variant changes
+        function handleVariantChange(variantId) {
+          variantChangeCount++;
+          
+          // Update debug display
+          if (debugChanges) debugChanges.textContent = variantChangeCount;
+          if (debugLastVariant) debugLastVariant.textContent = variantId || 'None';
+          
+          // Update variant info in debug
+          const variant = variantData[variantId];
+          if (variant) {
+            if (debugVariantTitle) debugVariantTitle.textContent = variant.title;
+            if (debugVariantAvailable) debugVariantAvailable.textContent = variant.available;
+            if (debugSelectedVariant) debugSelectedVariant.textContent = variantId;
+            if (debugFoundTemplate) debugFoundTemplate.textContent = variant.templateId || 'NOT FOUND';
+          }
+          
+          if (!variantId) return;
+          
+          // Find template ID for this variant from the variants data
+          let templateId = null;
+          {% for variant in product.variants %}
+            if ('{{ variant.id }}' === String(variantId)) {
+              {% if variant.metafields.custom_designer.template_id %}
+                templateId = '{{ variant.metafields.custom_designer.template_id }}';
+              {% elsif variant.metafields.custom_designer.template_id.value %}
+                templateId = '{{ variant.metafields.custom_designer.template_id.value }}';
+              {% endif %}
+            }
+          {% endfor %}
+          
+          if (templateId) {
+            // Update button with new variant data
+            customizeBtn.dataset.variantId = variantId;
+            customizeBtn.dataset.templateId = templateId;
+            customizeBtn.parentElement.style.display = 'block';
+            if (debugButtonState) debugButtonState.textContent = 'Visible (has template: ' + templateId + ')';
+            
+            // Update customizer options
+            customizer.options.variantId = variantId;
+            customizer.options.templateId = templateId;
+          } else {
+            // Hide button if variant has no template
+            customizeBtn.parentElement.style.display = 'none';
+            if (debugButtonState) debugButtonState.textContent = 'Hidden (no template)';
+          }
+        }
+        
+        // Listen for variant changes - try multiple event patterns
+        // Modern themes
+        document.addEventListener('variant:change', function(event) {
+          if (event.detail && event.detail.variant) {
+            handleVariantChange(event.detail.variant.id);
+          }
+        });
+        
+        // Some themes use this pattern
+        document.addEventListener('variantChange', function(event) {
+          if (event.detail && event.detail.variant) {
+            handleVariantChange(event.detail.variant.id);
+          }
+        });
+        
+        // Horizons themes might use URL changes
+        let lastVariantId = '{{ product.selected_or_first_available_variant.id }}';
+        setInterval(function() {
+          const urlParams = new URLSearchParams(window.location.search);
+          const currentVariantId = urlParams.get('variant');
+          if (currentVariantId && currentVariantId !== lastVariantId) {
+            lastVariantId = currentVariantId;
+            handleVariantChange(currentVariantId);
+          }
+        }, 500);
+        
+        // Also listen for form changes on variant selectors
+        document.querySelectorAll('[name="id"], [name="variant"]').forEach(function(selector) {
+          selector.addEventListener('change', function(event) {
+            handleVariantChange(event.target.value);
+          });
         });
       }
       

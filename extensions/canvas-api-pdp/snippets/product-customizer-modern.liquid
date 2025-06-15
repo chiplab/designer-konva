@@ -4,6 +4,39 @@
   Optimized for Horizons 2025 themes (like Tinker) while maintaining legacy support
 {% endcomment %}
 
+{% comment %} Debug output - checking metafield access {% endcomment %}
+<div style="background: #f0f0f0; padding: 10px; margin: 10px 0; border: 1px solid #ccc; font-family: monospace; font-size: 12px;">
+  <p><strong>Metafield Debug:</strong></p>
+  <p>Product ID: {{ product.id }}</p>
+  <p>Variant ID: {{ product.selected_or_first_available_variant.id }}</p>
+  
+  {% comment %} Try multiple ways to access the metafield {% endcomment %}
+  <p><strong>Method 1 - Direct access:</strong></p>
+  <p>custom_designer.template_id = {{ product.selected_or_first_available_variant.metafields.custom_designer.template_id | default: "NOT FOUND" }}</p>
+  
+  <p><strong>Method 2 - With .value:</strong></p>
+  <p>custom_designer.template_id.value = {{ product.selected_or_first_available_variant.metafields.custom_designer.template_id.value | default: "NOT FOUND" }}</p>
+  
+  <p><strong>Method 3 - Square brackets:</strong></p>
+  <p>['custom_designer']['template_id'] = {{ product.selected_or_first_available_variant.metafields['custom_designer']['template_id'] | default: "NOT FOUND" }}</p>
+  
+  <p><strong>Method 4 - Metafield singular:</strong></p>
+  <p>metafield.custom_designer.template_id = {{ product.selected_or_first_available_variant.metafield.custom_designer.template_id | default: "NOT FOUND" }}</p>
+  
+  <p><strong>All assigned variants (checking which have templates):</strong></p>
+  {% for variant in product.variants %}
+    {% if variant.metafields.custom_designer.template_id %}
+      <p style="color: green;">✓ Variant {{ variant.id }} ({{ variant.title }}) HAS template: {{ variant.metafields.custom_designer.template_id }}</p>
+    {% else %}
+      <p style="color: red;">✗ Variant {{ variant.id }} ({{ variant.title }}) has NO template</p>
+    {% endif %}
+  {% endfor %}
+  
+  <p><strong>Current variant details:</strong></p>
+  <p>Title: {{ product.selected_or_first_available_variant.title }}</p>
+  <p>Available: {{ product.selected_or_first_available_variant.available }}</p>
+</div>
+
 {% if product.selected_or_first_available_variant.metafields.custom_designer.template_id %}
   <div class="product-customizer-container" data-product-customizer>
     <button 
