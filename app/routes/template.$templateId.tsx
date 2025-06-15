@@ -1,8 +1,9 @@
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import prisma from "../db.server";
 
-// This route handles app proxy requests from the theme
-// URL pattern: /apps/designer/api/template/:templateId
+// This route handles app proxy requests from the theme extension
+// Storefront URL: /apps/designer/template/:templateId
+// Proxied to: /template/:templateId
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { templateId } = params;
   
@@ -12,12 +13,6 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
                url.searchParams.get('shop') ||
                'printlabs-app-dev.myshopify.com'; // Fallback for testing
   
-  console.log('App proxy request:', {
-    templateId,
-    shop,
-    headers: Object.fromEntries(request.headers.entries()),
-    url: request.url
-  });
   
   if (!shop || !templateId) {
     return json({ error: "Missing required parameters", shop, templateId }, { status: 400 });
@@ -38,13 +33,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     // Parse the canvas data
     const canvasData = JSON.parse(template.canvasData);
     
-    // Return template data optimized for canvas renderer
+    // Return template data in the format expected by canvas-text-renderer.js
     return json({
       template: {
         id: template.id,
         name: template.name,
         dimensions: canvasData.dimensions,
         backgroundColor: canvasData.backgroundColor,
+        backgroundGradient: canvasData.backgroundGradient,
         designableArea: canvasData.designableArea,
         elements: canvasData.elements,
         assets: canvasData.assets

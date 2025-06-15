@@ -69,12 +69,16 @@ See `VISION.md` for the complete product vision and architecture roadmap for bui
 - `app.templates.tsx` - Template management (list, assign to products)
 - `app.product-bindings.tsx` - View template-variant associations
 - `app.metafield-setup.tsx` - One-time metafield configuration
-- `api.templates.*.tsx` - Template CRUD operations
-- `api.assets.*.tsx` - Asset upload and management endpoints
-- `api.customizer.$.tsx` - Full-screen designer resource route
-- `proxy.designer.tsx` - Standalone designer (accessed via app proxy)
+- `api.templates.*.tsx` - Template CRUD operations (save, load, generate variants)
+- `api.assets.upload.tsx` - Asset upload endpoint
+- `api.test-template-render.tsx` - Server-side template rendering for testing
 - `auth.*.tsx` - Authentication flow handling
 - `webhooks.*.tsx` - Webhook endpoints for app lifecycle events
+
+**Note**: Several unused API routes have been removed to simplify the codebase:
+- Removed `api.customizer.$.tsx` (unused full-screen designer route)
+- Removed `api.assets.$.tsx` (replaced by direct S3 URLs)
+- Removed other legacy/unused API endpoints
 
 ### Important Notes
 - Uses modern Remix v2 features with Vite bundler
@@ -389,6 +393,8 @@ The system includes a fully functional theme extension for product customization
    - **Position-aware slide-out panel**: Detects product info section and slides over it
    - **Smart positioning**: On desktop, covers only the product title/description area
    - **Product image integration**: Replaces main product image with live preview
+   - **Dynamic variant loading**: Loads the correct template for the selected variant
+   - **Variant image updates**: Updates product images when switching variants
    - **Simplified customization**: Text-only editing for quick personalization
    - **Advanced editor link**: Button to open full designer for complex edits
    - **Responsive design**: Full-screen on mobile, contained overlay on desktop
@@ -396,6 +402,8 @@ The system includes a fully functional theme extension for product customization
 3. **Canvas Text Renderer** (`extensions/canvas-api-pdp/assets/canvas-text-renderer.js`):
    - Lightweight Konva-based renderer for text customization
    - Loads templates via API and allows text updates
+   - Supports background gradients from template data
+   - Handles bold text weights correctly (fontStyle: 'bold' for Konva)
    - Generates preview images for cart line items
 
 ### Product Customizer Modal Features
@@ -403,9 +411,13 @@ The system includes a fully functional theme extension for product customization
 The modal provides a streamlined customization experience:
 - **Automatic preview updates**: Shows variant's synced template thumbnail
 - **Live product image replacement**: Updates main product image during customization
+- **Variant-aware templates**: Loads the correct template for each product variant
+- **Dynamic image switching**: Updates all product images when variant changes
 - **Text-only interface**: Simple text inputs for each editable element
 - **Add to cart integration**: Saves customization data as line item properties
 - **Position detection**: Automatically positions over product info section
+- **Gradient background support**: Renders template background gradients correctly
+- **Bold text rendering**: Properly handles bold fonts in canvas renderer
 
 ### Implementation Notes
 
@@ -851,3 +863,30 @@ const COLORS = [
 - Color replacement is position-based, not value-based, ensuring consistent swapping
 - Templates track their lineage via masterTemplateId
 - Server-side rendering (`api.test-template-render.tsx`) supports all color features
+
+## Best Practices and Patterns
+
+### Route Cleanup and Organization
+- Keep API routes focused and single-purpose
+- Remove unused routes to reduce codebase complexity
+- Use descriptive route names that clearly indicate their function
+- Avoid duplicate or overlapping functionality across routes
+
+### Product Customizer Implementation
+1. **Variant-Specific Templates**: Always load the template for the currently selected variant
+2. **Dynamic Updates**: Update UI elements (images, previews) when variants change
+3. **Background Gradients**: Use template data for gradients, not hardcoded values
+4. **Font Rendering**: Use `fontStyle: 'bold'` for Konva.js (not `fontWeight`)
+5. **Error Handling**: Gracefully handle missing templates or failed loads
+
+### Code Quality
+- Remove debug code and console.logs before committing
+- Use proper error boundaries and fallbacks
+- Maintain consistent patterns across similar components
+- Document complex logic with inline comments
+
+# important-instruction-reminders
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.

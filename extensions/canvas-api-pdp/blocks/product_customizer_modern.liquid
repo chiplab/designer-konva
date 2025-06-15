@@ -3,61 +3,6 @@
   This block integrates with the new Horizons 2025 themes
 {% endcomment %}
 
-{% comment %} Debug output - checking metafield access {% endcomment %}
-<div style="background: #f0f0f0; padding: 10px; margin: 10px 0; border: 1px solid #ccc; font-family: monospace; font-size: 12px;">
-  <p><strong>Metafield Debug (Block File):</strong></p>
-  <p>Product ID: {{ product.id }}</p>
-  <p>Variant ID: {{ product.selected_or_first_available_variant.id }}</p>
-  
-  {% comment %} Try multiple ways to access the metafield {% endcomment %}
-  <p><strong>Method 1 - Direct access:</strong></p>
-  <p>custom_designer.template_id = {{ product.selected_or_first_available_variant.metafields.custom_designer.template_id | default: "NOT FOUND" }}</p>
-  
-  <p><strong>Method 2 - With .value:</strong></p>
-  <p>custom_designer.template_id.value = {{ product.selected_or_first_available_variant.metafields.custom_designer.template_id.value | default: "NOT FOUND" }}</p>
-  
-  <p><strong>Method 3 - Square brackets:</strong></p>
-  <p>['custom_designer']['template_id'] = {{ product.selected_or_first_available_variant.metafields['custom_designer']['template_id'] | default: "NOT FOUND" }}</p>
-  
-  <p><strong>Method 4 - Metafield singular:</strong></p>
-  <p>metafield.custom_designer.template_id = {{ product.selected_or_first_available_variant.metafield.custom_designer.template_id | default: "NOT FOUND" }}</p>
-  
-  <p><strong>Method 5 - Global metafields object:</strong></p>
-  <p>shop.metafields.custom_designer.template_id = {{ shop.metafields.custom_designer.template_id | default: "NOT FOUND" }}</p>
-  
-  <p><strong>Method 6 - Variant loop metafield access:</strong></p>
-  {% assign current_variant = product.selected_or_first_available_variant %}
-  {% for variant in product.variants %}
-    {% if variant.id == current_variant.id %}
-      <p>Found variant {{ variant.id }}: metafields.custom_designer.template_id = {{ variant.metafields.custom_designer.template_id | default: "NOT FOUND" }}</p>
-    {% endif %}
-  {% endfor %}
-  
-  <p><strong>All assigned variants (checking which have templates):</strong></p>
-  {% for variant in product.variants %}
-    {% if variant.metafields.custom_designer.template_id %}
-      <p style="color: green;">✓ Variant {{ variant.id }} ({{ variant.title }}) HAS template: {{ variant.metafields.custom_designer.template_id }}</p>
-    {% elsif variant.metafields.custom_designer.template_id.value %}
-      <p style="color: green;">✓ Variant {{ variant.id }} ({{ variant.title }}) HAS template (via .value): {{ variant.metafields.custom_designer.template_id.value }}</p>
-    {% else %}
-      <p style="color: red;">✗ Variant {{ variant.id }} ({{ variant.title }}) has NO template</p>
-    {% endif %}
-  {% endfor %}
-  
-  <p><strong>Current variant details:</strong></p>
-  <p>Title: <span id="debug-variant-title">{{ product.selected_or_first_available_variant.title }}</span></p>
-  <p>Available: <span id="debug-variant-available">{{ product.selected_or_first_available_variant.available }}</span></p>
-  
-  <p><strong>Template ID Resolution:</strong></p>
-  <p>Selected variant ID: <span id="debug-selected-variant">{{ selected_variant_id }}</span></p>
-  <p>Found template ID: <span id="debug-found-template">{{ template_id | default: "NOT FOUND" }}</span></p>
-  
-  <p><strong>Script Version:</strong> v5 (with dynamic updates)</p>
-  <p><strong>Current Time:</strong> <span id="debug-time">Loading...</span></p>
-  <p><strong>Variant Changes Detected:</strong> <span id="debug-variant-changes">0</span></p>
-  <p><strong>Last Variant ID:</strong> <span id="debug-last-variant">None</span></p>
-  <p><strong>Button State:</strong> <span id="debug-button-state">Checking...</span></p>
-</div>
 
 {% comment %} Find the template ID for the selected variant {% endcomment %}
 {% assign selected_variant_id = product.selected_or_first_available_variant.id %}
@@ -92,20 +37,9 @@
   <script src="{{ 'product-customizer-modal.js' | asset_url }}" defer></script>
   
   <script>
-    // Update debug info
     let variantChangeCount = 0;
     
     document.addEventListener('DOMContentLoaded', function() {
-      // Update debug elements
-      const debugTime = document.getElementById('debug-time');
-      const debugChanges = document.getElementById('debug-variant-changes');
-      const debugLastVariant = document.getElementById('debug-last-variant');
-      const debugButtonState = document.getElementById('debug-button-state');
-      const debugVariantTitle = document.getElementById('debug-variant-title');
-      const debugVariantAvailable = document.getElementById('debug-variant-available');
-      const debugSelectedVariant = document.getElementById('debug-selected-variant');
-      const debugFoundTemplate = document.getElementById('debug-found-template');
-      
       // Create a map of variant data
       const variantData = {
         {% for variant in product.variants %}
@@ -117,27 +51,20 @@
         {% endfor %}
       };
       
-      if (debugTime) {
-        debugTime.textContent = new Date().toLocaleTimeString();
-      }
-      
       const customizeBtn = document.getElementById('customize-product-btn');
       if (!customizeBtn) {
-        if (debugButtonState) debugButtonState.textContent = 'Button not found';
         return;
       }
       
-      if (debugButtonState) {
-        debugButtonState.textContent = customizeBtn.parentElement.style.display === 'none' ? 'Hidden' : 'Visible';
-      }
+      // Store all variant images for dynamic updates
+      const variantImages = {
+        {% for variant in product.variants %}
+          '{{ variant.id }}': {% if variant.featured_image %}'{{ variant.featured_image | image_url: width: 1000 }}'{% else %}null{% endif %}{% unless forloop.last %},{% endunless %}
+        {% endfor %}
+      };
       
-      // Get the variant's featured image if available
-      let productImageUrl = null;
-      {% if product.selected_or_first_available_variant.featured_image %}
-        productImageUrl = '{{ product.selected_or_first_available_variant.featured_image | image_url: width: 1000 }}';
-      {% elsif product.featured_image %}
-        productImageUrl = '{{ product.featured_image | image_url: width: 1000 }}';
-      {% endif %}
+      // Get the initial variant's featured image
+      let productImageUrl = variantImages['{{ product.selected_or_first_available_variant.id }}'] || '{{ product.featured_image | image_url: width: 1000 }}';
       
       // Wait for modal script to load
       function initializeWhenReady() {
@@ -210,19 +137,6 @@
         function handleVariantChange(variantId) {
           variantChangeCount++;
           
-          // Update debug display
-          if (debugChanges) debugChanges.textContent = variantChangeCount;
-          if (debugLastVariant) debugLastVariant.textContent = variantId || 'None';
-          
-          // Update variant info in debug
-          const variant = variantData[variantId];
-          if (variant) {
-            if (debugVariantTitle) debugVariantTitle.textContent = variant.title;
-            if (debugVariantAvailable) debugVariantAvailable.textContent = variant.available;
-            if (debugSelectedVariant) debugSelectedVariant.textContent = variantId;
-            if (debugFoundTemplate) debugFoundTemplate.textContent = variant.templateId || 'NOT FOUND';
-          }
-          
           if (!variantId) return;
           
           // Find template ID for this variant from the variants data
@@ -242,15 +156,17 @@
             customizeBtn.dataset.variantId = variantId;
             customizeBtn.dataset.templateId = templateId;
             customizeBtn.parentElement.style.display = 'block';
-            if (debugButtonState) debugButtonState.textContent = 'Visible (has template: ' + templateId + ')';
+            
+            // Update the product image URL for this variant
+            productImageUrl = variantImages[variantId] || productImageUrl;
             
             // Update customizer options
             customizer.options.variantId = variantId;
             customizer.options.templateId = templateId;
+            customizer.options.productImageUrl = productImageUrl;
           } else {
             // Hide button if variant has no template
             customizeBtn.parentElement.style.display = 'none';
-            if (debugButtonState) debugButtonState.textContent = 'Hidden (no template)';
           }
         }
         
