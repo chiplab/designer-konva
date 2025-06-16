@@ -223,7 +223,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     try {
       // Create a job for syncing thumbnails for a specific product
       const { createJob } = await import("../services/job-queue.server");
-      const { processJob } = await import("../services/job-processor.server");
+      const { processJob } = await import("../services/job-processor-fixed.server");
       
       const job = await createJob(
         session.shop,
@@ -258,7 +258,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     try {
       // Create a job for syncing all thumbnails
       const { createJob } = await import("../services/job-queue.server");
-      const { processJob } = await import("../services/job-processor.server");
+      const { processJob } = await import("../services/job-processor-fixed.server");
       
       const job = await createJob(
         session.shop,

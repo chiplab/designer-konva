@@ -2,7 +2,7 @@ import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { createJob } from "../services/job-queue.server";
-import { processJob } from "../services/job-processor.server";
+import { processJob } from "../services/job-processor-fixed.server";
 import db from "../db.server";
 
 export async function action({ request }: ActionFunctionArgs) {

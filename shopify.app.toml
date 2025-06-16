@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://furniture-payments-fixtures-volvo.trycloudflare.com"
+application_url = "https://notes-during-respondent-introduce.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://furniture-payments-fixtures-volvo.trycloudflare.com/auth/callback",
-  "https://furniture-payments-fixtures-volvo.trycloudflare.com/auth/shopify/callback",
-  "https://furniture-payments-fixtures-volvo.trycloudflare.com/api/auth/callback"
+  "https://notes-during-respondent-introduce.trycloudflare.com/auth/callback",
+  "https://notes-during-respondent-introduce.trycloudflare.com/auth/shopify/callback",
+  "https://notes-during-respondent-introduce.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://furniture-payments-fixtures-volvo.trycloudflare.com"
+url = "https://notes-during-respondent-introduce.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 
