@@ -607,13 +607,13 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
           isColorVariant: true,
           // Legacy fields
           productLayoutId: masterTemplate.productLayoutId,
-          colorVariant: combination.color, // Use the actual color name, not chipColor
+          colorVariant: targetColor.chipColor, // Use chipColor for database consistency
         },
       });
       
       createdTemplates.push({
         id: newTemplate.id,
-        color: combination.color,
+        color: combination.color, // Keep original Shopify color for matching
         pattern: combination.pattern,
       });
       

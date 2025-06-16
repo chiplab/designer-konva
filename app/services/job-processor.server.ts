@@ -118,6 +118,10 @@ export async function processGenerateVariantsJob(
         masterPattern
       );
       
+      // Log how many templates got matched
+      const matchedCount = templatesWithImages.filter(t => t.variantImage).length;
+      console.log(`Job ${jobId}: Matched ${matchedCount} out of ${templatesWithImages.length} templates to variants`);
+      
       console.log(`Job ${jobId}: ========== END VARIANT MATCHING SECTION ==========\n`);
     }
     
@@ -125,17 +129,22 @@ export async function processGenerateVariantsJob(
     const BATCH_SIZE = 5;
     let processedCount = createdTemplates.length;
     
+    console.log(`Job ${jobId}: Starting batch processing of ${templatesWithImages.length} templates`);
+    
     for (let i = 0; i < templatesWithImages.length; i += BATCH_SIZE) {
       const batch = templatesWithImages.slice(i, i + BATCH_SIZE);
       console.log(`Job ${jobId}: Processing batch ${Math.floor(i/BATCH_SIZE) + 1} of ${Math.ceil(templatesWithImages.length/BATCH_SIZE)}`);
       
       await Promise.all(batch.map(async (createdTemplate) => {
         try {
+          console.log(`Job ${jobId}: Processing template ${createdTemplate.id} (${createdTemplate.color}/${createdTemplate.pattern || 'no pattern'})`);
+          
           const dbTemplate = await db.template.findUnique({
             where: { id: createdTemplate.id }
           });
           
           if (dbTemplate) {
+            console.log(`Job ${jobId}: Fetched template from DB - shopifyVariantId: ${dbTemplate.shopifyVariantId}`);
             let canvasData = JSON.parse(dbTemplate.canvasData);
             let updates: any = {};
             
@@ -175,16 +184,18 @@ export async function processGenerateVariantsJob(
             }
             
             // Bind template to variant - do this AFTER updates are saved
-            const finalTemplate = updates.shopifyVariantId || dbTemplate.shopifyVariantId;
-            if (finalTemplate) {
+            const variantId = dbTemplate.shopifyVariantId;
+            console.log(`Job ${jobId}: Template ${createdTemplate.id} has shopifyVariantId: ${variantId}`);
+            
+            if (variantId) {
               try {
                 // Set metafield to bind template to variant
-                console.log(`Job ${jobId}: Setting metafield for template ${createdTemplate.id} to variant ${finalTemplate}...`);
+                console.log(`Job ${jobId}: Setting metafield for template ${createdTemplate.id} to variant ${variantId}...`);
                 
                 const metafieldResponse = await admin.graphql(METAFIELD_SET_MUTATION, {
                   variables: {
                     metafields: [{
-                      ownerId: finalTemplate,
+                      ownerId: variantId,
                       namespace: "custom_designer",
                       key: "template_id",
                       value: createdTemplate.id,
@@ -197,8 +208,13 @@ export async function processGenerateVariantsJob(
                 
                 if (metafieldResult.data?.metafieldsSet?.userErrors?.length > 0) {
                   console.error(`Job ${jobId}: Failed to set metafield:`, metafieldResult.data.metafieldsSet.userErrors);
-                } else {
+                  console.error(`Job ${jobId}: Metafield mutation full response:`, JSON.stringify(metafieldResult, null, 2));
+                } else if (metafieldResult.data?.metafieldsSet?.metafields?.length > 0) {
                   console.log(`Job ${jobId}: Successfully bound template to variant`);
+                  console.log(`Job ${jobId}: Created metafield:`, metafieldResult.data.metafieldsSet.metafields[0]);
+                } else {
+                  console.warn(`Job ${jobId}: Unexpected metafield response:`, JSON.stringify(metafieldResult, null, 2));
+                }
                   
                   // Sync thumbnail if available
                   const thumbnailToSync = updates.thumbnail || dbTemplate.thumbnail;
@@ -217,6 +233,17 @@ export async function processGenerateVariantsJob(
               } catch (bindError) {
                 console.error(`Job ${jobId}: Error binding template ${createdTemplate.id}:`, bindError);
               }
+            } else {
+              console.log(`Job ${jobId}: No variant ID found for template ${createdTemplate.id} (color: ${createdTemplate.color}) - skipping metafield binding`);
+              // Log more details about the template
+              console.log(`Job ${jobId}: Template details:`, {
+                id: dbTemplate.id,
+                name: dbTemplate.name,
+                shopifyVariantId: dbTemplate.shopifyVariantId,
+                shopifyProductId: dbTemplate.shopifyProductId,
+                isColorVariant: dbTemplate.isColorVariant,
+                colorVariant: dbTemplate.colorVariant
+              });
             }
           }
           
