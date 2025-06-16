@@ -88,13 +88,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // Create a map for quick template lookup
   const templateMap = new Map(templates.map(t => [t.id, t.name]));
   
+  // Debug: Log template IDs
+  console.log('Templates in database:', templates.map(t => ({ id: t.id, name: t.name })));
+  
   // Filter variants that have template assignments
   const variantsWithTemplates = allVariants
     .filter((edge: any) => edge.node.metafield?.value)
-    .map((edge: any) => ({
-      ...edge.node,
-      templateName: templateMap.get(edge.node.metafield.value) || 'Unknown Template',
-    }));
+    .map((edge: any) => {
+      const templateId = edge.node.metafield.value;
+      const templateName = templateMap.get(templateId);
+      
+      if (!templateName) {
+        console.log(`Template ${templateId} not found in database for variant ${edge.node.displayName}`);
+      }
+      
+      return {
+        ...edge.node,
+        templateName: templateName || 'Unknown Template',
+      };
+    });
   
   return json({ 
     variantsWithTemplates,

@@ -83,7 +83,7 @@ if (typeof CanvasTextRenderer === 'undefined') {
 
   async loadTemplate(templateId) {
     try {
-      const response = await fetch(`${this.apiUrl}/api/templates/${templateId}`);
+      const response = await fetch(`${this.apiUrl}/api/public/templates/${templateId}`);
       const data = await response.json();
       this.template = data.template;
       
