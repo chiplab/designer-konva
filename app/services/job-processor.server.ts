@@ -192,6 +192,29 @@ export async function processGenerateVariantsJob(
                 // Set metafield to bind template to variant
                 console.log(`Job ${jobId}: Setting metafield for template ${createdTemplate.id} to variant ${variantId}...`);
                 
+                // First, check if a metafield already exists
+                const CHECK_METAFIELD = `#graphql
+                  query CheckMetafield($ownerId: ID!) {
+                    productVariant(id: $ownerId) {
+                      metafield(namespace: "custom_designer", key: "template_id") {
+                        id
+                        value
+                      }
+                    }
+                  }
+                `;
+                
+                const checkResponse = await admin.graphql(CHECK_METAFIELD, {
+                  variables: { ownerId: variantId }
+                });
+                const checkData = await checkResponse.json();
+                const existingMetafield = checkData.data?.productVariant?.metafield;
+                
+                if (existingMetafield) {
+                  console.log(`Job ${jobId}: Existing metafield found with value: ${existingMetafield.value}`);
+                  console.log(`Job ${jobId}: Will update from ${existingMetafield.value} to ${createdTemplate.id}`);
+                }
+                
                 const metafieldResponse = await admin.graphql(METAFIELD_SET_MUTATION, {
                   variables: {
                     metafields: [{

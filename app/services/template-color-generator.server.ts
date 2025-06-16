@@ -446,6 +446,19 @@ export async function generateColorVariants(masterTemplateId: string, shop: stri
  * This will create templates for ALL patterns in the product, not just the master's pattern
  */
 export async function generateAllVariants(masterTemplateId: string, shop: string, admin: any) {
+  console.log(`generateAllVariants: Starting generation for master template ${masterTemplateId}`);
+  
+  // First, delete any existing color variants for this master template
+  const deletedCount = await db.template.deleteMany({
+    where: {
+      masterTemplateId,
+      isColorVariant: true,
+      shop,
+    },
+  });
+  
+  console.log(`generateAllVariants: Deleted ${deletedCount.count} existing color variants`);
+  
   // Get the master template
   const masterTemplate = await db.template.findFirst({
     where: {
