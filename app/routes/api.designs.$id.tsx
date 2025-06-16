@@ -1,12 +1,12 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import db from "~/db.server";
+import db from "../db.server";
 import { 
   generateCustomerDesignKey, 
   uploadCustomerDesignAsset,
   uploadBase64ImageToS3,
   getSignedS3Url
-} from "~/services/s3.server";
+} from "../services/s3.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { id } = params;

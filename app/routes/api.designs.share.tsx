@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import db from "~/db.server";
+import db from "../db.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {

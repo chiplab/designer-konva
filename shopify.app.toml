@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://bowling-asp-charter-purpose.trycloudflare.com"
+application_url = "https://aggregate-whose-thereof-circular.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://bowling-asp-charter-purpose.trycloudflare.com/auth/callback",
-  "https://bowling-asp-charter-purpose.trycloudflare.com/auth/shopify/callback",
-  "https://bowling-asp-charter-purpose.trycloudflare.com/api/auth/callback"
+  "https://aggregate-whose-thereof-circular.trycloudflare.com/auth/callback",
+  "https://aggregate-whose-thereof-circular.trycloudflare.com/auth/shopify/callback",
+  "https://aggregate-whose-thereof-circular.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://bowling-asp-charter-purpose.trycloudflare.com"
+url = "https://aggregate-whose-thereof-circular.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 
