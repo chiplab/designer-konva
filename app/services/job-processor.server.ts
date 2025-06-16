@@ -216,18 +216,17 @@ export async function processGenerateVariantsJob(
                   console.warn(`Job ${jobId}: Unexpected metafield response:`, JSON.stringify(metafieldResult, null, 2));
                 }
                   
-                  // Sync thumbnail if available
-                  const thumbnailToSync = updates.thumbnail || dbTemplate.thumbnail;
-                  if (thumbnailToSync) {
-                    console.log(`Job ${jobId}: Syncing thumbnail to variant...`);
-                    const { syncTemplateThumbnailToVariants } = await import("./template-sync.server");
-                    const syncResult = await syncTemplateThumbnailToVariants(admin, createdTemplate.id, thumbnailToSync);
-                    
-                    if (syncResult.success && syncResult.syncedCount > 0) {
-                      console.log(`Job ${jobId}: Successfully synced thumbnail to ${syncResult.syncedCount} variant(s)`);
-                    } else if (syncResult.errors.length > 0) {
-                      console.warn(`Job ${jobId}: Thumbnail sync had errors:`, syncResult.errors);
-                    }
+                // Sync thumbnail if available
+                const thumbnailToSync = updates.thumbnail || dbTemplate.thumbnail;
+                if (thumbnailToSync) {
+                  console.log(`Job ${jobId}: Syncing thumbnail to variant...`);
+                  const { syncTemplateThumbnailToVariants } = await import("./template-sync.server");
+                  const syncResult = await syncTemplateThumbnailToVariants(admin, createdTemplate.id, thumbnailToSync);
+                  
+                  if (syncResult.success && syncResult.syncedCount > 0) {
+                    console.log(`Job ${jobId}: Successfully synced thumbnail to ${syncResult.syncedCount} variant(s)`);
+                  } else if (syncResult.errors.length > 0) {
+                    console.warn(`Job ${jobId}: Thumbnail sync had errors:`, syncResult.errors);
                   }
                 }
               } catch (bindError) {
