@@ -71,6 +71,8 @@ jobs:
           # Database setup
           echo ""
           echo "🗄️  Running database migrations..."
+          # Export DATABASE_URL for Prisma (assuming tunnel is running on localhost:5432)
+          export DATABASE_URL="${{ secrets.DATABASE_URL }}"
           npm run setup 2>&1 || { echo "❌ ERROR: Database setup failed with exit code $?"; exit 1; }
           echo "✅ Database setup complete"
 
