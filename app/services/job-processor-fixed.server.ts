@@ -260,5 +260,43 @@ export async function processGenerateVariantsJob(
   }
 }
 
-// Export other job processors from original file
-export { processSyncProductThumbnailsJob, processSyncAllThumbnailsJob, processJob } from "./job-processor.server";
+// Import other job processors from original file
+import { processSyncProductThumbnailsJob, processSyncAllThumbnailsJob } from "./job-processor.server";
+
+// Export other processors unchanged
+export { processSyncProductThumbnailsJob, processSyncAllThumbnailsJob };
+
+/**
+ * Main job processor - FIXED VERSION that properly handles generateVariants
+ */
+export async function processJob(jobId: string, shop: string, admin: any) {
+  // @ts-ignore - Job model exists in Prisma schema
+  const job = await db.job.findFirst({
+    where: {
+      id: jobId,
+      shop,
+      status: "pending",
+    },
+  });
+  
+  if (!job) {
+    throw new Error("Job not found or already processed");
+  }
+  
+  const data = JSON.parse(job.data) as JobData;
+  
+  switch (job.type) {
+    case "generateVariants":
+      // Use the FIXED version that separates thumbnail generation
+      await processGenerateVariantsJob(jobId, shop, data, admin);
+      break;
+    case "syncAllThumbnails":
+      await processSyncAllThumbnailsJob(jobId, shop, data, admin);
+      break;
+    case "syncProductThumbnails":
+      await processSyncProductThumbnailsJob(jobId, shop, data, admin);
+      break;
+    default:
+      throw new Error(`Unknown job type: ${job.type}`);
+  }
+}
