@@ -172,5 +172,67 @@ export async function deleteFromS3(key: string): Promise<void> {
   }));
 }
 
+/**
+ * Generate a unique key for customer designs
+ * @param shopDomain - The shop domain
+ * @param designId - The design ID
+ * @param status - Draft or saved status
+ * @param customerId - Customer ID (for saved designs)
+ * @param assetType - Type of asset (canvas, thumbnail, asset)
+ * @returns A unique S3 key
+ */
+export function generateCustomerDesignKey(
+  shopDomain: string,
+  designId: string,
+  status: 'draft' | 'saved',
+  customerId: string | null,
+  assetType: 'canvas' | 'thumbnail' | 'asset',
+  fileName?: string
+): string {
+  const shopName = shopDomain.replace(".myshopify.com", "");
+  const timestamp = Date.now();
+  
+  let basePath: string;
+  if (status === 'draft') {
+    basePath = `customer-designs/${shopName}/drafts/${designId}`;
+  } else {
+    basePath = `customer-designs/${shopName}/saved/${customerId}/${designId}`;
+  }
+  
+  switch (assetType) {
+    case 'canvas':
+      return `${basePath}/canvas-${timestamp}.json`;
+    case 'thumbnail':
+      return `${basePath}/thumbnail-${timestamp}.png`;
+    case 'asset':
+      const sanitizedFileName = fileName ? fileName.replace(/[^a-zA-Z0-9.-]/g, "_") : 'asset';
+      return `${basePath}/assets/${timestamp}-${sanitizedFileName}`;
+    default:
+      throw new Error(`Unknown asset type: ${assetType}`);
+  }
+}
+
+/**
+ * Upload customer design asset with optional expiration
+ * @param key - The S3 object key
+ * @param body - The file content
+ * @param options - Upload options including expiration
+ * @returns The public URL
+ */
+export async function uploadCustomerDesignAsset(
+  key: string,
+  body: Buffer | string,
+  options: UploadOptions & { expiresInDays?: number } = {}
+): Promise<string> {
+  const metadata = {
+    ...options.metadata,
+  };
+  
+  // Note: S3 lifecycle policies handle expiration, not metadata
+  // The expiresInDays parameter is for future use with lifecycle policies
+  
+  return uploadToS3(key, body, { ...options, metadata });
+}
+
 // Export constants
 export { BUCKET_NAME, REGION, BASE_URL };

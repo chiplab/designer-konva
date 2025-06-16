@@ -538,6 +538,42 @@ if (typeof CanvasTextRenderer === 'undefined') {
 
     return allElements;
   }
+  
+  getCanvasState() {
+    if (!this.template) return null;
+    
+    // Clone the template and update with current text values
+    const state = JSON.parse(JSON.stringify(this.template));
+    
+    // Update text elements with current values
+    if (state.elements) {
+      if (state.elements.textElements) {
+        state.elements.textElements.forEach(element => {
+          if (this.textUpdates[element.id] !== undefined) {
+            element.text = this.textUpdates[element.id];
+          }
+        });
+      }
+      
+      if (state.elements.gradientTextElements) {
+        state.elements.gradientTextElements.forEach(element => {
+          if (this.textUpdates[element.id] !== undefined) {
+            element.text = this.textUpdates[element.id];
+          }
+        });
+      }
+      
+      if (state.elements.curvedTextElements) {
+        state.elements.curvedTextElements.forEach(element => {
+          if (this.textUpdates[element.id] !== undefined) {
+            element.text = this.textUpdates[element.id];
+          }
+        });
+      }
+    }
+    
+    return state;
+  }
 
   destroy() {
     if (this.stage) {

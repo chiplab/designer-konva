@@ -53,6 +53,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
               </div>
               
               <div class="pcm-actions">
+                <button class="pcm-btn pcm-btn-secondary" id="advancedEditor">
+                  Advanced Editor
+                </button>
                 <button class="pcm-btn pcm-btn-primary" id="saveCustomization">
                   Add to Cart
                 </button>
@@ -275,6 +278,17 @@ if (typeof ProductCustomizerModal === 'undefined') {
           background: #333;
         }
 
+        .pcm-btn-secondary {
+          background: white;
+          color: #000;
+          border: 1px solid #000;
+          min-width: 150px;
+        }
+
+        .pcm-btn-secondary:hover {
+          background: #f5f5f5;
+        }
+
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
@@ -305,6 +319,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Save button
     document.getElementById('saveCustomization').addEventListener('click', () => this.save());
+    
+    // Advanced editor button
+    document.getElementById('advancedEditor').addEventListener('click', () => this.openAdvancedEditor());
   }
 
   async open() {
@@ -652,6 +669,65 @@ if (typeof ProductCustomizerModal === 'undefined') {
     if (this.renderer) {
       this.renderer.destroy();
       this.renderer = null;
+    }
+  }
+
+  async openAdvancedEditor() {
+    try {
+      // Get canvas state
+      const canvasState = this.renderer.getCanvasState();
+      const thumbnail = this.renderer.getDataURL({ pixelRatio: 0.3 });
+      
+      // Get product info from page
+      const productId = this.options.productId || 
+        (window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.product && 
+         `gid://shopify/Product/${window.ShopifyAnalytics.meta.product.id}`) ||
+        '';
+      
+      // Create draft via API
+      const formData = new FormData();
+      formData.append('templateId', this.options.templateId);
+      formData.append('variantId', this.options.variantId);
+      formData.append('productId', productId);
+      formData.append('canvasState', JSON.stringify(canvasState));
+      formData.append('thumbnail', thumbnail);
+      
+      const response = await fetch(`${this.options.apiUrl}/api/designs/draft`, {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to create draft');
+      }
+      
+      const { design } = await response.json();
+      
+      // Store reference in localStorage
+      localStorage.setItem('currentDesign', JSON.stringify({
+        id: design.id,
+        templateId: this.options.templateId,
+        variantId: this.options.variantId,
+        productId: productId,
+        lastModified: Date.now(),
+        status: 'draft'
+      }));
+      
+      // Store return location
+      localStorage.setItem('returnTo', JSON.stringify({
+        type: 'product',
+        url: window.location.href,
+        context: {}
+      }));
+      
+      // Open full designer
+      window.open(`${this.options.apiUrl}/full?design=${design.id}`, '_blank');
+      
+      // Close the modal
+      this.close();
+    } catch (error) {
+      console.error('Error opening advanced editor:', error);
+      alert('Failed to open advanced editor. Please try again.');
     }
   }
 

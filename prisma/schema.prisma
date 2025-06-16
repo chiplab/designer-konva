@@ -57,6 +57,7 @@ model Template {
   shopifyProductId String?
   shopifyVariantId String?
   productLayout    ProductLayout? @relation(fields: [productLayoutId], references: [id])
+  customerDesigns  CustomerDesign[]
 
   @@index([shop])
   @@index([shopifyProductId])
@@ -91,4 +92,45 @@ model Job {
 
   @@index([shop, status])
   @@index([createdAt])
+}
+
+model CustomerDesign {
+  id               String    @id @default(cuid())
+  shop             String
+  customerId       String?
+  email            String?
+  
+  // Design references
+  templateId       String
+  productId        String
+  variantId        String
+  
+  // Design data
+  canvasState      String
+  thumbnail        String
+  name             String?
+  
+  // Status tracking
+  status           String    @default("draft")
+  orderId          String?
+  orderLineItemId  String?
+  
+  // Sharing & Access
+  shareToken       String?   @unique @default(cuid())
+  isPublic         Boolean   @default(false)
+  
+  // Auto-cleanup for drafts
+  expiresAt        DateTime?
+  
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  
+  // Relations
+  template         Template  @relation(fields: [templateId], references: [id])
+  
+  @@index([shop, customerId])
+  @@index([shop, email])
+  @@index([shareToken])
+  @@index([status])
+  @@index([expiresAt])
 }
