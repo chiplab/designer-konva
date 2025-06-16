@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://deadline-surveys-identify-jet.trycloudflare.com"
+application_url = "https://change-dg-contrary-hierarchy.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://deadline-surveys-identify-jet.trycloudflare.com/auth/callback",
-  "https://deadline-surveys-identify-jet.trycloudflare.com/auth/shopify/callback",
-  "https://deadline-surveys-identify-jet.trycloudflare.com/api/auth/callback"
+  "https://change-dg-contrary-hierarchy.trycloudflare.com/auth/callback",
+  "https://change-dg-contrary-hierarchy.trycloudflare.com/auth/shopify/callback",
+  "https://change-dg-contrary-hierarchy.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://deadline-surveys-identify-jet.trycloudflare.com"
+url = "https://change-dg-contrary-hierarchy.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 

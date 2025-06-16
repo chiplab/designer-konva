@@ -118,6 +118,166 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   }
 
+  if (action === "nuclearDelete") {
+    const masterTemplateId = formData.get("masterTemplateId") as string;
+    
+    try {
+      // Get the master template
+      const masterTemplate = await db.template.findFirst({
+        where: {
+          id: masterTemplateId,
+          shop: session.shop,
+        },
+      });
+
+      if (!masterTemplate) {
+        return json({ 
+          success: false, 
+          error: "Master template not found" 
+        }, { status: 404 });
+      }
+
+      // NUCLEAR OPTION: Delete EVERYTHING except the master
+      // This is the most aggressive approach
+      const baseName = masterTemplate.name.split(" / ")[0];
+      
+      // Find templates to delete
+      const templatesToDelete = await db.template.findMany({
+        where: {
+          shop: session.shop,
+          id: { not: masterTemplateId },
+          // Delete anything that even remotely looks like it could be related
+          OR: [
+            // Has the product ID and is not the master
+            {
+              shopifyProductId: masterTemplate.shopifyProductId,
+              id: { not: masterTemplateId },
+            },
+            // Has similar name
+            {
+              name: { contains: baseName.substring(0, 10) }, // Even partial match
+            },
+            // Is linked to this master
+            {
+              masterTemplateId: masterTemplateId,
+            },
+          ]
+        },
+        select: { id: true }
+      });
+      
+      const templateIdsToDelete = templatesToDelete.map(t => t.id);
+      console.log(`NUCLEAR DELETE: Found ${templateIdsToDelete.length} templates to delete`);
+      
+      // Delete related CustomerDesigns first
+      const deletedDesigns = await db.customerDesign.deleteMany({
+        where: {
+          templateId: { in: templateIdsToDelete },
+        },
+      });
+      console.log(`NUCLEAR DELETE: Deleted ${deletedDesigns.count} related customer designs`);
+      
+      // Now delete the templates
+      const deleteResult = await db.template.deleteMany({
+        where: {
+          id: { in: templateIdsToDelete },
+        },
+      });
+      
+      console.log(`NUCLEAR DELETE: Removed ${deleteResult.count} templates for "${masterTemplate.name}"`);
+      
+      return json({ 
+        success: true, 
+        message: `Nuclear delete: removed ${deleteResult.count} template(s)` 
+      });
+    } catch (error) {
+      console.error("Error in nuclear delete:", error);
+      return json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Nuclear delete failed" 
+      }, { status: 500 });
+    }
+  }
+
+  if (action === "cleanupOrphaned") {
+    const masterTemplateId = formData.get("masterTemplateId") as string;
+    
+    try {
+      // First verify the master template exists and belongs to this shop
+      const masterTemplate = await db.template.findFirst({
+        where: {
+          id: masterTemplateId,
+          shop: session.shop,
+          isColorVariant: false,
+        },
+      });
+
+      if (!masterTemplate) {
+        return json({ 
+          success: false, 
+          error: "Master template not found or access denied" 
+        }, { status: 404 });
+      }
+
+      const baseName = masterTemplate.name.split(" / ")[0];
+      
+      // Find templates to delete
+      const templatesToDelete = await db.template.findMany({
+        where: {
+          shop: session.shop,
+          id: { not: masterTemplateId },
+          OR: [
+            // Properly linked variants
+            { masterTemplateId: masterTemplateId },
+            // Orphaned variants with same base name
+            {
+              masterTemplateId: null,
+              name: { contains: baseName },
+              isColorVariant: true,
+            },
+            // Any template for the same product that's a color variant
+            {
+              shopifyProductId: masterTemplate.shopifyProductId,
+              isColorVariant: true,
+            }
+          ]
+        },
+        select: { id: true }
+      });
+      
+      const templateIdsToDelete = templatesToDelete.map(t => t.id);
+      console.log(`Cleanup: Found ${templateIdsToDelete.length} templates to delete`);
+      
+      // Delete related CustomerDesigns first
+      const deletedDesigns = await db.customerDesign.deleteMany({
+        where: {
+          templateId: { in: templateIdsToDelete },
+        },
+      });
+      console.log(`Cleanup: Deleted ${deletedDesigns.count} related customer designs`);
+      
+      // Now delete the templates
+      const deleteResult = await db.template.deleteMany({
+        where: {
+          id: { in: templateIdsToDelete },
+        },
+      });
+      
+      console.log(`Cleanup: Deleted ${deleteResult.count} templates for "${masterTemplate.name}"`);
+      
+      return json({ 
+        success: true, 
+        message: `Cleaned up ${deleteResult.count} variant(s) of "${masterTemplate.name}"` 
+      });
+    } catch (error) {
+      console.error("Error cleaning up variants:", error);
+      return json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Failed to clean up variants" 
+      }, { status: 500 });
+    }
+  }
+
   if (action === "deleteAllVariants") {
     const masterTemplateId = formData.get("masterTemplateId") as string;
     
@@ -138,14 +298,88 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }, { status: 404 });
       }
 
-      // Find and delete all variants of this master template
-      const deleteResult = await db.template.deleteMany({
+      // First, let's see what variants exist before deletion
+      const variantsBeforeDeletion = await db.template.findMany({
         where: {
           masterTemplateId: masterTemplateId,
           shop: session.shop,
+        },
+        select: {
+          id: true,
+          name: true,
           isColorVariant: true,
+        }
+      });
+      
+      console.log(`Found ${variantsBeforeDeletion.length} variants before deletion:`, variantsBeforeDeletion.map(v => ({
+        id: v.id,
+        name: v.name,
+        isColorVariant: v.isColorVariant
+      })));
+
+      // More aggressive deletion strategy
+      const baseName = masterTemplate.name.split(" / ")[0];
+      console.log(`Deleting all variants for base name: "${baseName}"`);
+      
+      // First, find all templates that will be deleted
+      const templatesToDelete = await db.template.findMany({
+        where: {
+          shop: session.shop,
+          id: { not: masterTemplateId }, // Not the master itself
+          OR: [
+            // 1. Properly linked variants
+            { masterTemplateId: masterTemplateId },
+            // 2. Templates with the same base name and marked as color variant
+            {
+              name: { startsWith: baseName },
+              isColorVariant: true,
+            },
+            // 3. Templates for the same product that are color variants
+            {
+              shopifyProductId: masterTemplate.shopifyProductId,
+              isColorVariant: true,
+              id: { not: masterTemplateId },
+            },
+            // 4. Legacy orphaned templates (no masterTemplateId but same pattern)
+            {
+              masterTemplateId: null,
+              name: { contains: baseName },
+              colorVariant: { not: null },
+            }
+          ]
+        },
+        select: { id: true }
+      });
+
+      const templateIdsToDelete = templatesToDelete.map(t => t.id);
+      console.log(`Found ${templateIdsToDelete.length} templates to delete`);
+
+      // Delete related CustomerDesigns first to avoid foreign key constraint
+      const deletedDesigns = await db.customerDesign.deleteMany({
+        where: {
+          templateId: { in: templateIdsToDelete },
         },
       });
+      console.log(`Deleted ${deletedDesigns.count} related customer designs`);
+
+      // Now delete the templates
+      const deleteResult = await db.template.deleteMany({
+        where: {
+          id: { in: templateIdsToDelete },
+        },
+      });
+
+      console.log(`Deleted ${deleteResult.count} variants using aggressive strategy`);
+
+      // Verify deletion
+      const variantsAfterDeletion = await db.template.count({
+        where: {
+          masterTemplateId: masterTemplateId,
+          shop: session.shop,
+        },
+      });
+      
+      console.log(`${variantsAfterDeletion} variants remain after deletion`);
 
       return json({ 
         success: true, 
@@ -223,7 +457,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     try {
       // Create a job for syncing thumbnails for a specific product
       const { createJob } = await import("../services/job-queue.server");
-      const { processJob } = await import("../services/job-processor-fixed.server");
+      const { processJob } = await import("../services/job-processor-truly-fixed.server");
       
       const job = await createJob(
         session.shop,
@@ -258,7 +492,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     try {
       // Create a job for syncing all thumbnails
       const { createJob } = await import("../services/job-queue.server");
-      const { processJob } = await import("../services/job-processor-fixed.server");
+      const { processJob } = await import("../services/job-processor-truly-fixed.server");
       
       const job = await createJob(
         session.shop,
@@ -941,12 +1175,45 @@ export default function Templates() {
                     Generate variants
                   </Button>
                   {group.variants.length > 0 && (
-                    <Button
-                      tone="critical"
-                      onClick={() => handleDeleteAllVariants(masterId, group.master.name, group.variants.length)}
-                    >
-                      Delete all variants
-                    </Button>
+                    <>
+                      <Button
+                        tone="critical"
+                        onClick={() => handleDeleteAllVariants(masterId, group.master.name, group.variants.length)}
+                      >
+                        Delete all variants
+                      </Button>
+                      <Button
+                        tone="critical"
+                        variant="plain"
+                        onClick={async () => {
+                          // Run diagnostics
+                          const formData = new FormData();
+                          formData.append("masterTemplateId", masterId);
+                          
+                          const response = await fetch("/api/diagnose-templates", {
+                            method: "POST",
+                            body: formData,
+                          });
+                          
+                          const diagnostics = await response.json();
+                          console.log("Template diagnostics:", diagnostics);
+                          
+                          if (diagnostics.orphanedVariants?.count > 0 || 
+                              diagnostics.suspiciousVariants?.count > 0) {
+                            if (confirm(`Found ${diagnostics.orphanedVariants.count} orphaned and ${diagnostics.suspiciousVariants.count} suspicious variants. Delete them all?`)) {
+                              const deleteForm = new FormData();
+                              deleteForm.append("masterTemplateId", masterId);
+                              deleteForm.append("_action", "nuclearDelete");
+                              submit(deleteForm, { method: "post" });
+                            }
+                          } else {
+                            alert("No orphaned variants found. Try regular delete.");
+                          }
+                        }}
+                      >
+                        Debug & Clean
+                      </Button>
+                    </>
                   )}
                   <Button
                     url={`/app/designer?template=${masterId}`}

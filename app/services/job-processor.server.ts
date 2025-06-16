@@ -6,7 +6,8 @@ import {
   type JobData 
 } from "./job-queue.server";
 import { generateAllVariants, matchTemplatesToVariants } from "./template-color-generator.server";
-import { generateTemplateThumbnail } from "./template-thumbnail-generator.server";
+// Import the clean version that doesn't pollute globals
+import { generateTemplateThumbnail } from "./template-thumbnail-generator-clean.server";
 import db from "../db.server";
 
 // GraphQL mutation to set metafield
