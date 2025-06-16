@@ -314,7 +314,12 @@ export async function generateColorVariants(masterTemplateId: string, shop: stri
   );
   
   console.log(`Available colors for pattern "${masterPattern}":`, availableColors);
-  console.log(`Master template color: ${masterTemplate.colorVariant}`);
+  console.log(`Master template color: "${masterTemplate.colorVariant}" (type: ${typeof masterTemplate.colorVariant})`);
+  
+  // Check if colorVariant is null or undefined
+  if (!masterTemplate.colorVariant) {
+    throw new Error(`Master template has no color variant set`);
+  }
   
   // Get the source color mapping
   const sourceColor = await db.templateColor.findUnique({
@@ -324,6 +329,15 @@ export async function generateColorVariants(masterTemplateId: string, shop: stri
   });
   
   if (!sourceColor) {
+    console.error(`Failed to find color mapping for: "${masterTemplate.colorVariant}"`);
+    console.error(`Lowercase version: "${masterTemplate.colorVariant.toLowerCase()}"`);
+    
+    // List available colors for debugging
+    const availableColorMappings = await db.templateColor.findMany({
+      select: { chipColor: true },
+    });
+    console.error(`Available color mappings in DB:`, availableColorMappings.map(c => c.chipColor).join(', '));
+    
     throw new Error(`Color mapping not found for ${masterTemplate.colorVariant}`);
   }
   
