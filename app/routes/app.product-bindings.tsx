@@ -19,8 +19,8 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 
 const PRODUCT_VARIANTS_QUERY = `#graphql
-  query GetProductVariantsWithMetafields {
-    productVariants(first: 100) {
+  query GetProductVariantsWithMetafields($first: Int!, $after: String) {
+    productVariants(first: $first, after: $after) {
       edges {
         node {
           id
@@ -44,6 +44,10 @@ const PRODUCT_VARIANTS_QUERY = `#graphql
           }
         }
       }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
     }
   }
 `;
@@ -51,9 +55,24 @@ const PRODUCT_VARIANTS_QUERY = `#graphql
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   
-  // Get variants with template metafields
-  const response = await admin.graphql(PRODUCT_VARIANTS_QUERY);
-  const { data } = await response.json();
+  // Get all variants with pagination
+  let allVariants: any[] = [];
+  let hasNextPage = true;
+  let cursor = null;
+  
+  while (hasNextPage) {
+    const response = await admin.graphql(PRODUCT_VARIANTS_QUERY, {
+      variables: {
+        first: 250, // Maximum allowed
+        after: cursor,
+      },
+    });
+    const { data } = await response.json();
+    
+    allVariants = [...allVariants, ...data.productVariants.edges];
+    hasNextPage = data.productVariants.pageInfo.hasNextPage;
+    cursor = data.productVariants.pageInfo.endCursor;
+  }
   
   // Get all templates for this shop
   const templates = await db.template.findMany({
@@ -70,7 +89,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const templateMap = new Map(templates.map(t => [t.id, t.name]));
   
   // Filter variants that have template assignments
-  const variantsWithTemplates = data.productVariants.edges
+  const variantsWithTemplates = allVariants
     .filter((edge: any) => edge.node.metafield?.value)
     .map((edge: any) => ({
       ...edge.node,
@@ -79,7 +98,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   
   return json({ 
     variantsWithTemplates,
-    totalVariants: data.productVariants.edges.length,
+    totalVariants: allVariants.length,
   });
 };
 
