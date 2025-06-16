@@ -25,10 +25,7 @@
       data-variant-id="{{ product.selected_or_first_available_variant.id }}"
       data-template-id="{{ template_id }}"
     >
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" class="icon icon--edit">
-        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/>
-      </svg>
-      {{ block.settings.button_text | default: 'Customize This Product' }}
+      {{ block.settings.button_text | default: 'Customize this design' }}
     </button>
   </div>
 
@@ -236,7 +233,7 @@
       "type": "text",
       "id": "button_text",
       "label": "Button Text",
-      "default": "Customize This Product"
+      "default": "Customize this design"
     },
     {
       "type": "checkbox",
