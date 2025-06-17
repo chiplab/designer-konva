@@ -4,7 +4,8 @@
   Optimized for Horizons 2025 themes (like Tinker) while maintaining legacy support
 {% endcomment %}
 
-{% comment %} Debug output - checking metafield access {% endcomment %}
+{% comment %} Debug output - checking metafield access - Remove this section once setup is confirmed {% endcomment %}
+{% if settings.enable_customizer_debug %}
 <div style="background: #f0f0f0; padding: 10px; margin: 10px 0; border: 1px solid #ccc; font-family: monospace; font-size: 12px;">
   <p><strong>Metafield Debug:</strong></p>
   <p>Product ID: {{ product.id }}</p>
@@ -36,6 +37,7 @@
   <p>Title: {{ product.selected_or_first_available_variant.title }}</p>
   <p>Available: {{ product.selected_or_first_available_variant.available }}</p>
 </div>
+{% endif %}
 
 {% if product.selected_or_first_available_variant.metafields.custom_designer.template_id %}
   <div class="product-customizer-container" data-product-customizer>
@@ -160,6 +162,11 @@
           // Update product image URL if available
           if (newVariant.featured_image) {
             customizer.options.productImageUrl = newVariant.featured_image.src;
+          }
+          
+          // If the customizer is open, update its variant context
+          if (customizer.isOpen) {
+            customizer.loadTemplate(); // Reload template for new variant
           }
         } else {
           // Hide button if variant has no template

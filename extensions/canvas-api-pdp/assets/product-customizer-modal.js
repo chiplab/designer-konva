@@ -606,52 +606,51 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     console.log('[ProductCustomizer] Updating variant swatches for variant:', this.options.variantId);
     
-    // First, let's find the currently selected variant input to understand the structure
-    const selectedInput = document.querySelector('input[type="radio"]:checked[name*="option"], input[type="radio"]:checked[name*="Color"]');
-    if (selectedInput) {
-      console.log('[ProductCustomizer] Found selected input:', {
-        name: selectedInput.name,
-        value: selectedInput.value,
-        id: selectedInput.id
-      });
-      
-      // Check if there's an associated image
-      const label = selectedInput.nextElementSibling || selectedInput.parentElement;
-      if (label) {
-        const img = label.querySelector('img');
-        if (img) {
-          console.log('[ProductCustomizer] Found image in label:', img.src);
-        }
+    // First, find the currently selected color input
+    const selectedInput = document.querySelector('input[type="radio"]:checked[name*="Color"]');
+    if (!selectedInput) {
+      console.log('[ProductCustomizer] No selected color input found');
+      return;
+    }
+    
+    const selectedColor = selectedInput.value;
+    console.log('[ProductCustomizer] Selected color:', selectedColor);
+    
+    // Find the color swatch image for the selected color
+    // In Horizon themes, the structure is typically: input[value="Color"] + label > img
+    let variantSwatch = null;
+    
+    // Try to find the image associated with the selected color input
+    const label = selectedInput.nextElementSibling;
+    if (label && label.tagName === 'LABEL') {
+      variantSwatch = label.querySelector('img');
+      if (variantSwatch) {
+        console.log('[ProductCustomizer] Found variant swatch image in label');
       }
     }
     
-    // Find the variant swatch for the current variant
-    const variantSelectors = [
-      `[data-variant-id="${this.options.variantId}"] img`,
-      `[data-value="${this.options.variantId}"] img`,
-      `input[value="${this.options.variantId}"] + label img`,
-      `input[value="${this.options.variantId}"] ~ img`,
-      `label[for*="${this.options.variantId}"] img`,
-      `[data-option-value-id="${this.options.variantId}"] img`,
-      `.variant-swatch[data-variant="${this.options.variantId}"] img`,
-      `.color-swatch[data-variant-id="${this.options.variantId}"] img`,
-      // Also try with just the numeric part of the variant ID
-      `input[value="${this.options.variantId.replace('gid://shopify/ProductVariant/', '')}"] + label img`,
-      `input[value="${this.options.variantId.replace('gid://shopify/ProductVariant/', '')}"] ~ img`,
-      // Try finding by the selected variant's option value (like "Red" or "Blue")
-      `input[type="radio"]:checked + label img`,
-      `input[type="radio"]:checked ~ label img`,
-      `.product-form__input input[type="radio"]:checked + label img`,
-      `.product-form__input input[type="radio"]:checked ~ img`
-    ];
-    
-    let variantSwatch = null;
-    for (const selector of variantSelectors) {
-      const element = document.querySelector(selector);
-      if (element) {
-        console.log('[ProductCustomizer] Found variant swatch with selector:', selector);
-        variantSwatch = element;
-        break;
+    // If not found, try alternative structures
+    if (!variantSwatch) {
+      // Try finding by color value
+      const colorInputs = document.querySelectorAll(`input[type="radio"][value="${selectedColor}"]`);
+      for (const input of colorInputs) {
+        const possibleContainers = [
+          input.nextElementSibling, // label next to input
+          input.parentElement, // parent container
+          input.parentElement?.nextElementSibling // sibling container
+        ];
+        
+        for (const container of possibleContainers) {
+          if (container) {
+            const img = container.querySelector('img');
+            if (img) {
+              variantSwatch = img;
+              console.log('[ProductCustomizer] Found variant swatch via alternative method');
+              break;
+            }
+          }
+        }
+        if (variantSwatch) break;
       }
     }
     
@@ -677,108 +676,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
         swatchParent.setAttribute('data-has-customization', 'true');
       }
     } else {
-      console.log('[ProductCustomizer] No variant swatch found for variant:', this.options.variantId);
-      
-      // Log all img elements that might be variant swatches for debugging
-      console.log('[ProductCustomizer] Looking for variant swatches...');
-      
-      // Try multiple strategies to find variant images
-      const strategies = [
-        { selector: '[data-variant-id] img, [data-value] img', name: 'data attributes' },
-        { selector: 'input[type="radio"] + label img', name: 'radio + label' },
-        { selector: '.color-swatch img, .variant-swatch img', name: 'swatch classes' },
-        { selector: 'fieldset img', name: 'fieldset images' },
-        { selector: '[data-option-index] img', name: 'option index' },
-        { selector: '.product-form__option img', name: 'product form option' },
-        { selector: '[name*="Color"] ~ * img', name: 'color option images' },
-        { selector: '.variant-input-wrapper img', name: 'variant input wrapper' },
-        { selector: '.variant__label img', name: 'variant label' }
-      ];
-      
-      strategies.forEach(({ selector, name }) => {
-        const found = document.querySelectorAll(selector);
-        if (found.length > 0) {
-          console.log(`[ProductCustomizer] Strategy "${name}" found ${found.length} images`);
-          found.forEach((img, i) => {
-            if (i < 3) { // Log first 3 to avoid spam
-              console.log(`  - Image ${i}: src="${img.src}"`);
-              const parent = img.parentElement;
-              console.log(`    Parent: ${parent.tagName}, class="${parent.className}", id="${parent.id}"`);
-              // Log any inputs near this image
-              const nearbyInput = parent.querySelector('input') || parent.parentElement?.querySelector('input');
-              if (nearbyInput) {
-                console.log(`    Nearby input: type="${nearbyInput.type}", name="${nearbyInput.name}", value="${nearbyInput.value}"`);
-              }
-            }
-          });
-        }
-      });
-      
-      // Also log the current variant ID format
-      console.log('[ProductCustomizer] Current variant ID:', this.options.variantId);
-      console.log('[ProductCustomizer] Variant ID type:', typeof this.options.variantId);
-      
-      // Log all input elements with their values to debug
-      console.log('[ProductCustomizer] Debugging variant inputs:');
-      const allInputs = document.querySelectorAll('input[type="radio"]');
-      allInputs.forEach((input, i) => {
-        if (i < 5) { // Log first 5 to avoid spam
-          console.log(`  Input ${i}: name="${input.name}", value="${input.value}", id="${input.id}"`);
-          // Check if this might be our variant
-          if (input.value && (input.value === this.options.variantId || input.value.includes(this.options.variantId))) {
-            console.log(`    ^ This matches our variant ID!`);
-          }
-        }
-      });
-      
-      // Also check for Horizon-specific patterns
-      const horizonSelectors = [
-        '.product-form__input input[type="radio"]',
-        '.variant-input input',
-        '[data-variant-option] input',
-        '.product-form__buttons input'
-      ];
-      
-      horizonSelectors.forEach(selector => {
-        const found = document.querySelectorAll(selector);
-        if (found.length > 0) {
-          console.log(`[ProductCustomizer] Found ${found.length} inputs with selector: ${selector}`);
-        }
-      });
-      
-      // Try a smarter approach - find color swatches by looking for the color option
-      console.log('[ProductCustomizer] Attempting smart swatch detection...');
-      
-      // Find all fieldsets or option groups
-      const optionGroups = document.querySelectorAll('fieldset, .product-form__input, [data-option-name="Color"], [data-option-name="color"]');
-      optionGroups.forEach(group => {
-        const legend = group.querySelector('legend, .form__label');
-        if (legend && legend.textContent.toLowerCase().includes('color')) {
-          console.log('[ProductCustomizer] Found color option group:', legend.textContent);
-          
-          // Find the selected option in this group
-          const selectedColorInput = group.querySelector('input[type="radio"]:checked');
-          if (selectedColorInput) {
-            console.log('[ProductCustomizer] Selected color value:', selectedColorInput.value);
-            
-            // Look for associated image
-            const possibleImageContainers = [
-              selectedColorInput.nextElementSibling,
-              selectedColorInput.parentElement,
-              selectedColorInput.parentElement.nextElementSibling
-            ];
-            
-            possibleImageContainers.forEach(container => {
-              if (container) {
-                const img = container.querySelector('img');
-                if (img) {
-                  console.log('[ProductCustomizer] Found color swatch image:', img.src);
-                }
-              }
-            });
-          }
-        }
-      });
+      console.log('[ProductCustomizer] No variant swatch found for color:', selectedColor);
     }
   }
   
@@ -788,6 +686,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     customizedSwatches.forEach(swatch => {
       if (swatch.dataset.originalSrc) {
+        console.log('[ProductCustomizer] Restoring original swatch:', swatch.dataset.originalSrc);
         swatch.src = swatch.dataset.originalSrc;
         if (swatch.dataset.originalSrcset) {
           swatch.srcset = swatch.dataset.originalSrcset;
