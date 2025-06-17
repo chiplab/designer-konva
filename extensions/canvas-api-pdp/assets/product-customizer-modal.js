@@ -313,10 +313,10 @@ if (typeof ProductCustomizerModal === 'undefined') {
 
   attachEventListeners() {
     // Close button
-    this.modal.querySelector('.pcm-close').addEventListener('click', () => this.close());
+    this.modal.querySelector('.pcm-close').addEventListener('click', () => this.close(false));
     
     // Overlay click
-    this.modal.querySelector('.pcm-overlay').addEventListener('click', () => this.close());
+    this.modal.querySelector('.pcm-overlay').addEventListener('click', () => this.close(false));
     
     // Save button
     document.getElementById('saveCustomization').addEventListener('click', () => this.save());
@@ -679,13 +679,15 @@ if (typeof ProductCustomizerModal === 'undefined') {
 
   // Remove positionModal method as we're using CSS positioning within product-details
   
-  close() {
+  close(keepCustomization = false) {
     this.modal.classList.remove('open');
     this.isOpen = false;
     document.body.style.overflow = '';
     
-    // Restore original product images
-    this.restoreOriginalProductImages();
+    // Only restore original product images if we're not keeping a customization
+    if (!keepCustomization) {
+      this.restoreOriginalProductImages();
+    }
     
     // Clear any pending update timer
     if (this.updateTimer) {
@@ -784,7 +786,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Save to cart or handle as needed
     this.customizationData = customization;
     this.options.onSave(customization);
-    this.close();
+    this.close(false); // Don't keep customization for simple save
   }
   
   setupMessageListener() {
@@ -826,9 +828,25 @@ if (typeof ProductCustomizerModal === 'undefined') {
           timestamp: Date.now()
         }));
         
+        // Update the product page image directly
+        const mainProductImage = document.querySelector(
+          '.media-gallery img:first-of-type, ' +
+          '.product-media img:first-of-type, ' +
+          '.product__media--featured img, ' +
+          '[data-product-featured-image], ' +
+          '.product-gallery img:first-of-type'
+        );
+        
+        if (mainProductImage) {
+          mainProductImage.dataset.originalSrc = mainProductImage.dataset.originalSrc || mainProductImage.src;
+          mainProductImage.src = event.data.thumbnail;
+          mainProductImage.srcset = ''; // Clear srcset
+          mainProductImage.setAttribute('data-customization-preview', 'true');
+        }
+        
         // Don't automatically add to cart - just close the modal
         // The user can click "Add to Cart" on the product page when ready
-        this.close();
+        this.close(true); // Pass true to keep the customization preview
       }
     });
   }
