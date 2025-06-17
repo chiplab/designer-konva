@@ -358,11 +358,19 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Store original product image so we can restore it later
     this.storeOriginalProductImage();
     
-    // First, show the product variant image if available
-    await this.loadVariantImage();
+    // If we have a saved customization, use its preview
+    if (this.currentPreviewUrl && loadDesignId) {
+      // We already have the preview URL from saved customization
+      // Don't load the variant image - keep the customization preview
+    } else {
+      // First, show the product variant image if available
+      await this.loadVariantImage();
+    }
     
     // Update the main product image to show the saved preview or template preview
-    this.updateMainProductImage();
+    if (this.currentPreviewUrl) {
+      this.updateMainProductImage();
+    }
     
     // Load Konva if not already loaded
     if (typeof Konva === 'undefined') {
@@ -387,6 +395,18 @@ if (typeof ProductCustomizerModal === 'undefined') {
   }
   
   storeOriginalProductImage() {
+    // Check if we already have a customization preview showing
+    const customizedImage = document.querySelector('[data-customization-preview="true"]');
+    if (customizedImage && customizedImage.dataset.originalSrc) {
+      // Use the original source that was stored before customization
+      this.originalProductImages = [{
+        element: customizedImage,
+        originalSrc: customizedImage.dataset.originalSrc,
+        originalSrcset: customizedImage.srcset
+      }];
+      return;
+    }
+    
     // Find the main product section first (exclude recommendations)
     const mainProductSection = document.querySelector(
       // Modern theme patterns
@@ -515,27 +535,51 @@ if (typeof ProductCustomizerModal === 'undefined') {
   }
   
   updateMainProductImage() {
-    if (!this.currentPreviewUrl || this.originalProductImages.length === 0) {
+    if (!this.currentPreviewUrl) {
       return;
     }
     
-    // Update only the main product image to show the preview
-    const mainImage = this.originalProductImages[0];
-    if (mainImage && mainImage.element) {
-      // Double-check this isn't a recommendation image before updating
-      const isRecommendation = mainImage.element.closest('.product-recommendations, .related-products, [data-section-type="related-products"]');
-      if (isRecommendation) {
-        return;
+    // If we have original images stored, use them
+    if (this.originalProductImages.length > 0) {
+      const mainImage = this.originalProductImages[0];
+      if (mainImage && mainImage.element) {
+        // Double-check this isn't a recommendation image before updating
+        const isRecommendation = mainImage.element.closest('.product-recommendations, .related-products, [data-section-type="related-products"]');
+        if (isRecommendation) {
+          return;
+        }
+        
+        mainImage.element.src = this.currentPreviewUrl;
+        if (mainImage.element.srcset) {
+          mainImage.element.srcset = ''; // Clear srcset to prevent responsive image issues
+        }
+        
+        // Add a data attribute to mark this as the customization preview
+        mainImage.element.setAttribute('data-customization-preview', 'true');
+        // Store the original source for later restoration
+        if (!mainImage.element.dataset.originalSrc) {
+          mainImage.element.dataset.originalSrc = mainImage.originalSrc;
+        }
       }
+    } else {
+      // No original images stored, find the main product image directly
+      const mainProductImage = document.querySelector(
+        '.media-gallery img:first-of-type, ' +
+        '.product-media img:first-of-type, ' +
+        '.product__media--featured img, ' +
+        '[data-product-featured-image], ' +
+        '.product-gallery img:first-of-type'
+      );
       
-      mainImage.element.src = this.currentPreviewUrl;
-      if (mainImage.element.srcset) {
-        mainImage.element.srcset = ''; // Clear srcset to prevent responsive image issues
+      if (mainProductImage) {
+        // Store original source if not already stored
+        if (!mainProductImage.dataset.originalSrc) {
+          mainProductImage.dataset.originalSrc = mainProductImage.src;
+        }
+        mainProductImage.src = this.currentPreviewUrl;
+        mainProductImage.srcset = ''; // Clear srcset
+        mainProductImage.setAttribute('data-customization-preview', 'true');
       }
-      
-      // Add a data attribute to mark this as the customization preview
-      mainImage.element.setAttribute('data-customization-preview', 'true');
-      
     }
   }
   
@@ -704,44 +748,50 @@ if (typeof ProductCustomizerModal === 'undefined') {
 
   async openAdvancedEditor() {
     try {
-      // Get canvas state
-      const canvasState = this.renderer.getCanvasState();
-      const thumbnail = this.renderer.getDataURL({ pixelRatio: 0.3 });
+      let designId = this.currentDesignId;
       
-      // Get product info from page
-      const productId = this.options.productId || 
-        (window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.product && 
-         `gid://shopify/Product/${window.ShopifyAnalytics.meta.product.id}`) ||
-        '';
-      
-      // Create draft via API
-      const formData = new FormData();
-      formData.append('templateId', this.options.templateId);
-      formData.append('variantId', this.options.variantId);
-      formData.append('productId', productId);
-      formData.append('canvasState', JSON.stringify(canvasState));
-      formData.append('thumbnail', thumbnail);
-      
-      const response = await fetch(`${this.options.apiUrl}/api/designs/draft`, {
-        method: 'POST',
-        body: formData
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to create draft');
+      // If we don't have a design ID, create a new draft
+      if (!designId) {
+        // Get canvas state
+        const canvasState = this.renderer.getCanvasState();
+        const thumbnail = this.renderer.getDataURL({ pixelRatio: 0.3 });
+        
+        // Get product info from page
+        const productId = this.options.productId || 
+          (window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.product && 
+           `gid://shopify/Product/${window.ShopifyAnalytics.meta.product.id}`) ||
+          '';
+        
+        // Create draft via API
+        const formData = new FormData();
+        formData.append('templateId', this.options.templateId);
+        formData.append('variantId', this.options.variantId);
+        formData.append('productId', productId);
+        formData.append('canvasState', JSON.stringify(canvasState));
+        formData.append('thumbnail', thumbnail);
+        
+        const response = await fetch(`${this.options.apiUrl}/api/designs/draft`, {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to create draft');
+        }
+        
+        const { design } = await response.json();
+        designId = design.id;
+        
+        // Store reference in localStorage
+        localStorage.setItem('currentDesign', JSON.stringify({
+          id: design.id,
+          templateId: this.options.templateId,
+          variantId: this.options.variantId,
+          productId: productId,
+          lastModified: Date.now(),
+          status: 'draft'
+        }));
       }
-      
-      const { design } = await response.json();
-      
-      // Store reference in localStorage
-      localStorage.setItem('currentDesign', JSON.stringify({
-        id: design.id,
-        templateId: this.options.templateId,
-        variantId: this.options.variantId,
-        productId: productId,
-        lastModified: Date.now(),
-        status: 'draft'
-      }));
       
       // Store return location
       localStorage.setItem('returnTo', JSON.stringify({
@@ -751,11 +801,11 @@ if (typeof ProductCustomizerModal === 'undefined') {
       }));
       
       // Store the design ID for when the modal reopens
-      this.currentDesignId = design.id;
+      this.currentDesignId = designId;
       
       // Build the URL with return parameter
       const returnUrl = encodeURIComponent(window.location.href);
-      const designerUrl = `${this.options.apiUrl}/full?design=${design.id}&return=${returnUrl}`;
+      const designerUrl = `${this.options.apiUrl}/full?design=${designId}&return=${returnUrl}`;
       
       // Store the opened window reference
       this.advancedEditorWindow = window.open(designerUrl, '_blank');
