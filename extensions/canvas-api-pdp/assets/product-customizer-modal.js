@@ -616,81 +616,90 @@ if (typeof ProductCustomizerModal === 'undefined') {
     const selectedColor = selectedInput.value;
     console.log('[ProductCustomizer] Selected color:', selectedColor);
     
-    // Find the color swatch image for the selected color
-    // In Horizon themes, the structure is typically: input[value="Color"] + label > img
-    let variantSwatch = null;
+    // In Horizon themes, swatches use CSS background images on span elements
+    // The structure is: input + span.swatch with style="--swatch-background: url(...)"
+    const swatchSpan = selectedInput.nextElementSibling;
     
-    // Try to find the image associated with the selected color input
-    const label = selectedInput.nextElementSibling;
-    if (label && label.tagName === 'LABEL') {
-      variantSwatch = label.querySelector('img');
-      if (variantSwatch) {
-        console.log('[ProductCustomizer] Found variant swatch image in label');
-      }
-    }
-    
-    // If not found, try alternative structures
-    if (!variantSwatch) {
-      // Try finding by color value
-      const colorInputs = document.querySelectorAll(`input[type="radio"][value="${selectedColor}"]`);
-      for (const input of colorInputs) {
-        const possibleContainers = [
-          input.nextElementSibling, // label next to input
-          input.parentElement, // parent container
-          input.parentElement?.nextElementSibling // sibling container
-        ];
-        
-        for (const container of possibleContainers) {
-          if (container) {
-            const img = container.querySelector('img');
-            if (img) {
-              variantSwatch = img;
-              console.log('[ProductCustomizer] Found variant swatch via alternative method');
-              break;
-            }
-          }
-        }
-        if (variantSwatch) break;
-      }
-    }
-    
-    // If we found the variant swatch, update it
-    if (variantSwatch) {
-      // Store original if not already stored
-      if (!variantSwatch.dataset.originalSrc) {
-        variantSwatch.dataset.originalSrc = variantSwatch.src;
-        if (variantSwatch.srcset) {
-          variantSwatch.dataset.originalSrcset = variantSwatch.srcset;
-        }
+    if (swatchSpan && swatchSpan.classList.contains('swatch')) {
+      console.log('[ProductCustomizer] Found swatch span element');
+      
+      // Store the original background if not already stored
+      if (!swatchSpan.dataset.originalBackground) {
+        const currentStyle = swatchSpan.getAttribute('style');
+        swatchSpan.dataset.originalBackground = currentStyle;
+        console.log('[ProductCustomizer] Stored original background:', currentStyle);
       }
       
-      // Update with the customized preview
-      console.log('[ProductCustomizer] Updating swatch image from:', variantSwatch.src, 'to:', this.currentPreviewUrl);
-      variantSwatch.src = this.currentPreviewUrl;
-      variantSwatch.srcset = ''; // Clear srcset
-      variantSwatch.setAttribute('data-customization-preview', 'true');
+      // Update the swatch background with the customization preview
+      const newStyle = `--swatch-background: url(${this.currentPreviewUrl});`;
+      swatchSpan.setAttribute('style', newStyle);
+      swatchSpan.setAttribute('data-customization-preview', 'true');
       
-      // Also check for parent elements that might need the preview class
-      const swatchParent = variantSwatch.closest('[data-variant-id], [data-value], .variant-swatch, .color-swatch');
+      console.log('[ProductCustomizer] Updated swatch background to:', this.currentPreviewUrl);
+      
+      // Mark the parent as having customization
+      const swatchParent = swatchSpan.parentElement;
       if (swatchParent) {
         swatchParent.setAttribute('data-has-customization', 'true');
       }
     } else {
-      console.log('[ProductCustomizer] No variant swatch found for color:', selectedColor);
+      console.log('[ProductCustomizer] No swatch span found for color:', selectedColor);
+      
+      // Fallback: try to find any span.swatch for the selected color
+      const colorInputs = document.querySelectorAll(`input[type="radio"][value="${selectedColor}"]`);
+      for (const input of colorInputs) {
+        const nextSpan = input.nextElementSibling;
+        if (nextSpan && nextSpan.classList.contains('swatch')) {
+          console.log('[ProductCustomizer] Found swatch via fallback method');
+          
+          if (!nextSpan.dataset.originalBackground) {
+            const currentStyle = nextSpan.getAttribute('style');
+            nextSpan.dataset.originalBackground = currentStyle;
+          }
+          
+          const newStyle = `--swatch-background: url(${this.currentPreviewUrl});`;
+          nextSpan.setAttribute('style', newStyle);
+          nextSpan.setAttribute('data-customization-preview', 'true');
+          
+          const swatchParent = nextSpan.parentElement;
+          if (swatchParent) {
+            swatchParent.setAttribute('data-has-customization', 'true');
+          }
+          break;
+        }
+      }
     }
   }
   
   restoreOriginalVariantSwatches() {
-    // Find all variant swatches that have been customized
-    const customizedSwatches = document.querySelectorAll('img[data-customization-preview="true"]');
+    // Find all variant swatches that have been customized (both img and span elements)
+    const customizedImages = document.querySelectorAll('img[data-customization-preview="true"]');
+    const customizedSpans = document.querySelectorAll('span[data-customization-preview="true"]');
     
-    customizedSwatches.forEach(swatch => {
+    // Restore customized img elements
+    customizedImages.forEach(swatch => {
       if (swatch.dataset.originalSrc) {
-        console.log('[ProductCustomizer] Restoring original swatch:', swatch.dataset.originalSrc);
+        console.log('[ProductCustomizer] Restoring original image swatch:', swatch.dataset.originalSrc);
         swatch.src = swatch.dataset.originalSrc;
         if (swatch.dataset.originalSrcset) {
           swatch.srcset = swatch.dataset.originalSrcset;
         }
+        swatch.removeAttribute('data-customization-preview');
+        
+        // Remove parent customization marker
+        const swatchParent = swatch.closest('[data-has-customization]');
+        if (swatchParent) {
+          swatchParent.removeAttribute('data-has-customization');
+        }
+      }
+    });
+    
+    // Restore customized span elements (CSS background swatches)
+    customizedSpans.forEach(swatch => {
+      if (swatch.dataset.originalBackground) {
+        console.log('[ProductCustomizer] Restoring original CSS swatch');
+        swatch.setAttribute('style', swatch.dataset.originalBackground);
+        delete swatch.dataset.originalBackground;
         swatch.removeAttribute('data-customization-preview');
         
         // Remove parent customization marker
