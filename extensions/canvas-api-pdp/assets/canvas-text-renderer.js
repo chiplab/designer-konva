@@ -104,6 +104,36 @@ if (typeof CanvasTextRenderer === 'undefined') {
     }
   }
   
+  async loadDesign(designId) {
+    try {
+      // Add shop parameter for authentication
+      const shop = window.location.hostname;
+      const response = await fetch(`${this.apiUrl}/api/designs/${designId}?shop=${shop}`);
+      const data = await response.json();
+      
+      if (data.design && data.design.canvasState) {
+        // Parse the canvas state
+        const canvasState = JSON.parse(data.design.canvasState);
+        this.template = canvasState;
+        
+        // Initialize Konva stage
+        this.initializeStage();
+        
+        // Load fonts used in the design
+        await this.loadTemplateFonts();
+        
+        // Preload images
+        await this.preloadImages();
+        
+        // Initial render
+        this.render();
+        this.onReady();
+      }
+    } catch (error) {
+      console.error('Failed to load design:', error);
+    }
+  }
+  
   async loadTemplateFonts() {
     const fontsToLoad = new Map(); // Map of fontFamily -> Set of weights
     

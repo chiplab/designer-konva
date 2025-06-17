@@ -334,13 +334,34 @@ if (typeof ProductCustomizerModal === 'undefined') {
       document.body.style.overflow = 'hidden';
     }
     
+    // Check if we have a saved customization for this variant
+    const customizationKey = `customization_${this.options.variantId}`;
+    const savedCustomization = localStorage.getItem(customizationKey);
+    let loadDesignId = null;
+    
+    if (savedCustomization) {
+      try {
+        const customizationData = JSON.parse(savedCustomization);
+        // Use saved design if it's less than 30 days old
+        if (customizationData.timestamp && Date.now() - customizationData.timestamp < 30 * 24 * 60 * 60 * 1000) {
+          loadDesignId = customizationData.designId;
+          this.currentDesignId = customizationData.designId;
+          if (customizationData.thumbnail) {
+            this.currentPreviewUrl = customizationData.thumbnail;
+          }
+        }
+      } catch (e) {
+        console.error('Error parsing saved customization:', e);
+      }
+    }
+    
     // Store original product image so we can restore it later
     this.storeOriginalProductImage();
     
     // First, show the product variant image if available
     await this.loadVariantImage();
     
-    // Update the main product image to show the template preview
+    // Update the main product image to show the saved preview or template preview
     this.updateMainProductImage();
     
     // Load Konva if not already loaded
@@ -355,8 +376,14 @@ if (typeof ProductCustomizerModal === 'undefined') {
       onReady: () => this.onRendererReady()
     });
     
-    // Load template
-    await this.renderer.loadTemplate(this.options.templateId);
+    // Load design or template
+    if (loadDesignId) {
+      // Load the saved design
+      await this.renderer.loadDesign(loadDesignId);
+    } else {
+      // Load template
+      await this.renderer.loadTemplate(this.options.templateId);
+    }
   }
   
   storeOriginalProductImage() {
@@ -721,6 +748,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
         context: {}
       }));
       
+      // Store the design ID for when the modal reopens
+      this.currentDesignId = design.id;
+      
       // Build the URL with return parameter
       const returnUrl = encodeURIComponent(window.location.href);
       const designerUrl = `${this.options.apiUrl}/full?design=${design.id}&return=${returnUrl}`;
@@ -787,8 +817,17 @@ if (typeof ProductCustomizerModal === 'undefined') {
           isLocal: event.data.isLocal || false
         };
         
-        // Call onSave callback and close modal
-        this.options.onSave(this.customizationData);
+        // Store the design ID in localStorage for persistence
+        const customizationKey = `customization_${this.options.variantId}`;
+        localStorage.setItem(customizationKey, JSON.stringify({
+          designId: event.data.designId,
+          thumbnail: event.data.thumbnail,
+          templateId: event.data.templateId,
+          timestamp: Date.now()
+        }));
+        
+        // Don't automatically add to cart - just close the modal
+        // The user can click "Add to Cart" on the product page when ready
         this.close();
       }
     });

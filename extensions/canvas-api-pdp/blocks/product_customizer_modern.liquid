@@ -53,6 +53,43 @@
         return;
       }
       
+      // Check if we have a saved customization for the current variant
+      function checkSavedCustomization(variantId) {
+        const customizationKey = `customization_${variantId}`;
+        const savedCustomization = localStorage.getItem(customizationKey);
+        
+        if (savedCustomization) {
+          try {
+            const data = JSON.parse(savedCustomization);
+            // Update the main product image if we have a saved preview
+            if (data.thumbnail && Date.now() - data.timestamp < 30 * 24 * 60 * 60 * 1000) {
+              updateProductImageWithCustomization(data.thumbnail);
+              return data;
+            }
+          } catch (e) {
+            console.error('Error loading saved customization:', e);
+          }
+        }
+        return null;
+      }
+      
+      // Update product image with customization preview
+      function updateProductImageWithCustomization(previewUrl) {
+        // Find the main product image
+        const mainProductImage = document.querySelector(
+          '.media-gallery img:first-of-type, ' +
+          '.product-media img:first-of-type, ' +
+          '.product__media--featured img, ' +
+          '[data-product-featured-image]'
+        );
+        
+        if (mainProductImage) {
+          mainProductImage.dataset.originalSrc = mainProductImage.src;
+          mainProductImage.src = previewUrl;
+          mainProductImage.srcset = ''; // Clear srcset to prevent responsive image issues
+        }
+      }
+      
       // Store all variant images for dynamic updates
       const variantImages = {
         {% for variant in product.variants %}
@@ -165,9 +202,19 @@
             customizer.options.variantId = variantId;
             customizer.options.templateId = templateId;
             customizer.options.productImageUrl = productImageUrl;
+            
+            // Check for saved customization for this variant
+            checkSavedCustomization(variantId);
           } else {
             // Hide button if variant has no template
             customizeBtn.parentElement.style.display = 'none';
+            
+            // Restore original image if switching to non-customizable variant
+            const mainProductImage = document.querySelector('[data-original-src]');
+            if (mainProductImage && mainProductImage.dataset.originalSrc) {
+              mainProductImage.src = mainProductImage.dataset.originalSrc;
+              mainProductImage.removeAttribute('data-original-src');
+            }
           }
         }
         
@@ -203,6 +250,12 @@
             handleVariantChange(event.target.value);
           });
         });
+        
+        // Check for saved customization on initial load
+        const initialVariantId = '{{ product.selected_or_first_available_variant.id }}';
+        if (initialVariantId) {
+          checkSavedCustomization(initialVariantId);
+        }
       }
       
       initializeWhenReady();
