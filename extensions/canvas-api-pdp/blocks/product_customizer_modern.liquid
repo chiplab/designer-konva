@@ -83,15 +83,19 @@
               id: customization.variantId,
               quantity: 1,
               properties: {
-                '_customization_id': Date.now().toString(),
+                '_customization_id': customization.designId || Date.now().toString(),
                 '_template_id': customization.templateId,
                 '_custom_preview': customization.preview,
-                ...Object.entries(customization.textUpdates).reduce((acc, [key, value]) => {
-                  acc[`Text: ${key}`] = value;
-                  return acc;
-                }, {})
+                '_customization_type': customization.designId ? 'customer_design' : 'quick_custom'
               }
             };
+            
+            // Only add text updates if they exist (for quick customization)
+            if (customization.textUpdates) {
+              Object.entries(customization.textUpdates).forEach(([key, value]) => {
+                formData.properties[`Text: ${key}`] = value;
+              });
+            }
             
             // Add to cart via Shopify AJAX API
             fetch('/cart/add.js', {

@@ -28,6 +28,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
   init() {
     this.createModal();
     this.attachEventListeners();
+    this.setupMessageListener();
   }
 
   createModal() {
@@ -720,11 +721,14 @@ if (typeof ProductCustomizerModal === 'undefined') {
         context: {}
       }));
       
-      // Open full designer
-      window.open(`${this.options.apiUrl}/full?design=${design.id}`, '_blank');
+      // Build the URL with return parameter
+      const returnUrl = encodeURIComponent(window.location.href);
+      const designerUrl = `${this.options.apiUrl}/full?design=${design.id}&return=${returnUrl}`;
       
-      // Close the modal
-      this.close();
+      // Store the opened window reference
+      this.advancedEditorWindow = window.open(designerUrl, '_blank');
+      
+      // Don't close the modal yet - wait for the design to be saved
     } catch (error) {
       console.error('Error opening advanced editor:', error);
       alert('Failed to open advanced editor. Please try again.');
@@ -739,7 +743,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
       variantId: this.options.variantId,
       textUpdates: {},
       preview: this.renderer.getDesignAreaPreview(0.5), // Just the design area at 50% resolution
-      fullPreview: this.renderer.getDataURL({ pixelRatio: 0.5 }) // Full preview at 50% resolution
+      fullPreview: this.renderer.getDataURL({ pixelRatio: 0.5 }), // Full preview at 50% resolution
+      designId: this.currentDesignId || null // Include design ID if available
     };
     
     textElements.forEach(el => {
@@ -750,6 +755,43 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.customizationData = customization;
     this.options.onSave(customization);
     this.close();
+  }
+  
+  setupMessageListener() {
+    // Listen for messages from the advanced editor
+    window.addEventListener('message', (event) => {
+      // Validate message origin if needed
+      if (event.data && event.data.type === 'design-saved') {
+        console.log('Design saved message received:', event.data);
+        
+        // Store the design ID
+        this.currentDesignId = event.data.designId;
+        
+        // Update the preview if we have a thumbnail
+        if (event.data.thumbnail) {
+          this.currentPreviewUrl = event.data.thumbnail;
+          this.updateMainProductImage();
+        }
+        
+        // Close the advanced editor window if it's still open
+        if (this.advancedEditorWindow && !this.advancedEditorWindow.closed) {
+          this.advancedEditorWindow.close();
+        }
+        
+        // Update customization data with the saved design
+        this.customizationData = {
+          templateId: event.data.templateId,
+          variantId: event.data.variantId,
+          designId: event.data.designId,
+          preview: event.data.thumbnail,
+          isLocal: event.data.isLocal || false
+        };
+        
+        // Call onSave callback and close modal
+        this.options.onSave(this.customizationData);
+        this.close();
+      }
+    });
   }
 
   }

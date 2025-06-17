@@ -9,6 +9,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Get design or template ID from query params
   const designId = url.searchParams.get("design");
   const templateId = url.searchParams.get("template");
+  const returnUrl = url.searchParams.get("return");
   
   // Get shop from header (set by Shopify proxy) or query param
   const shop = request.headers.get("x-shopify-shop-domain") || 
@@ -121,6 +122,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
         <script>
           window.__INITIAL_DESIGN__ = ${JSON.stringify(designData)};
           window.__SHOP_DOMAIN__ = ${JSON.stringify(shop)};
+        </script>
+        ` : ''}
+        
+        ${returnUrl ? `
+        <script>
+          window.__RETURN_URL__ = ${JSON.stringify(returnUrl)};
         </script>
         ` : ''}
         

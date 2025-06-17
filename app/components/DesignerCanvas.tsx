@@ -10,6 +10,7 @@ declare global {
   interface Window {
     __SHOP_DOMAIN__?: string;
     __INITIAL_DESIGN__?: any;
+    __RETURN_URL__?: string;
   }
 }
 
@@ -1055,12 +1056,40 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
           if (window.__INITIAL_DESIGN__) {
             window.__INITIAL_DESIGN__.id = result.design.id;
           }
+          
+          // Send message to parent window if in iframe or opened window
+          if (window.opener || window.parent !== window) {
+            const targetWindow = window.opener || window.parent;
+            targetWindow.postMessage({
+              type: 'design-saved',
+              designId: result.design.id,
+              thumbnail: result.design.thumbnail || thumbnail,
+              templateId: initialTemplate.id,
+              variantId: initialState.variantId,
+              productId: initialState.productId
+            }, '*');
+            
+            // Show return message
+            setNotification({ 
+              message: 'Design saved! Returning to product...', 
+              type: 'success' 
+            });
+            
+            // Auto-close after delay if opened in new window
+            if (window.opener) {
+              setTimeout(() => {
+                window.close();
+              }, 2000);
+            }
+          }
         } else {
           throw new Error(result.error || 'Failed to save design');
         }
       } else {
         // Save to localStorage for non-authenticated users
+        const designId = `local-${Date.now()}`;
         const designData = {
+          id: designId,
           templateId: initialTemplate?.id,
           variantId: initialState?.variantId,
           productId: initialState?.productId,
@@ -1075,6 +1104,33 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
           message: 'Design saved locally!', 
           type: 'success' 
         });
+        
+        // Send message to parent window
+        if (window.opener || window.parent !== window) {
+          const targetWindow = window.opener || window.parent;
+          targetWindow.postMessage({
+            type: 'design-saved',
+            designId: designId,
+            thumbnail: thumbnail,
+            templateId: initialTemplate?.id,
+            variantId: initialState?.variantId,
+            productId: initialState?.productId,
+            isLocal: true
+          }, '*');
+          
+          // Show return message
+          setNotification({ 
+            message: 'Design saved! Returning to product...', 
+            type: 'success' 
+          });
+          
+          // Auto-close after delay if opened in new window
+          if (window.opener) {
+            setTimeout(() => {
+              window.close();
+            }, 2000);
+          }
+        }
       }
       
       setTimeout(() => setNotification(null), 3000);
@@ -1867,11 +1923,38 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                 border: 'none',
                 borderRadius: '4px',
                 opacity: isSaving ? 0.6 : 1,
-                cursor: isSaving ? 'not-allowed' : 'pointer'
+                cursor: isSaving ? 'not-allowed' : 'pointer',
+                marginRight: '10px'
               }}
             >
               {isSaving ? 'Saving...' : 'Done'}
             </button>
+            {window.__RETURN_URL__ && (
+              <a 
+                href={window.__RETURN_URL__}
+                style={{ 
+                  padding: '8px 16px', 
+                  fontSize: '14px', 
+                  color: '#666',
+                  textDecoration: 'none',
+                  border: '1px solid #ddd',
+                  borderRadius: '4px',
+                  display: 'inline-block',
+                  backgroundColor: 'white',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f5f5f5';
+                  e.currentTarget.style.borderColor = '#999';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'white';
+                  e.currentTarget.style.borderColor = '#ddd';
+                }}
+              >
+                ← Return to Product
+              </a>
+            )}
           </div>
         )}
         
