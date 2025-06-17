@@ -11,6 +11,10 @@ declare global {
     __SHOP_DOMAIN__?: string;
     __INITIAL_DESIGN__?: any;
     __RETURN_URL__?: string;
+    __tempBackgroundGradient?: {
+      type: 'linear' | 'radial';
+      colorStops: (number | string)[];
+    };
   }
 }
 
@@ -139,9 +143,18 @@ interface DesignerCanvasProps {
   } | null;
   onSave?: (canvasData: any, thumbnail: string | undefined) => Promise<void>;
   isAdminView?: boolean;
+  templateColors?: Array<{
+    chipColor: string;
+    color1: string;
+    color2: string;
+    color3: string;
+    color4?: string | null;
+    color5?: string | null;
+  }>;
+  initialColorVariant?: string | null;
 }
 
-const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, productLayout, shopifyProduct, shopifyVariant, initialState, onSave, isAdminView = true }) => {
+const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, productLayout, shopifyProduct, shopifyVariant, initialState, onSave, isAdminView = true, templateColors = [], initialColorVariant }) => {
   const shapeRef = React.useRef(null);
   const stageRef = React.useRef<any>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -237,6 +250,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   const [showBackgroundColorPicker, setShowBackgroundColorPicker] = React.useState(false);
   const [showDesignAreaControls, setShowDesignAreaControls] = React.useState(false);
   const [showStrokeColorPicker, setShowStrokeColorPicker] = React.useState(false);
+  
+  // Design Color state
+  const [selectedDesignColor, setSelectedDesignColor] = React.useState<string | null>(initialColorVariant || null);
+  const [showDesignColorPicker, setShowDesignColorPicker] = React.useState(false);
 
   // Font Management - Using curated fonts from S3
   const [showFontPicker, setShowFontPicker] = React.useState(false);
@@ -933,6 +950,86 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         textUpdates[el.id] ? { ...el, text: textUpdates[el.id] } : el
       )
     );
+  };
+
+  // Apply Design Color transformation
+  const applyDesignColor = (newDesignColor: string) => {
+    if (!templateColors || templateColors.length === 0) return;
+    if (!newDesignColor) return;
+    if (selectedDesignColor === newDesignColor) return; // No change needed
+    
+    // Use the current selected design color as source, or initial if not set
+    const currentColor = selectedDesignColor || initialColorVariant;
+    if (!currentColor) return;
+    
+    // Find the source and target color mappings
+    const sourceColors = templateColors.find(tc => tc.chipColor === currentColor);
+    const targetColors = templateColors.find(tc => tc.chipColor === newDesignColor);
+    
+    if (!sourceColors || !targetColors) return;
+    
+    // Helper function to replace color by position
+    const replaceColor = (color: string | undefined): string | undefined => {
+      if (!color || color === 'gold-gradient') return color; // Don't change gold gradient
+      
+      const normalizedColor = color.toLowerCase();
+      
+      // Check each color position
+      if (normalizedColor === sourceColors.color1.toLowerCase()) return targetColors.color1;
+      if (normalizedColor === sourceColors.color2.toLowerCase()) return targetColors.color2;
+      if (normalizedColor === sourceColors.color3.toLowerCase()) return targetColors.color3;
+      if (sourceColors.color4 && normalizedColor === sourceColors.color4.toLowerCase()) return targetColors.color4 || color;
+      if (sourceColors.color5 && normalizedColor === sourceColors.color5.toLowerCase()) return targetColors.color5 || color;
+      
+      return color; // Return unchanged if no match
+    };
+    
+    // Transform text elements
+    setTextElements(prev => 
+      prev.map(el => ({
+        ...el,
+        fill: replaceColor(el.fill),
+        stroke: replaceColor(el.stroke)
+      }))
+    );
+    
+    // Transform curved text elements
+    setCurvedTextElements(prev => 
+      prev.map(el => ({
+        ...el,
+        fill: replaceColor(el.fill),
+        stroke: replaceColor(el.stroke)
+      }))
+    );
+    
+    // Transform background color
+    if (backgroundColor !== 'transparent' && backgroundColor !== 'linear-gradient' && backgroundColor !== 'radial-gradient') {
+      const newBgColor = replaceColor(backgroundColor);
+      if (newBgColor && newBgColor !== backgroundColor) {
+        setBackgroundColor(newBgColor);
+      }
+    }
+    
+    // Transform background gradient color stops
+    if ((backgroundColor === 'linear-gradient' || backgroundColor === 'radial-gradient') && window.__tempBackgroundGradient) {
+      const gradient = window.__tempBackgroundGradient;
+      if (gradient.colorStops) {
+        const newColorStops = [...gradient.colorStops];
+        // Process color stops (they alternate between position and color)
+        for (let i = 1; i < newColorStops.length; i += 2) {
+          const newColor = replaceColor(newColorStops[i] as string);
+          if (newColor) {
+            newColorStops[i] = newColor;
+          }
+        }
+        window.__tempBackgroundGradient = {
+          ...gradient,
+          colorStops: newColorStops
+        };
+      }
+    }
+    
+    setSelectedDesignColor(newDesignColor);
   };
 
   // Save customer design as draft
@@ -1704,6 +1801,25 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     }
   }, [showStrokeColorPicker]);
 
+  // Close design color picker when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      // Check if click is outside design color picker
+      const target = e.target as HTMLElement;
+      const designColorPicker = target.closest('[data-design-color-picker]');
+      const designColorButton = target.closest('[data-design-color-button]');
+      
+      if (!designColorPicker && !designColorButton && showDesignColorPicker) {
+        setShowDesignColorPicker(false);
+      }
+    };
+
+    if (showDesignColorPicker) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [showDesignColorPicker]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Notification Banner */}
@@ -1954,6 +2070,109 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
               >
                 ← Return to Product
               </a>
+            )}
+          </div>
+        )}
+        
+        {/* Design Color Control - Only show in customer view */}
+        {!isAdminView && templateColors.length > 0 && (
+          <div style={{ display: 'inline-block', marginLeft: '20px', position: 'relative' }}>
+            <button
+              data-design-color-button="true"
+              onClick={() => setShowDesignColorPicker(!showDesignColorPicker)}
+              style={{
+                padding: '8px 16px',
+                fontSize: '14px',
+                borderRadius: '4px',
+                border: '1px solid #ddd',
+                background: 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+            >
+              <span style={{ fontSize: '12px', color: '#666' }}>Design Color:</span>
+              <span style={{ 
+                fontSize: '14px', 
+                fontWeight: 500, 
+                textTransform: 'capitalize' 
+              }}>
+                {selectedDesignColor || 'Select'}
+              </span>
+            </button>
+            
+            {/* Design Color Picker Dropdown */}
+            {showDesignColorPicker && (
+              <div
+                data-design-color-picker="true"
+                style={{
+                  position: 'absolute',
+                  top: '40px',
+                  left: 0,
+                  background: 'white',
+                  border: '1px solid #ccc',
+                  borderRadius: '6px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                  padding: '8px',
+                  minWidth: '200px',
+                  maxHeight: '300px',
+                  overflowY: 'auto',
+                  zIndex: 1001,
+                }}
+              >
+                {templateColors.map((colorOption) => (
+                  <button
+                    key={colorOption.chipColor}
+                    onClick={() => {
+                      applyDesignColor(colorOption.chipColor);
+                      setShowDesignColorPicker(false);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      width: '100%',
+                      padding: '8px 12px',
+                      border: 'none',
+                      background: selectedDesignColor === colorOption.chipColor ? '#f0f0f0' : 'transparent',
+                      cursor: 'pointer',
+                      transition: 'background 0.2s',
+                      borderRadius: '4px',
+                      textAlign: 'left'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (selectedDesignColor !== colorOption.chipColor) {
+                        e.currentTarget.style.backgroundColor = '#f5f5f5';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = selectedDesignColor === colorOption.chipColor ? '#f0f0f0' : 'transparent';
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '50%',
+                        backgroundColor: colorOption.color1,
+                        border: '2px solid #ddd',
+                        flexShrink: 0
+                      }}
+                    />
+                    <span style={{ 
+                      fontSize: '14px', 
+                      textTransform: 'capitalize',
+                      color: '#333'
+                    }}>
+                      {colorOption.chipColor.replace('-', ' ')}
+                    </span>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         )}

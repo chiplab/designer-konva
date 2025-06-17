@@ -19,6 +19,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Load design or template data
   let templateData = null;
   let designData = null;
+  let colorVariant = null;
+  
+  // Load all template colors for client-side color transformation
+  const templateColors = await db.templateColor.findMany({
+    orderBy: { chipColor: 'asc' },
+  });
   
   if (designId && shop) {
     // Load customer design
@@ -49,6 +55,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
         name: design.template.name,
         canvasData: design.canvasState,
       };
+      
+      // Get the color variant from the template
+      colorVariant = design.template.colorVariant;
     }
   } else if (templateId && shop) {
     // Load template directly
@@ -66,6 +75,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
         name: template.name,
         canvasData: template.canvasData,
       };
+      
+      // Get the color variant from the template
+      colorVariant = template.colorVariant;
     }
   }
 
@@ -130,6 +142,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
           window.__RETURN_URL__ = ${JSON.stringify(returnUrl)};
         </script>
         ` : ''}
+        
+        <!-- Embed template colors for Design Color feature -->
+        <script>
+          window.__TEMPLATE_COLORS__ = ${JSON.stringify(templateColors)};
+          window.__INITIAL_COLOR_VARIANT__ = ${JSON.stringify(colorVariant)};
+        </script>
         
         <!-- Load our standalone canvas bundle (includes Konva) -->
         <script src="standalone/standalone-canvas.js"></script>
