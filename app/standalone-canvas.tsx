@@ -6,16 +6,30 @@ import DesignerCanvas from './components/DesignerCanvas';
 function StandaloneCanvas() {
   // Get template data from window if available
   const initialTemplate = (window as any).__INITIAL_TEMPLATE__ || null;
+  const initialDesign = (window as any).__INITIAL_DESIGN__ || null;
+  
+  // Pass initial state for customer designs
+  const initialState = initialDesign ? {
+    templateId: initialTemplate?.id,
+    variantId: initialDesign.variantId,
+    productId: initialDesign.productId,
+    textUpdates: initialDesign.textUpdates,
+    fromModal: false
+  } : null;
   
   return (
     <>
       <div className="canvas-header">
         <h2 style={{ margin: 0, fontFamily: 'Arial' }}>
-          {initialTemplate ? `Editing: ${initialTemplate.name}` : 'Standalone Designer Canvas (No Remix Hydration)'}
+          {initialTemplate ? `Customizing: ${initialTemplate.name}` : 'Product Designer'}
         </h2>
       </div>
       <div className="canvas-container">
-        <DesignerCanvas initialTemplate={initialTemplate} />
+        <DesignerCanvas 
+          initialTemplate={initialTemplate} 
+          initialState={initialState}
+          isAdminView={false}
+        />
       </div>
     </>
   );

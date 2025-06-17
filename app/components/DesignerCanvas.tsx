@@ -5,6 +5,14 @@ import { CURATED_FONTS, getFontsByCategory, DEFAULT_FONT } from '../constants/fo
 import { fontLoader } from '../services/font-loader';
 import FontBrowser from './FontBrowser';
 
+// Declare global window properties
+declare global {
+  interface Window {
+    __SHOP_DOMAIN__?: string;
+    __INITIAL_DESIGN__?: any;
+  }
+}
+
 // Image element component
 const ImageElement: React.FC<{
   imageElement: {
@@ -124,6 +132,7 @@ interface DesignerCanvasProps {
   initialState?: {
     templateId?: string;
     variantId?: string;
+    productId?: string;
     textUpdates?: Record<string, string>;
     fromModal?: boolean;
   } | null;
@@ -925,6 +934,162 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     );
   };
 
+  // Save customer design as draft
+  const saveCustomerDesign = async () => {
+    setIsSaving(true);
+    try {
+      // Get canvas state
+      const canvasState = getCanvasState();
+      
+      // Deselect everything to hide transformer before generating thumbnail
+      setSelectedId(null);
+      
+      // Force transformer to detach
+      if (transformerRef.current) {
+        transformerRef.current.nodes([]);
+        transformerRef.current.getLayer()?.batchDraw();
+      }
+      
+      // Wait for the UI to update
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Wait for all images to be loaded
+      const stage = stageRef.current;
+      if (stage) {
+        const allImages = stage.find('Image');
+        const imageLoadPromises = allImages.map((imageNode: any) => {
+          return new Promise((resolve) => {
+            const img = imageNode.image();
+            if (!img) {
+              setTimeout(() => resolve(true), 500);
+              return;
+            }
+            
+            if (img.complete) {
+              resolve(true);
+            } else {
+              const onLoad = () => {
+                img.removeEventListener('load', onLoad);
+                img.removeEventListener('error', onError);
+                resolve(true);
+              };
+              const onError = () => {
+                console.warn('Image failed to load for thumbnail:', img.src);
+                img.removeEventListener('load', onLoad);
+                img.removeEventListener('error', onError);
+                resolve(true);
+              };
+              
+              img.addEventListener('load', onLoad);
+              img.addEventListener('error', onError);
+              
+              setTimeout(() => {
+                img.removeEventListener('load', onLoad);
+                img.removeEventListener('error', onError);
+                resolve(true);
+              }, 5000);
+            }
+          });
+        });
+        
+        await Promise.all(imageLoadPromises);
+        stage.batchDraw();
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+      
+      // Generate thumbnail
+      let thumbnail: string | undefined;
+      try {
+        thumbnail = stageRef.current?.toDataURL({ 
+          x: 0,
+          y: 0,
+          width: dimensions.width * scale,
+          height: dimensions.height * scale,
+          pixelRatio: 1 / scale,
+          mimeType: 'image/png'
+        });
+      } catch (thumbnailError) {
+        console.error('Error generating thumbnail:', thumbnailError);
+        try {
+          thumbnail = stageRef.current?.toDataURL({ 
+            x: 0,
+            y: 0,
+            width: dimensions.width * scale,
+            height: dimensions.height * scale,
+            pixelRatio: 0.6 / scale,
+            mimeType: 'image/png'
+          });
+        } catch (fallbackError) {
+          console.error('Fallback thumbnail generation also failed:', fallbackError);
+        }
+      }
+      
+      // Check if we have a shop context (authenticated) or need to use localStorage
+      const shop = window.__SHOP_DOMAIN__ || null;
+      
+      if (shop && initialTemplate?.id && initialState?.variantId && initialState?.productId) {
+        // Save to database as CustomerDesign draft
+        const formData = new FormData();
+        formData.append('templateId', initialTemplate.id);
+        formData.append('variantId', initialState.variantId);
+        formData.append('productId', initialState.productId || '');
+        formData.append('canvasState', JSON.stringify(canvasState));
+        if (thumbnail) {
+          formData.append('thumbnail', thumbnail);
+        }
+        
+        const response = await fetch('/api/designs/draft', {
+          method: 'POST',
+          body: formData,
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          setNotification({ 
+            message: 'Design saved successfully!', 
+            type: 'success' 
+          });
+          
+          // Store design ID for future updates
+          if (window.__INITIAL_DESIGN__) {
+            window.__INITIAL_DESIGN__.id = result.design.id;
+          }
+        } else {
+          throw new Error(result.error || 'Failed to save design');
+        }
+      } else {
+        // Save to localStorage for non-authenticated users
+        const designData = {
+          templateId: initialTemplate?.id,
+          variantId: initialState?.variantId,
+          productId: initialState?.productId,
+          canvasState: canvasState,
+          thumbnail: thumbnail,
+          savedAt: new Date().toISOString(),
+        };
+        
+        localStorage.setItem('customerDesignDraft', JSON.stringify(designData));
+        
+        setNotification({ 
+          message: 'Design saved locally!', 
+          type: 'success' 
+        });
+      }
+      
+      setTimeout(() => setNotification(null), 3000);
+    } catch (error) {
+      console.error('Error saving design:', error);
+      setNotification({ 
+        message: 'Failed to save design: ' + (error instanceof Error ? error.message : 'Unknown error'), 
+        type: 'error' 
+      });
+      setTimeout(() => setNotification(null), 5000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Save template function
   const saveTemplate = async () => {
     // If onSave prop is provided, use it instead of internal save logic
@@ -1646,8 +1811,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
           {designableArea.visible ? 'Hide' : 'Show'} Design Area
         </button>
         
-        {/* Save/Load Controls - Only show in admin view */}
-        {isAdminView && (
+        {/* Save/Load Controls - Show different UI based on admin view */}
+        {isAdminView ? (
           <div style={{ display: 'inline-block', marginLeft: '20px', borderLeft: '2px solid #ddd', paddingLeft: '20px' }}>
             <button 
               onClick={saveTemplate} 
@@ -1688,6 +1853,25 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
             </select>
             
             {isLoading && <span style={{ fontSize: '14px', color: '#666' }}>Loading...</span>}
+          </div>
+        ) : (
+          <div style={{ display: 'inline-block', marginLeft: '20px', borderLeft: '2px solid #ddd', paddingLeft: '20px' }}>
+            <button 
+              onClick={saveCustomerDesign} 
+              disabled={isSaving}
+              style={{ 
+                padding: '8px 16px', 
+                fontSize: '14px', 
+                backgroundColor: '#28a745',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                opacity: isSaving ? 0.6 : 1,
+                cursor: isSaving ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {isSaving ? 'Saving...' : 'Done'}
+            </button>
           </div>
         )}
         
@@ -2228,7 +2412,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
               }}
             >
               <option value="">Default Base Image</option>
-              {Object.entries(productLayout.variantImages).map(([key, url]) => {
+              {Object.entries(productLayout.variantImages).map(([key]) => {
                 // Parse the key to get color and pattern
                 const [color, ...patternParts] = key.split('-');
                 const pattern = patternParts.join(' ').replace(/-/g, ' ');

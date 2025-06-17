@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://presented-deutsch-stop-rotation.trycloudflare.com"
+application_url = "https://epa-fence-troy-acute.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://presented-deutsch-stop-rotation.trycloudflare.com/auth/callback",
-  "https://presented-deutsch-stop-rotation.trycloudflare.com/auth/shopify/callback",
-  "https://presented-deutsch-stop-rotation.trycloudflare.com/api/auth/callback"
+  "https://epa-fence-troy-acute.trycloudflare.com/auth/callback",
+  "https://epa-fence-troy-acute.trycloudflare.com/auth/shopify/callback",
+  "https://epa-fence-troy-acute.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://presented-deutsch-stop-rotation.trycloudflare.com"
+url = "https://epa-fence-troy-acute.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 
