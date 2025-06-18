@@ -97,7 +97,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }, { status: 404 });
       }
 
-      // Delete all templates
+      // First, delete any CustomerDesigns that reference these templates
+      const deletedDesigns = await db.customerDesign.deleteMany({
+        where: {
+          templateId: { in: templateIds },
+        },
+      });
+      
+      console.log(`Deleted ${deletedDesigns.count} customer designs associated with ${templateIds.length} templates`);
+
+      // Now delete all templates
       await db.template.deleteMany({
         where: {
           id: { in: templateIds },
@@ -107,7 +116,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       return json({ 
         success: true, 
-        message: `${templates.length} template(s) deleted successfully` 
+        message: `${templates.length} template(s) deleted successfully${deletedDesigns.count > 0 ? ` (and ${deletedDesigns.count} associated designs)` : ''}` 
       });
     } catch (error) {
       console.error("Error deleting templates:", error);
@@ -542,14 +551,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }, { status: 404 });
       }
 
-      // Delete the template
+      // First, delete any CustomerDesigns that reference this template
+      const deletedDesigns = await db.customerDesign.deleteMany({
+        where: {
+          templateId: templateId,
+        },
+      });
+      
+      console.log(`Deleted ${deletedDesigns.count} customer designs associated with template ${templateId}`);
+
+      // Now delete the template
       await db.template.delete({
         where: { id: templateId },
       });
 
       return json({ 
         success: true, 
-        message: `Template "${template.name}" deleted successfully` 
+        message: `Template "${template.name}" deleted successfully${deletedDesigns.count > 0 ? ` (and ${deletedDesigns.count} associated designs)` : ''}` 
       });
     } catch (error) {
       console.error("Error deleting template:", error);
