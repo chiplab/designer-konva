@@ -55,6 +55,17 @@
       
       // Check if we have a saved customization for the current variant
       function checkSavedCustomization(variantId) {
+        // First check for global text state
+        const textKey = `customization_global_text`;
+        const savedText = localStorage.getItem(textKey);
+        
+        if (savedText) {
+          // We have global text, but need to regenerate preview for this variant
+          // This will be handled by the customizer when it opens
+          return { hasGlobalText: true };
+        }
+        
+        // Then check variant-specific customization
         const customizationKey = `customization_${variantId}`;
         const savedCustomization = localStorage.getItem(customizationKey);
         
@@ -71,6 +82,12 @@
           }
         }
         return null;
+      }
+      
+      // Helper function to get variant title
+      function getVariantTitle(variantId) {
+        const variantInfo = variantData[variantId];
+        return variantInfo ? variantInfo.title : null;
       }
       
       // Update product image with customization preview
@@ -172,7 +189,7 @@
         });
         
         // Function to handle variant changes
-        function handleVariantChange(variantId) {
+        async function handleVariantChange(variantId) {
           variantChangeCount++;
           
           if (!variantId) return;
@@ -203,7 +220,84 @@
             customizer.options.templateId = templateId;
             customizer.options.productImageUrl = productImageUrl;
             
-            // Check for saved customization for this variant
+            // Let the customizer handle the variant change if modal is open
+            if (customizer.isOpen) {
+              await customizer.handleVariantChange(variantId, templateId);
+            }
+            
+            // Check for global text state and regenerate preview if needed
+            const globalTextKey = 'customization_global_text';
+            const savedText = localStorage.getItem(globalTextKey);
+            
+            if (savedText) {
+              try {
+                const textData = JSON.parse(savedText);
+                if (textData.textUpdates && textData.timestamp && Date.now() - textData.timestamp < 30 * 24 * 60 * 60 * 1000) {
+                  // We have global text, generate preview for new variant
+                  console.log('[ProductCustomizer] Generating preview for variant change with saved text');
+                  
+                  // Update the global flag
+                  hasActiveCustomization = true;
+                  
+                  // Prevent any default image updates by intercepting image src changes
+                  const mainProductImage = document.querySelector(
+                    '.media-gallery img:first-of-type, ' +
+                    '.product-media img:first-of-type, ' +
+                    '.product__media--featured img, ' +
+                    '[data-product-featured-image]'
+                  );
+                  
+                  if (mainProductImage) {
+                    // Store current customized image
+                    const currentCustomizedSrc = mainProductImage.src;
+                    
+                    // Add loading state to current image
+                    mainProductImage.style.opacity = '0.7';
+                    mainProductImage.style.filter = 'grayscale(50%)';
+                    mainProductImage.style.transition = 'opacity 0.3s, filter 0.3s';
+                    
+                    // Intercept any attempts to change the image
+                    const observer = new MutationObserver((mutations) => {
+                      mutations.forEach((mutation) => {
+                        if (mutation.attributeName === 'src' && 
+                            mainProductImage.src !== currentCustomizedSrc &&
+                            !mainProductImage.src.includes('data:image')) {
+                          // Theme tried to update to default variant image, prevent it
+                          console.log('[ProductCustomizer] Preventing default image update');
+                          mainProductImage.src = currentCustomizedSrc;
+                        }
+                      });
+                    });
+                    
+                    // Start observing
+                    observer.observe(mainProductImage, { attributes: true, attributeFilter: ['src'] });
+                    
+                    // Stop observing after preview is generated
+                    setTimeout(() => observer.disconnect(), 5000);
+                  }
+                  
+                  // Check if the function is available (script is loaded)
+                  if (typeof generateVariantPreviewWithText === 'function') {
+                    await generateVariantPreviewWithText(variantId, templateId, textData.textUpdates);
+                    return; // Skip normal customization check since we handled it
+                  } else {
+                    console.log('[ProductCustomizer] Waiting for resources to load before generating preview');
+                    // Fallback: wait for resources and try again
+                    setTimeout(async () => {
+                      if (typeof generateVariantPreviewWithText === 'function') {
+                        await generateVariantPreviewWithText(variantId, templateId, textData.textUpdates);
+                      }
+                    }, 500);
+                  }
+                  
+                  return; // Important: skip the normal variant image update below
+                }
+              } catch (e) {
+                console.error('Error parsing saved text:', e);
+              }
+            }
+            
+            // Only check for saved customization if we don't have global text
             checkSavedCustomization(variantId);
           } else {
             // Hide button if variant has no template
@@ -218,10 +312,30 @@
           }
         }
         
+        // Track if we have active customizations
+        let hasActiveCustomization = false;
+        
+        // Check initial state for customization
+        const globalTextKey = 'customization_global_text';
+        const savedText = localStorage.getItem(globalTextKey);
+        if (savedText) {
+          try {
+            const textData = JSON.parse(savedText);
+            if (textData.textUpdates && Object.keys(textData.textUpdates).length > 0) {
+              hasActiveCustomization = true;
+            }
+          } catch (e) {}
+        }
+        
         // Listen for variant changes - try multiple event patterns
         // Modern themes
         document.addEventListener('variant:change', function(event) {
           if (event.detail && event.detail.variant) {
+            // If we have active customization, prevent the default image update
+            if (hasActiveCustomization) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+            }
             handleVariantChange(event.detail.variant.id);
           }
         });
@@ -229,6 +343,10 @@
         // Some themes use this pattern
         document.addEventListener('variantChange', function(event) {
           if (event.detail && event.detail.variant) {
+            if (hasActiveCustomization) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+            }
             handleVariantChange(event.detail.variant.id);
           }
         });
