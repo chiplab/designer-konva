@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://br-ta-peter-stays.trycloudflare.com"
+application_url = "https://concert-immune-youth-components.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://br-ta-peter-stays.trycloudflare.com/auth/callback",
-  "https://br-ta-peter-stays.trycloudflare.com/auth/shopify/callback",
-  "https://br-ta-peter-stays.trycloudflare.com/api/auth/callback"
+  "https://concert-immune-youth-components.trycloudflare.com/auth/callback",
+  "https://concert-immune-youth-components.trycloudflare.com/auth/shopify/callback",
+  "https://concert-immune-youth-components.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://br-ta-peter-stays.trycloudflare.com"
+url = "https://concert-immune-youth-components.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 

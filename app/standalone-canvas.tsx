@@ -10,6 +10,10 @@ function StandaloneCanvas() {
   const templateColors = (window as any).__TEMPLATE_COLORS__ || [];
   const initialColorVariant = (window as any).__INITIAL_COLOR_VARIANT__ || null;
   
+  // Debug logging
+  console.log('[StandaloneCanvas] Template colors loaded:', templateColors);
+  console.log('[StandaloneCanvas] Template colors length:', templateColors.length);
+  
   // Pass initial state for customer designs
   const initialState = initialDesign ? {
     templateId: initialTemplate?.id,

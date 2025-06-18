@@ -1157,13 +1157,29 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
           // Send message to parent window if in iframe or opened window
           if (window.opener || window.parent !== window) {
             const targetWindow = window.opener || window.parent;
+            
+            // Debug logging
+            console.log('[DesignerCanvas] Sending design-saved message');
+            console.log('[DesignerCanvas] Canvas state:', canvasState);
+            console.log('[DesignerCanvas] Template colors prop:', templateColors);
+            console.log('[DesignerCanvas] Template colors length:', templateColors?.length);
+            console.log('[DesignerCanvas] Initial template:', initialTemplate);
+            console.log('[DesignerCanvas] Message being sent:', {
+              type: 'design-saved',
+              hasCanvasState: !!canvasState,
+              hasTemplateColors: !!templateColors && templateColors.length > 0,
+              templateColorsLength: templateColors?.length || 0
+            });
+            
             targetWindow.postMessage({
               type: 'design-saved',
               designId: result.design.id,
               thumbnail: result.design.thumbnail || thumbnail,
               templateId: initialTemplate.id,
               variantId: initialState.variantId,
-              productId: initialState.productId
+              productId: initialState.productId,
+              canvasState: canvasState,
+              templateColors: templateColors
             }, '*');
             
             // Show return message
@@ -1205,6 +1221,13 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         // Send message to parent window
         if (window.opener || window.parent !== window) {
           const targetWindow = window.opener || window.parent;
+          
+          // Debug logging
+          console.log('[DesignerCanvas] Sending design-saved message (localStorage)');
+          console.log('[DesignerCanvas] Canvas state:', canvasState);
+          console.log('[DesignerCanvas] Template colors prop:', templateColors);
+          console.log('[DesignerCanvas] Template colors length:', templateColors?.length);
+          
           targetWindow.postMessage({
             type: 'design-saved',
             designId: designId,
@@ -1212,7 +1235,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
             templateId: initialTemplate?.id,
             variantId: initialState?.variantId,
             productId: initialState?.productId,
-            isLocal: true
+            isLocal: true,
+            canvasState: canvasState,
+            templateColors: templateColors
           }, '*');
           
           // Show return message
