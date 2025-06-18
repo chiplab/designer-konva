@@ -23,6 +23,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.hasProductImage = false; // Track if we're using product image as preview
     this.originalProductImages = []; // Store original images to restore later
     this.currentPreviewUrl = null; // Store current preview URL
+    this.savedTextUpdates = null; // Store saved text updates
+    this.textSaveTimer = null; // Timer for auto-saving text state
   }
 
   init() {
@@ -54,11 +56,11 @@ if (typeof ProductCustomizerModal === 'undefined') {
               </div>
               
               <div class="pcm-actions">
-                <button class="pcm-btn pcm-btn-secondary" id="advancedEditor">
-                  Advanced Editor
+                <button class="pcm-btn pcm-btn-primary pcm-btn-full-width" id="saveCustomization">
+                  Done
                 </button>
-                <button class="pcm-btn pcm-btn-primary" id="saveCustomization">
-                  Add to Cart
+                <button class="pcm-btn pcm-btn-secondary pcm-btn-full-width" id="advancedEditor">
+                  Edit using Design Tool
                 </button>
               </div>
             </div>
@@ -250,8 +252,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
 
         .pcm-actions {
           display: flex;
+          flex-direction: column;
           gap: 12px;
-          justify-content: flex-end;
           padding-top: 20px;
           border-top: 1px solid #e5e5e5;
         }
@@ -266,6 +268,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
           transition: all 0.2s;
           display: inline-flex;
           align-items: center;
+          justify-content: center;
           gap: 8px;
         }
 
@@ -288,6 +291,11 @@ if (typeof ProductCustomizerModal === 'undefined') {
 
         .pcm-btn-secondary:hover {
           background: #f5f5f5;
+        }
+        
+        .pcm-btn-full-width {
+          width: 100%;
+          text-align: center;
         }
 
         @keyframes fadeIn {
@@ -334,7 +342,16 @@ if (typeof ProductCustomizerModal === 'undefined') {
       document.body.style.overflow = 'hidden';
     }
     
-    // Check if we have a saved customization for this variant
+    // First check for global text state (shared across ALL variants)
+    const globalTextState = this.loadTextState();
+    let savedTextUpdates = null;
+    
+    if (globalTextState && globalTextState.textUpdates) {
+      savedTextUpdates = globalTextState.textUpdates;
+      this.savedTextUpdates = globalTextState.textUpdates;
+    }
+    
+    // Then check if we have a saved customization for this specific variant
     const customizationKey = `customization_${this.options.variantId}`;
     const savedCustomization = localStorage.getItem(customizationKey);
     let loadDesignId = null;
@@ -349,6 +366,11 @@ if (typeof ProductCustomizerModal === 'undefined') {
           if (customizationData.thumbnail) {
             this.currentPreviewUrl = customizationData.thumbnail;
           }
+          // Only use variant-specific text if we don't have pattern text
+          if (!savedTextUpdates && customizationData.textUpdates) {
+            savedTextUpdates = customizationData.textUpdates;
+            this.savedTextUpdates = customizationData.textUpdates;
+          }
         }
       } catch (e) {
         console.error('Error parsing saved customization:', e);
@@ -358,13 +380,19 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Store original product image so we can restore it later
     this.storeOriginalProductImage();
     
-    // If we have a saved customization, use its preview
-    if (this.currentPreviewUrl && loadDesignId) {
-      // We already have the preview URL from saved customization
-      // Don't load the variant image - keep the customization preview
+    // If we have a saved customization with variant-specific preview, use it
+    // Otherwise, we'll generate a new preview with the saved text
+    if (this.currentPreviewUrl && !globalTextState) {
+      // We have a variant-specific preview and no global text override
+      const previewImage = document.getElementById('preview-image');
+      if (previewImage) {
+        previewImage.src = this.currentPreviewUrl;
+        previewImage.style.display = 'block';
+      }
     } else {
-      // First, show the product variant image if available
+      // Show the product variant image first
       await this.loadVariantImage();
+      // If we have global text, we'll generate a new preview after loading
     }
     
     // Update the main product image to show the saved preview or template preview
@@ -391,6 +419,33 @@ if (typeof ProductCustomizerModal === 'undefined') {
     } else {
       // Load template
       await this.renderer.loadTemplate(this.options.templateId);
+    }
+    
+    // Apply saved text updates if available
+    if (savedTextUpdates) {
+      // Wait a moment for the template to fully load
+      setTimeout(() => {
+        Object.keys(savedTextUpdates).forEach(elementId => {
+          this.renderer.updateText(elementId, savedTextUpdates[elementId]);
+        });
+        // Update the preview after applying text changes
+        this.updatePreview();
+        
+        // If we applied global text, always generate a new preview for this variant
+        if (globalTextState) {
+          setTimeout(() => {
+            this.currentPreviewUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+            this.updateMainProductImage();
+            this.updateVariantSwatches();
+            
+            // Also generate multi-variant previews if we have the color data
+            if (window.__TEMPLATE_COLORS__ && window.__TEMPLATE_COLORS__.length > 0) {
+              const canvasState = this.renderer.getCanvasState();
+              this.generateAllColorVariantPreviews(canvasState);
+            }
+          }, 200);
+        }
+      }, 100);
     }
   }
   
@@ -783,8 +838,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Create text input fields
     this.createTextInputs();
     
-    // If we don't have a product image, show the canvas preview
-    if (!this.hasProductImage) {
+    // If we don't have a product image and no saved preview, show the canvas preview
+    if (!this.hasProductImage && !this.savedTextUpdates) {
       this.updatePreview();
     }
   }
@@ -820,28 +875,41 @@ if (typeof ProductCustomizerModal === 'undefined') {
     const textInputsContainer = this.modal.querySelector('.pcm-text-inputs');
     const textElements = this.renderer.getAllTextElements();
     
-    textInputsContainer.innerHTML = textElements.map((element, index) => `
-      <div class="pcm-text-field">
-        <label for="text-${element.id}">
-          ${element.type === 'curved' ? 'Curved Text' : 
-            element.type === 'gradient' ? 'Gradient Text' : 
-            `Text ${index + 1}`}
-        </label>
-        <input 
-          type="text" 
-          id="text-${element.id}" 
-          data-element-id="${element.id}"
-          value="${element.text}"
-          placeholder="Enter your text here"
-        />
-      </div>
-    `).join('');
+    textInputsContainer.innerHTML = textElements.map((element, index) => {
+      // Use saved text if available, otherwise use the element's current text
+      const displayText = this.savedTextUpdates && this.savedTextUpdates[element.id] 
+        ? this.savedTextUpdates[element.id] 
+        : element.text;
+        
+      return `
+        <div class="pcm-text-field">
+          <label for="text-${element.id}">
+            ${element.type === 'curved' ? 'Curved Text' : 
+              element.type === 'gradient' ? 'Gradient Text' : 
+              `Text ${index + 1}`}
+          </label>
+          <input 
+            type="text" 
+            id="text-${element.id}" 
+            data-element-id="${element.id}"
+            value="${displayText}"
+            placeholder="Enter your text here"
+          />
+        </div>
+      `;
+    }).join('');
     
     // Attach input listeners
     textInputsContainer.querySelectorAll('input').forEach(input => {
       input.addEventListener('input', (e) => {
         this.renderer.updateText(e.target.dataset.elementId, e.target.value);
         this.debouncedUpdatePreview();
+        
+        // Auto-save text state on input change
+        clearTimeout(this.textSaveTimer);
+        this.textSaveTimer = setTimeout(() => {
+          this.saveTextState();
+        }, 1000); // Save after 1 second of no typing
       });
     });
   }
@@ -856,12 +924,18 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Only restore original product images if we're not keeping a customization
     if (!keepCustomization) {
       this.restoreOriginalProductImages();
+      // Clear saved text updates if not keeping customization
+      this.savedTextUpdates = null;
     }
     
-    // Clear any pending update timer
+    // Clear any pending timers
     if (this.updateTimer) {
       clearTimeout(this.updateTimer);
       this.updateTimer = null;
+    }
+    if (this.textSaveTimer) {
+      clearTimeout(this.textSaveTimer);
+      this.textSaveTimer = null;
     }
     
     // Clean up renderer
@@ -961,7 +1035,24 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Save to cart or handle as needed
     this.customizationData = customization;
     this.options.onSave(customization);
-    this.close(false); // Don't keep customization for simple save
+    
+    // Update the current preview URL before closing
+    this.currentPreviewUrl = customization.fullPreview;
+    
+    // Store the customization in localStorage for persistence
+    const customizationKey = `customization_${this.options.variantId}`;
+    localStorage.setItem(customizationKey, JSON.stringify({
+      designId: this.currentDesignId,
+      thumbnail: customization.fullPreview,
+      templateId: this.options.templateId,
+      textUpdates: customization.textUpdates,
+      timestamp: Date.now()
+    }));
+    
+    // Also save text state to pattern-based key for cross-variant persistence
+    this.saveTextState();
+    
+    this.close(true); // Keep customization visible after save
   }
   
   setupMessageListener() {
@@ -1407,6 +1498,78 @@ if (typeof ProductCustomizerModal === 'undefined') {
     }
     
     return null;
+  }
+  
+  getCurrentTextUpdates() {
+    const textUpdates = {};
+    const textElements = this.renderer ? this.renderer.getAllTextElements() : [];
+    textElements.forEach(el => {
+      textUpdates[el.id] = el.text;
+    });
+    return textUpdates;
+  }
+  
+  saveTextState() {
+    const textKey = `customization_global_text`;
+    localStorage.setItem(textKey, JSON.stringify({
+      textUpdates: this.getCurrentTextUpdates(),
+      timestamp: Date.now()
+    }));
+  }
+  
+  loadTextState() {
+    const textKey = `customization_global_text`;
+    const savedText = localStorage.getItem(textKey);
+    if (savedText) {
+      try {
+        const data = JSON.parse(savedText);
+        // Check if data is less than 30 days old
+        if (data.timestamp && Date.now() - data.timestamp < 30 * 24 * 60 * 60 * 1000) {
+          return data;
+        }
+      } catch (e) {
+        console.error('Error loading text state:', e);
+      }
+    }
+    return null;
+  }
+  
+  async handleVariantChange(newVariantId, newTemplateId) {
+    // Update the options
+    this.options.variantId = newVariantId;
+    this.options.templateId = newTemplateId;
+    
+    // If modal is not open, just update options and return
+    if (!this.isOpen || !this.renderer) {
+      return;
+    }
+    
+    // Check if we have global text to apply
+    const globalTextState = this.loadTextState();
+    if (globalTextState && globalTextState.textUpdates) {
+      // We have saved text, regenerate preview with new variant
+      console.log('[ProductCustomizer] Regenerating preview for variant change with saved text');
+      
+      // Load the new template
+      await this.renderer.loadTemplate(newTemplateId);
+      
+      // Apply the saved text
+      setTimeout(() => {
+        Object.keys(globalTextState.textUpdates).forEach(elementId => {
+          this.renderer.updateText(elementId, globalTextState.textUpdates[elementId]);
+        });
+        
+        // Update preview
+        this.updatePreview();
+        
+        // Generate multi-variant previews if needed
+        if (window.__TEMPLATE_COLORS__ && window.__TEMPLATE_COLORS__.length > 0) {
+          // Get canvas state for batch rendering
+          const canvasState = this.renderer.getCanvasState();
+          this.generateAllColorVariantPreviews(canvasState);
+        }
+      }, 100);
+    }
   }
 
   }
@@ -1873,7 +2036,171 @@ if (typeof ProductCustomizerModal === 'undefined') {
     }
   }
 
+  // Global function to generate variant preview with saved text
+  async function generateVariantPreviewWithText(variantId, templateId, textUpdates) {
+    console.log('[generateVariantPreviewWithText] Starting preview generation', { variantId, templateId, textUpdates });
+    
+    try {
+      // Ensure required resources are loaded
+      await ensureResourcesLoaded();
+      
+      // Check if we have the CanvasTextRenderer available
+      if (typeof CanvasTextRenderer === 'undefined') {
+        // Load canvas text renderer if not already loaded
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = window.Shopify.routes.root + 'cdn/shop/t/1/assets/canvas-text-renderer.js?v=' + Date.now();
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+      }
+      
+      // Create a temporary container
+      const tempContainer = document.createElement('div');
+      tempContainer.style.cssText = 'position: absolute; left: -9999px; width: 600px; height: 400px;';
+      document.body.appendChild(tempContainer);
+      
+      // Initialize a temporary renderer
+      const renderer = new CanvasTextRenderer(tempContainer, {
+        width: 600,
+        height: 400,
+        apiUrl: '/apps/designer'
+      });
+      
+      try {
+        // Load the template
+        await renderer.loadTemplate(templateId);
+        
+        // Apply text updates
+        if (textUpdates) {
+          Object.entries(textUpdates).forEach(([elementId, text]) => {
+            renderer.updateText(elementId, text);
+          });
+        }
+        
+        // Generate preview
+        const previewUrl = renderer.getDataURL({ pixelRatio: 1 });
+        
+        // Update the product image with loading state
+        updateProductImageWithCustomization(previewUrl, true);
+        
+        console.log('[generateVariantPreviewWithText] Preview generated successfully');
+        
+      } finally {
+        // Clean up
+        renderer.destroy();
+        document.body.removeChild(tempContainer);
+      }
+      
+    } catch (error) {
+      console.error('[generateVariantPreviewWithText] Error generating preview:', error);
+      
+      // Fallback: Just update the thumbnail from the template if available
+      try {
+        // Check if we have a cached preview for this variant
+        const customizationKey = `customization_${variantId}`;
+        const savedCustomization = localStorage.getItem(customizationKey);
+        
+        if (savedCustomization) {
+          const data = JSON.parse(savedCustomization);
+          if (data.thumbnail) {
+            updateProductImageWithCustomization(data.thumbnail);
+            return;
+          }
+        }
+        
+        // Otherwise try to get the template thumbnail from the page
+        const templateThumb = document.querySelector(`[data-template-thumbnail="${templateId}"]`);
+        if (templateThumb && templateThumb.src) {
+          updateProductImageWithCustomization(templateThumb.src);
+        }
+      } catch (e) {
+        console.error('[generateVariantPreviewWithText] Fallback failed:', e);
+      }
+    }
+  }
+  
+  // Helper function to ensure Konva and other resources are loaded
+  async function ensureResourcesLoaded() {
+    // Check if Konva is already loaded
+    if (typeof Konva !== 'undefined') {
+      return;
+    }
+    
+    // Load Konva if not already loaded
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/konva@9.3.3/konva.min.js';
+      script.onload = () => {
+        console.log('[ensureResourcesLoaded] Konva loaded successfully');
+        resolve();
+      };
+      script.onerror = () => {
+        console.error('[ensureResourcesLoaded] Failed to load Konva');
+        reject(new Error('Failed to load Konva'));
+      };
+      document.head.appendChild(script);
+    });
+  }
+  
+  // Helper function to update product image (shared with liquid template)
+  function updateProductImageWithCustomization(previewUrl, showLoading = false) {
+    // Find the main product image
+    const mainProductImage = document.querySelector(
+      '.media-gallery img:first-of-type, ' +
+      '.product-media img:first-of-type, ' +
+      '.product__media--featured img, ' +
+      '[data-product-featured-image]'
+    );
+    
+    if (mainProductImage) {
+      // Store original src if not already stored
+      mainProductImage.dataset.originalSrc = mainProductImage.dataset.originalSrc || mainProductImage.src;
+      
+      if (showLoading) {
+        // Add loading state
+        mainProductImage.style.opacity = '0.5';
+        mainProductImage.style.filter = 'grayscale(100%)';
+        mainProductImage.style.transition = 'opacity 0.3s, filter 0.3s';
+      }
+      
+      // Create a new image to preload
+      const tempImg = new Image();
+      tempImg.onload = () => {
+        // Image loaded successfully, update the main image
+        mainProductImage.src = previewUrl;
+        mainProductImage.srcset = ''; // Clear srcset to prevent responsive image issues
+        
+        // Remove loading state
+        setTimeout(() => {
+          mainProductImage.style.opacity = '1';
+          mainProductImage.style.filter = 'none';
+        }, 50);
+        
+        console.log('[updateProductImage] Image updated successfully');
+      };
+      
+      tempImg.onerror = () => {
+        // Failed to load, restore original
+        console.error('[updateProductImage] Failed to load preview image');
+        mainProductImage.style.opacity = '1';
+        mainProductImage.style.filter = 'none';
+        
+        // Try one more time after a short delay
+        setTimeout(() => {
+          mainProductImage.src = previewUrl;
+        }, 500);
+      };
+      
+      // Start loading
+      tempImg.src = previewUrl;
+    }
+  }
+
   // Export for use in theme
   window.ProductCustomizerModal = ProductCustomizerModal;
   window.ProductCustomizerBatchRenderer = ProductCustomizerBatchRenderer;
+  window.generateVariantPreviewWithText = generateVariantPreviewWithText;
+  window.updateProductImageWithCustomization = updateProductImageWithCustomization;
 }
