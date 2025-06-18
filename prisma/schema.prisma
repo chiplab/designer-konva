@@ -25,6 +25,7 @@ model Session {
   emailVerified Boolean?  @default(false)
 }
 
+// Legacy ProductLayout model (to be removed after migration)
 model ProductLayout {
   id             String     @id @default(cuid())
   name           String
@@ -42,6 +43,37 @@ model ProductLayout {
   @@index([shop])
 }
 
+// New ProductLayout model for refactored architecture
+model Layout {
+  id               String           @id @default(cuid())
+  shop             String
+  shopifyProductId String
+  productTitle     String
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  layoutVariants   LayoutVariant[]
+  
+  @@unique([shop, shopifyProductId])
+  @@index([shop])
+}
+
+model LayoutVariant {
+  id                String         @id @default(cuid())
+  layoutId          String
+  shopifyVariantId  String
+  variantTitle      String
+  baseImageUrl      String         // S3 URL for fast loading
+  shopifyImageUrl   String?        // Original Shopify URL for reference
+  position          Int            // Display order
+  color             String?        // Extracted color (e.g., "Red", "Blue")
+  pattern           String?        // Extracted pattern (e.g., "8 Spot", "Solid")
+  layout            Layout         @relation(fields: [layoutId], references: [id], onDelete: Cascade)
+  templates         Template[]
+  
+  @@unique([layoutId, shopifyVariantId])
+  @@index([layoutId])
+}
+
 model Template {
   id               String         @id @default(cuid())
   name             String
@@ -50,6 +82,12 @@ model Template {
   thumbnail        String?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
+  
+  // New architecture reference
+  layoutVariantId  String?
+  layoutVariant    LayoutVariant? @relation(fields: [layoutVariantId], references: [id])
+  
+  // Legacy fields (to be removed after migration)
   productLayoutId  String?
   colorVariant     String?
   isColorVariant   Boolean        @default(false)
@@ -57,12 +95,15 @@ model Template {
   shopifyProductId String?
   shopifyVariantId String?
   productLayout    ProductLayout? @relation(fields: [productLayoutId], references: [id])
+  
+  // Relations
   customerDesigns  CustomerDesign[]
 
   @@index([shop])
   @@index([shopifyProductId])
   @@index([masterTemplateId])
   @@index([productLayoutId])
+  @@index([layoutVariantId])
 }
 
 model TemplateColor {
