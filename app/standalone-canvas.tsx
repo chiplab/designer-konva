@@ -7,6 +7,12 @@ function StandaloneCanvas() {
   // Get template data from window if available
   const initialTemplate = (window as any).__INITIAL_TEMPLATE__ || null;
   const initialDesign = (window as any).__INITIAL_DESIGN__ || null;
+  const templateColors = (window as any).__TEMPLATE_COLORS__ || [];
+  const initialColorVariant = (window as any).__INITIAL_COLOR_VARIANT__ || null;
+  
+  // Debug logging
+  console.log('[StandaloneCanvas] Template colors loaded:', templateColors);
+  console.log('[StandaloneCanvas] Template colors length:', templateColors.length);
   
   // Pass initial state for customer designs
   const initialState = initialDesign ? {
@@ -29,6 +35,8 @@ function StandaloneCanvas() {
           initialTemplate={initialTemplate} 
           initialState={initialState}
           isAdminView={false}
+          templateColors={templateColors}
+          initialColorVariant={initialColorVariant}
         />
       </div>
     </>

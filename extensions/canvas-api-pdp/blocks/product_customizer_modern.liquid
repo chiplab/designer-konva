@@ -30,8 +30,8 @@
   </div>
 
   {% comment %} Load customizer modal script (Konva will be loaded on demand) {% endcomment %}
-  <script src="{{ 'canvas-text-renderer.js' | asset_url }}" defer></script>
-  <script src="{{ 'product-customizer-modal.js' | asset_url }}" defer></script>
+  <script src="{{ 'canvas-text-renderer.js' | asset_url }}?v={{ 'now' | date: '%s' }}" defer></script>
+  <script src="{{ 'product-customizer-modal.js' | asset_url }}?v={{ 'now' | date: '%s' }}" defer></script>
   
   <script>
     let variantChangeCount = 0;

@@ -596,6 +596,130 @@ if (typeof ProductCustomizerModal === 'undefined') {
         element.removeAttribute('data-customization-preview');
       }
     });
+    
+    // Also restore variant swatches
+    this.restoreOriginalVariantSwatches();
+  }
+  
+  updateVariantSwatches() {
+    if (!this.currentPreviewUrl) return;
+    
+    console.log('[ProductCustomizer] Updating variant swatches for variant:', this.options.variantId);
+    
+    // First, find the currently selected color input
+    const selectedInput = document.querySelector('input[type="radio"]:checked[name*="Color"]');
+    if (!selectedInput) {
+      console.log('[ProductCustomizer] No selected color input found');
+      return;
+    }
+    
+    const selectedColor = selectedInput.value;
+    console.log('[ProductCustomizer] Selected color:', selectedColor);
+    
+    // In Horizon themes, swatches use CSS background images on span elements
+    // The structure is: input + span.swatch with style="--swatch-background: url(...)"
+    const swatchSpan = selectedInput.nextElementSibling;
+    
+    if (swatchSpan && swatchSpan.classList.contains('swatch')) {
+      console.log('[ProductCustomizer] Found swatch span element');
+      
+      // Store the original background if not already stored
+      if (!swatchSpan.dataset.originalBackground) {
+        const currentStyle = swatchSpan.getAttribute('style');
+        swatchSpan.dataset.originalBackground = currentStyle;
+        console.log('[ProductCustomizer] Stored original background:', currentStyle);
+      }
+      
+      // Update the swatch background with the customization preview
+      const newStyle = `--swatch-background: url(${this.currentPreviewUrl});`;
+      swatchSpan.setAttribute('style', newStyle);
+      swatchSpan.setAttribute('data-customization-preview', 'true');
+      
+      console.log('[ProductCustomizer] Updated swatch background to:', this.currentPreviewUrl);
+      
+      // Mark the parent as having customization
+      const swatchParent = swatchSpan.parentElement;
+      if (swatchParent) {
+        swatchParent.setAttribute('data-has-customization', 'true');
+      }
+    } else {
+      console.log('[ProductCustomizer] No swatch span found for color:', selectedColor);
+      
+      // Fallback: try to find any span.swatch for the selected color
+      const colorInputs = document.querySelectorAll(`input[type="radio"][value="${selectedColor}"]`);
+      for (const input of colorInputs) {
+        const nextSpan = input.nextElementSibling;
+        if (nextSpan && nextSpan.classList.contains('swatch')) {
+          console.log('[ProductCustomizer] Found swatch via fallback method');
+          
+          if (!nextSpan.dataset.originalBackground) {
+            const currentStyle = nextSpan.getAttribute('style');
+            nextSpan.dataset.originalBackground = currentStyle;
+          }
+          
+          const newStyle = `--swatch-background: url(${this.currentPreviewUrl});`;
+          nextSpan.setAttribute('style', newStyle);
+          nextSpan.setAttribute('data-customization-preview', 'true');
+          
+          const swatchParent = nextSpan.parentElement;
+          if (swatchParent) {
+            swatchParent.setAttribute('data-has-customization', 'true');
+          }
+          break;
+        }
+      }
+    }
+  }
+  
+  restoreOriginalVariantSwatches() {
+    // Find all variant swatches that have been customized (both img and span elements)
+    const customizedImages = document.querySelectorAll('img[data-customization-preview="true"]');
+    const customizedSpans = document.querySelectorAll('span[data-customization-preview="true"]');
+    const multiPreviews = document.querySelectorAll('span[data-multi-preview="true"]');
+    
+    // Restore customized img elements
+    customizedImages.forEach(swatch => {
+      if (swatch.dataset.originalSrc) {
+        console.log('[ProductCustomizer] Restoring original image swatch:', swatch.dataset.originalSrc);
+        swatch.src = swatch.dataset.originalSrc;
+        if (swatch.dataset.originalSrcset) {
+          swatch.srcset = swatch.dataset.originalSrcset;
+        }
+        swatch.removeAttribute('data-customization-preview');
+        
+        // Remove parent customization marker
+        const swatchParent = swatch.closest('[data-has-customization]');
+        if (swatchParent) {
+          swatchParent.removeAttribute('data-has-customization');
+        }
+      }
+    });
+    
+    // Restore customized span elements (CSS background swatches)
+    customizedSpans.forEach(swatch => {
+      if (swatch.dataset.originalBackground) {
+        console.log('[ProductCustomizer] Restoring original CSS swatch');
+        swatch.setAttribute('style', swatch.dataset.originalBackground);
+        delete swatch.dataset.originalBackground;
+        swatch.removeAttribute('data-customization-preview');
+        
+        // Remove parent customization marker
+        const swatchParent = swatch.closest('[data-has-customization]');
+        if (swatchParent) {
+          swatchParent.removeAttribute('data-has-customization');
+        }
+      }
+    });
+    
+    // Restore multi-variant previews
+    multiPreviews.forEach(swatch => {
+      if (swatch.dataset.originalBackground) {
+        console.log('[ProductCustomizer] Restoring multi-preview swatch');
+        swatch.setAttribute('style', swatch.dataset.originalBackground);
+        delete swatch.dataset.originalBackground;
+        swatch.removeAttribute('data-multi-preview');
+      }
+    });
   }
   
   async loadVariantImage() {
@@ -677,6 +801,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Update the current preview URL and main product image
     this.currentPreviewUrl = dataUrl;
     this.updateMainProductImage();
+    this.updateVariantSwatches();
   }
   
   debouncedUpdatePreview() {
@@ -853,6 +978,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
         if (event.data.thumbnail) {
           this.currentPreviewUrl = event.data.thumbnail;
           this.updateMainProductImage();
+          this.updateVariantSwatches();
         }
         
         // Close the advanced editor window if it's still open
@@ -894,15 +1020,860 @@ if (typeof ProductCustomizerModal === 'undefined') {
           mainProductImage.setAttribute('data-customization-preview', 'true');
         }
         
+        // Generate previews for all color variants if we have canvas state
+        console.log('[ProductCustomizer] Checking if should generate multi-variant previews...');
+        console.log('[ProductCustomizer] Has canvasState:', !!event.data.canvasState);
+        console.log('[ProductCustomizer] Has templateColors:', !!event.data.templateColors);
+        console.log('[ProductCustomizer] Template colors count:', event.data.templateColors?.length);
+        
+        // Store template colors globally for batch renderer
+        if (event.data.templateColors) {
+          window.__TEMPLATE_COLORS__ = event.data.templateColors;
+        }
+        
+        if (event.data.canvasState && event.data.templateColors && event.data.templateColors.length > 0) {
+          console.log('[ProductCustomizer] Calling generateAllColorVariantPreviews...');
+          this.generateAllColorVariantPreviews(event.data.canvasState);
+        } else {
+          console.log('[ProductCustomizer] Skipping multi-variant preview generation');
+          if (!event.data.canvasState) {
+            console.log('[ProductCustomizer] Missing canvas state in message');
+          }
+          if (!event.data.templateColors || event.data.templateColors.length === 0) {
+            console.log('[ProductCustomizer] Missing or empty template colors in message');
+          }
+        }
+        
         // Don't automatically add to cart - just close the modal
         // The user can click "Add to Cart" on the product page when ready
         this.close(true); // Pass true to keep the customization preview
       }
     });
   }
+  
+  async generateAllColorVariantPreviews(canvasState) {
+    console.log('[ProductCustomizer] Starting generateAllColorVariantPreviews');
+    console.log('[ProductCustomizer] Canvas state:', canvasState);
+    console.log('[ProductCustomizer] Template colors available:', !!window.__TEMPLATE_COLORS__);
+    
+    // Check if batch renderer is available
+    if (typeof ProductCustomizerBatchRenderer === 'undefined') {
+      console.error('[ProductCustomizer] ProductCustomizerBatchRenderer is not defined!');
+      return;
+    }
+    
+    // Get current variant info
+    const currentVariantTitle = this.getVariantTitle();
+    console.log('[ProductCustomizer] Current variant title:', currentVariantTitle);
+    if (!currentVariantTitle) {
+      console.log('[ProductCustomizer] Could not determine variant title');
+      return;
+    }
+    
+    const edgePattern = this.getEdgePattern(currentVariantTitle);
+    const currentColor = this.getCurrentColor();
+    
+    console.log('[ProductCustomizer] Edge pattern:', edgePattern);
+    console.log('[ProductCustomizer] Current color:', currentColor);
+    
+    if (!edgePattern || !currentColor) {
+      console.log('[ProductCustomizer] Could not determine edge pattern or color');
+      return;
+    }
+    
+    console.log(`[ProductCustomizer] Current variant: ${currentColor} / ${edgePattern}`);
+    
+    // Get all color variants for this edge pattern
+    const colorVariants = this.getColorVariantsForPattern(edgePattern);
+    console.log(`[ProductCustomizer] Found ${colorVariants.length} color variants for ${edgePattern}`);
+    console.log('[ProductCustomizer] Color variants:', colorVariants.map(v => v.color));
+    
+    // Create a batch renderer
+    const batchRenderer = new ProductCustomizerBatchRenderer();
+    console.log('[ProductCustomizer] Batch renderer created');
+    
+    // Get color mappings
+    const colorMappings = window.__TEMPLATE_COLORS__ || [];
+    console.log('[ProductCustomizer] Color mappings count:', colorMappings.length);
+    
+    // Process each variant (except current one)
+    let processedCount = 0;
+    for (const variant of colorVariants) {
+      if (variant.color === currentColor) {
+        console.log(`[ProductCustomizer] Skipping current color: ${currentColor}`);
+        continue;
+      }
+      
+      try {
+        console.log(`[ProductCustomizer] Processing variant: ${variant.color}`);
+        
+        // Use the original canvas state without color transformation
+        // Once a user customizes a design, we keep their exact colors
+        const transformedState = canvasState;
+        console.log(`[ProductCustomizer] Using original state for ${variant.color} (no color transformation)`);
+        
+        // Get base image URL for this variant
+        const baseImageUrl = this.getBaseImageUrl(variant.color, edgePattern);
+        console.log(`[ProductCustomizer] Base image URL for ${variant.color}:`, baseImageUrl);
+        
+        // Render preview
+        console.log(`[ProductCustomizer] Rendering preview for ${variant.color}...`);
+        const preview = await batchRenderer.renderVariantPreview(
+          transformedState,
+          baseImageUrl,
+          { width: 128, height: 128, pixelRatio: 0.5 }
+        );
+        console.log(`[ProductCustomizer] Preview generated for ${variant.color}:`, preview ? 'success' : 'failed');
+        
+        // Update swatch
+        if (variant.element && variant.element.classList.contains('swatch')) {
+          // Store original if not already stored
+          if (!variant.element.dataset.originalBackground) {
+            variant.element.dataset.originalBackground = variant.element.getAttribute('style');
+          }
+          
+          variant.element.setAttribute('style', `--swatch-background: url(${preview});`);
+          variant.element.setAttribute('data-multi-preview', 'true');
+          
+          console.log(`[ProductCustomizer] Updated swatch for ${variant.color}`);
+          processedCount++;
+        } else {
+          console.log(`[ProductCustomizer] No swatch element found for ${variant.color}`);
+        }
+      } catch (error) {
+        console.error(`[ProductCustomizer] Failed to generate preview for ${variant.color}:`, error);
+      }
+    }
+    
+    // Cleanup
+    batchRenderer.destroy();
+    console.log(`[ProductCustomizer] Finished generating previews. Processed ${processedCount} variants.`);
+  }
+  
+  getVariantTitle() {
+    // Try to get from the selected option's label
+    const selectedInput = document.querySelector('input[type="radio"]:checked[name*="Color"]');
+    if (selectedInput) {
+      const label = selectedInput.parentElement?.querySelector('.variant-option__label');
+      if (label) {
+        return label.textContent.trim();
+      }
+    }
+    
+    // Fallback: try to get from product data
+    if (window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.product) {
+      const product = window.ShopifyAnalytics.meta.product;
+      const variant = product.variants.find(v => v.id == this.options.variantId);
+      if (variant) {
+        return variant.public_title || variant.title;
+      }
+    }
+    
+    return null;
+  }
+  
+  getEdgePattern(variantTitle) {
+    // Extract edge pattern from variant title (e.g., "Red / 8 Spot" -> "8 Spot")
+    const parts = variantTitle.split(' / ');
+    return parts.length > 1 ? parts[1].trim() : null;
+  }
+  
+  getCurrentColor() {
+    // Get from selected input
+    const selectedInput = document.querySelector('input[type="radio"]:checked[name*="Color"]');
+    return selectedInput ? selectedInput.value : null;
+  }
+  
+  getColorVariantsForPattern(pattern) {
+    console.log(`[ProductCustomizer] Looking for variants with pattern: "${pattern}"`);
+    const variants = [];
+    
+    // First, try to find all color swatches
+    const swatches = document.querySelectorAll('.swatch.color');
+    console.log(`[ProductCustomizer] Found ${swatches.length} color swatches`);
+    
+    // Also check for radio inputs
+    const inputs = document.querySelectorAll('input[type="radio"][name*="Color"]');
+    console.log(`[ProductCustomizer] Found ${inputs.length} color radio inputs`);
+    
+    // Debug: Show first few inputs structure
+    if (inputs.length > 0) {
+      console.log('[ProductCustomizer] First input structure:', {
+        name: inputs[0].name,
+        value: inputs[0].value,
+        parentHTML: inputs[0].parentElement?.outerHTML.substring(0, 200)
+      });
+    }
+    
+    // Try to find Pattern radio inputs to understand the structure
+    const patternInputs = document.querySelectorAll('input[type="radio"][name*="Pattern"]');
+    console.log(`[ProductCustomizer] Found ${patternInputs.length} pattern radio inputs`);
+    
+    // For now, if we have color swatches, use those directly
+    // We know all variants in the same pattern group should have the same pattern
+    swatches.forEach(swatch => {
+      const colorName = swatch.getAttribute('data-swatch-value') || 
+                        swatch.getAttribute('data-value') ||
+                        swatch.querySelector('span')?.getAttribute('data-swatch-value');
+      
+      if (colorName) {
+        variants.push({
+          color: colorName,
+          element: swatch,
+          label: colorName
+        });
+        console.log(`[ProductCustomizer] Added variant from swatch: ${colorName}`);
+      }
+    });
+    
+    // If no swatches found, try inputs approach
+    if (variants.length === 0) {
+      inputs.forEach(input => {
+        // Try different ways to get the associated swatch
+        const parentLabel = input.closest('label');
+        const swatch = parentLabel?.querySelector('.swatch') || 
+                      input.nextElementSibling?.classList.contains('swatch') ? input.nextElementSibling : null;
+        
+        if (swatch) {
+          variants.push({
+            color: input.value,
+            element: swatch,
+            label: input.value
+          });
+          console.log(`[ProductCustomizer] Added variant from input: ${input.value}`);
+        }
+      });
+    }
+    
+    console.log(`[ProductCustomizer] Total variants found: ${variants.length}`);
+    return variants;
+  }
+  
+  transformCanvasColors(canvasState, sourceColor, targetColor, colorMappings) {
+    // Find color mappings
+    const sourceMapping = colorMappings.find(m => m.chipColor.toLowerCase() === sourceColor.toLowerCase());
+    const targetMapping = colorMappings.find(m => m.chipColor.toLowerCase() === targetColor.toLowerCase());
+    
+    if (!sourceMapping || !targetMapping) {
+      console.warn(`[ProductCustomizer] Could not find color mappings for ${sourceColor} -> ${targetColor}`);
+      return canvasState;
+    }
+    
+    // Deep clone the canvas state
+    const transformed = JSON.parse(JSON.stringify(canvasState));
+    
+    // Helper function to transform a single color
+    const transformColor = (color) => {
+      if (!color || typeof color !== 'string') return color;
+      
+      // Skip special colors
+      if (color === 'transparent' || color === 'gold-gradient' || color.startsWith('linear-gradient')) {
+        return color;
+      }
+      
+      const normalizedColor = color.toLowerCase();
+      
+      // Find position in source mapping
+      let position = null;
+      if (normalizedColor === sourceMapping.color1.toLowerCase()) position = 1;
+      else if (normalizedColor === sourceMapping.color2.toLowerCase()) position = 2;
+      else if (normalizedColor === sourceMapping.color3.toLowerCase()) position = 3;
+      else if (sourceMapping.color4 && normalizedColor === sourceMapping.color4.toLowerCase()) position = 4;
+      else if (sourceMapping.color5 && normalizedColor === sourceMapping.color5.toLowerCase()) position = 5;
+      
+      if (!position) return color;
+      
+      // Return color at same position in target mapping
+      switch (position) {
+        case 1: return targetMapping.color1;
+        case 2: return targetMapping.color2;
+        case 3: return targetMapping.color3;
+        case 4: return targetMapping.color4 || color;
+        case 5: return targetMapping.color5 || color;
+        default: return color;
+      }
+    };
+    
+    // Transform element colors
+    if (transformed.elements) {
+      ['textElements', 'curvedTextElements', 'gradientTextElements'].forEach(elementType => {
+        if (transformed.elements[elementType]) {
+          transformed.elements[elementType].forEach(element => {
+            if (element.fill) {
+              element.fill = transformColor(element.fill);
+            }
+            if (element.stroke) {
+              element.stroke = transformColor(element.stroke);
+            }
+          });
+        }
+      });
+    }
+    
+    // Transform background color
+    if (transformed.backgroundColor) {
+      transformed.backgroundColor = transformColor(transformed.backgroundColor);
+    }
+    
+    // Transform background gradient colors
+    if (transformed.backgroundGradient && transformed.backgroundGradient.colorStops) {
+      const newStops = [...transformed.backgroundGradient.colorStops];
+      // Color stops alternate between position and color
+      for (let i = 1; i < newStops.length; i += 2) {
+        newStops[i] = transformColor(newStops[i]);
+      }
+      transformed.backgroundGradient.colorStops = newStops;
+    }
+    
+    return transformed;
+  }
+  
+  getBaseImageUrl(color, pattern) {
+    console.log(`[ProductCustomizer] Looking for base image URL for ${color} / ${pattern}`);
+    
+    // Try multiple approaches to find the swatch and its background image
+    
+    // Approach 1: Find by swatch element with data attribute
+    const swatchByData = document.querySelector(`.swatch[data-swatch-value="${color}"]`) ||
+                         document.querySelector(`.swatch[data-value="${color}"]`);
+    
+    if (swatchByData) {
+      const bgUrl = this.extractBackgroundUrl(swatchByData);
+      if (bgUrl) {
+        console.log(`[ProductCustomizer] Found base image via data attribute:`, bgUrl);
+        return bgUrl;
+      }
+    }
+    
+    // Approach 2: Find by input value
+    const inputs = document.querySelectorAll('input[type="radio"]');
+    for (const input of inputs) {
+      if (input.value === color || input.value.includes(color)) {
+        // Look for associated swatch in various ways
+        const swatch = input.nextElementSibling?.classList.contains('swatch') ? input.nextElementSibling :
+                      input.parentElement?.querySelector('.swatch') ||
+                      input.closest('label')?.querySelector('.swatch');
+        
+        if (swatch) {
+          const bgUrl = this.extractBackgroundUrl(swatch);
+          if (bgUrl) {
+            console.log(`[ProductCustomizer] Found base image via input:`, bgUrl);
+            return bgUrl;
+          }
+        }
+      }
+    }
+    
+    // Approach 3: Find by text content in labels
+    const labels = document.querySelectorAll('label');
+    for (const label of labels) {
+      if (label.textContent.includes(color)) {
+        const swatch = label.querySelector('.swatch');
+        if (swatch) {
+          const bgUrl = this.extractBackgroundUrl(swatch);
+          if (bgUrl) {
+            console.log(`[ProductCustomizer] Found base image via label:`, bgUrl);
+            return bgUrl;
+          }
+        }
+      }
+    }
+    
+    // Fallback
+    console.warn(`[ProductCustomizer] Could not find base image for ${color} / ${pattern}`);
+    return null;
+  }
+  
+  extractBackgroundUrl(element) {
+    if (!element) return null;
+    
+    // Try inline style
+    const style = element.getAttribute('style');
+    if (style) {
+      const match = style.match(/url\(([^)]+)\)/);
+      if (match && match[1]) {
+        return match[1].replace(/["']/g, '');
+      }
+    }
+    
+    // Try computed style
+    const computedStyle = window.getComputedStyle(element);
+    const bgImage = computedStyle.backgroundImage || computedStyle.getPropertyValue('--swatch-background');
+    if (bgImage && bgImage !== 'none') {
+      const match = bgImage.match(/url\(([^)]+)\)/);
+      if (match && match[1]) {
+        return match[1].replace(/["']/g, '');
+      }
+    }
+    
+    return null;
+  }
 
+  }
+
+  /**
+   * Batch renderer for generating multiple variant previews efficiently
+   */
+  class ProductCustomizerBatchRenderer {
+    constructor() {
+      this.renderQueue = [];
+      this.isRendering = false;
+      this.tempContainer = null;
+      this.stage = null;
+      this.loadedFonts = new Set(['Arial', 'Times New Roman', 'Georgia', 'Courier New']); // System fonts
+    }
+
+    async renderVariantPreview(canvasState, baseImageUrl, options = {}) {
+      console.log('[BatchRenderer] renderVariantPreview called');
+      console.log('[BatchRenderer] Canvas state dimensions:', canvasState?.dimensions);
+      console.log('[BatchRenderer] Base image URL:', baseImageUrl);
+      
+      return new Promise((resolve) => {
+        this.renderQueue.push({
+          canvasState,
+          baseImageUrl,
+          options,
+          resolve
+        });
+        
+        console.log('[BatchRenderer] Queue length:', this.renderQueue.length);
+        
+        if (!this.isRendering) {
+          console.log('[BatchRenderer] Starting queue processing');
+          this.processQueue();
+        }
+      });
+    }
+
+    async processQueue() {
+      if (this.renderQueue.length === 0) {
+        this.isRendering = false;
+        return;
+      }
+      
+      this.isRendering = true;
+      const task = this.renderQueue.shift();
+      
+      // Use requestAnimationFrame for smooth rendering
+      requestAnimationFrame(async () => {
+        try {
+          const preview = await this.renderSinglePreview(task);
+          task.resolve(preview);
+        } catch (error) {
+          console.error('Error rendering preview:', error);
+          task.resolve(null);
+        }
+        
+        // Process next item
+        this.processQueue();
+      });
+    }
+
+    async renderSinglePreview({ canvasState, baseImageUrl, options }) {
+      console.log('[BatchRenderer] renderSinglePreview started');
+      const width = options.width || 128;
+      const height = options.height || 128;
+      const pixelRatio = options.pixelRatio || 0.5;
+      
+      // Create temporary container
+      this.tempContainer = document.createElement('div');
+      this.tempContainer.style.position = 'absolute';
+      this.tempContainer.style.left = '-9999px';
+      this.tempContainer.style.width = width + 'px';
+      this.tempContainer.style.height = height + 'px';
+      document.body.appendChild(this.tempContainer);
+      
+      try {
+        console.log('[BatchRenderer] Creating Konva stage');
+        // Create stage
+        this.stage = new Konva.Stage({
+          container: this.tempContainer,
+          width: width,
+          height: height
+        });
+        
+        const layer = new Konva.Layer();
+        this.stage.add(layer);
+        
+        // Load and render base image if provided
+        if (baseImageUrl) {
+          console.log('[BatchRenderer] Rendering base image');
+          await this.renderBaseImage(layer, baseImageUrl, width, height);
+        }
+        
+        // Calculate scale to fit design into preview
+        const scaleX = width / canvasState.dimensions.width;
+        const scaleY = height / canvasState.dimensions.height;
+        const scale = Math.min(scaleX, scaleY);
+        console.log('[BatchRenderer] Scale factor:', scale);
+        
+        // Create group for scaled content
+        const contentGroup = new Konva.Group({
+          scaleX: scale,
+          scaleY: scale
+        });
+        layer.add(contentGroup);
+        
+        // If we have a designable area, create a clipping group
+        if (canvasState.designableArea) {
+          const { x, y, width, height, cornerRadius } = canvasState.designableArea;
+          
+          // Create a clipping group that matches the DesignerCanvas implementation
+          const clipGroup = new Konva.Group({
+            clipFunc: (ctx) => {
+              // Create clipping path that exactly matches the designable area
+              ctx.beginPath();
+              if (cornerRadius > 0) {
+                ctx.moveTo(x + cornerRadius, y);
+                ctx.arcTo(x + width, y, x + width, y + height, cornerRadius);
+                ctx.arcTo(x + width, y + height, x, y + height, cornerRadius);
+                ctx.arcTo(x, y + height, x, y, cornerRadius);
+                ctx.arcTo(x, y, x + width, y, cornerRadius);
+              } else {
+                ctx.rect(x, y, width, height);
+              }
+              ctx.closePath();
+            }
+          });
+          
+          contentGroup.add(clipGroup);
+          
+          // Render background first inside clipped area
+          console.log('[BatchRenderer] Rendering background with clipping');
+          await this.renderBackground(clipGroup, canvasState);
+          
+          // Render all elements inside the clipped area
+          console.log('[BatchRenderer] Rendering elements with clipping');
+          await this.renderElements(clipGroup, canvasState.elements, canvasState.designableArea);
+        } else {
+          // No clipping needed, render directly to content group
+          await this.renderBackground(contentGroup, canvasState);
+          await this.renderElements(contentGroup, canvasState.elements, null);
+        }
+        
+        // Draw layer after all elements are added
+        layer.batchDraw();
+        
+        // Wait for next frame to ensure rendering is complete
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        
+        // Force a full redraw to ensure clipping is properly applied
+        // This is crucial for async-loaded images
+        this.stage.clear();
+        this.stage.draw();
+        
+        // Wait one more frame to ensure the draw is complete
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        
+        // Generate thumbnail
+        console.log('[BatchRenderer] Generating data URL');
+        const dataUrl = this.stage.toDataURL({
+          pixelRatio: pixelRatio,
+          mimeType: 'image/png'
+        });
+        console.log('[BatchRenderer] Data URL generated, length:', dataUrl?.length);
+        
+        return dataUrl;
+        
+      } catch (error) {
+        console.error('[BatchRenderer] Error in renderSinglePreview:', error);
+        throw error;
+      } finally {
+        // Cleanup
+        if (this.stage) {
+          this.stage.destroy();
+          this.stage = null;
+        }
+        if (this.tempContainer && this.tempContainer.parentNode) {
+          document.body.removeChild(this.tempContainer);
+          this.tempContainer = null;
+        }
+      }
+    }
+
+    async renderBaseImage(layer, imageUrl, width, height) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        
+        img.onload = () => {
+          const konvaImage = new Konva.Image({
+            image: img,
+            x: 0,
+            y: 0,
+            width: width,
+            height: height
+          });
+          layer.add(konvaImage);
+          konvaImage.moveToBottom();
+          resolve();
+        };
+        
+        img.onerror = () => {
+          console.warn('Failed to load base image:', imageUrl);
+          resolve();
+        };
+        
+        img.src = imageUrl;
+      });
+    }
+
+    async renderBackground(parent, canvasState) {
+      const { backgroundColor, backgroundGradient, designableArea } = canvasState;
+      
+      if (!designableArea || !backgroundColor || backgroundColor === 'transparent') {
+        return;
+      }
+      
+      let bgRect;
+      
+      if (backgroundColor === 'linear-gradient' && backgroundGradient) {
+        bgRect = new Konva.Rect({
+          x: designableArea.x,
+          y: designableArea.y,
+          width: designableArea.width,
+          height: designableArea.height,
+          cornerRadius: designableArea.cornerRadius || 0,
+          fillLinearGradientStartPoint: { x: 0, y: 0 },
+          fillLinearGradientEndPoint: { x: designableArea.width, y: 0 },
+          fillLinearGradientColorStops: backgroundGradient.colorStops || [0, '#c8102e', 1, '#ffaaaa']
+        });
+      } else {
+        bgRect = new Konva.Rect({
+          x: designableArea.x,
+          y: designableArea.y,
+          width: designableArea.width,
+          height: designableArea.height,
+          cornerRadius: designableArea.cornerRadius || 0,
+          fill: backgroundColor
+        });
+      }
+      
+      parent.add(bgRect);
+    }
+
+    async renderElements(parent, elements, designableArea) {
+      // Create a unified array of all elements with their types and z-indexes
+      const unifiedElements = [];
+      let currentZIndex = 0;
+      const imageLoadPromises = [];
+      
+      // Add all element types with zIndex
+      if (elements.imageElements) {
+        elements.imageElements.forEach((el) => {
+          unifiedElements.push({
+            type: 'image',
+            zIndex: el.zIndex ?? currentZIndex++,
+            data: el
+          });
+        });
+      }
+      
+      if (elements.textElements) {
+        elements.textElements.forEach((el) => {
+          unifiedElements.push({
+            type: 'text',
+            zIndex: el.zIndex ?? currentZIndex++,
+            data: el
+          });
+        });
+      }
+      
+      if (elements.gradientTextElements) {
+        elements.gradientTextElements.forEach((el) => {
+          unifiedElements.push({
+            type: 'gradientText',
+            zIndex: el.zIndex ?? currentZIndex++,
+            data: el
+          });
+        });
+      }
+      
+      if (elements.curvedTextElements) {
+        elements.curvedTextElements.forEach((el) => {
+          unifiedElements.push({
+            type: 'curvedText',
+            zIndex: el.zIndex ?? currentZIndex++,
+            data: el
+          });
+        });
+      }
+      
+      // Sort by z-index to respect layering order
+      unifiedElements.sort((a, b) => a.zIndex - b.zIndex);
+      
+      // Render elements in z-index order
+      for (const element of unifiedElements) {
+        const el = element.data;
+        
+        switch (element.type) {
+          case 'image':
+            try {
+              await new Promise((resolve) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                
+                img.onload = () => {
+                  const konvaImage = new Konva.Image({
+                    image: img,
+                    x: el.x + el.width / 2,
+                    y: el.y + el.height / 2,
+                    width: el.width,
+                    height: el.height,
+                    offsetX: el.width / 2,
+                    offsetY: el.height / 2,
+                    rotation: el.rotation || 0,
+                    scaleX: el.scaleX || 1,
+                    scaleY: el.scaleY || 1
+                  });
+                  parent.add(konvaImage);
+                  
+                  // Force the stage to redraw with clipping after image loads
+                  // This ensures the clip is applied to the newly loaded image
+                  const layer = parent.getLayer();
+                  if (layer) {
+                    // Clear and redraw to ensure clipping is applied
+                    layer.clear();
+                    layer.draw();
+                  }
+                  
+                  resolve();
+                };
+                
+                img.onerror = () => {
+                  console.warn(`[BatchRenderer] Failed to load image: ${el.url}`);
+                  resolve();
+                };
+                
+                img.src = el.url;
+              });
+            } catch (error) {
+              console.error('[BatchRenderer] Error loading image:', error);
+            }
+            break;
+            
+          case 'text':
+            const text = new Konva.Text({
+              text: el.text,
+              x: el.x,
+              y: el.y,
+              fontSize: el.fontSize || 24,
+              fontFamily: el.fontFamily || 'Arial',
+              fill: el.fill === 'gold-gradient' ? '#FFD700' : (el.fill || 'black'),
+              rotation: el.rotation || 0,
+              scaleX: el.scaleX || 1,
+              scaleY: el.scaleY || 1
+            });
+            parent.add(text);
+            break;
+            
+          case 'gradientText':
+            const gradientText = new Konva.Text({
+              text: el.text,
+              x: el.x,
+              y: el.y,
+              fontSize: el.fontSize || 24,
+              fontFamily: el.fontFamily || 'Arial',
+              rotation: el.rotation || 0,
+              scaleX: el.scaleX || 1,
+              scaleY: el.scaleY || 1,
+              fillLinearGradientStartPoint: { x: 0, y: 0 },
+              fillLinearGradientEndPoint: { x: 0, y: el.fontSize || 24 },
+              fillLinearGradientColorStops: [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B']
+            });
+            parent.add(gradientText);
+            break;
+            
+          case 'curvedText':
+            // Calculate center Y based on whether text is flipped
+            const centerY = el.flipped 
+              ? el.topY - el.radius
+              : el.topY + el.radius;
+            
+            // Create group for curved text
+            const group = new Konva.Group({
+              x: el.x,
+              y: centerY,
+              rotation: el.rotation || 0,
+              scaleX: el.scaleX || 1,
+              scaleY: el.scaleY || 1
+            });
+
+            // Calculate text path
+            const fontSize = el.fontSize || 20;
+            const textContent = el.text;
+            const textLength = textContent.length * fontSize * 0.6;
+            const angleSpan = Math.min(textLength / el.radius, Math.PI * 1.5);
+            
+            let startAngle, endAngle, sweepFlag;
+            if (el.flipped) {
+              startAngle = Math.PI/2 + angleSpan/2;
+              endAngle = Math.PI/2 - angleSpan/2;
+              sweepFlag = 0;
+            } else {
+              startAngle = -Math.PI/2 - angleSpan/2;
+              endAngle = -Math.PI/2 + angleSpan/2;
+              sweepFlag = 1;
+            }
+            
+            const startX = Math.cos(startAngle) * el.radius;
+            const startY = Math.sin(startAngle) * el.radius;
+            const endX = Math.cos(endAngle) * el.radius;
+            const endY = Math.sin(endAngle) * el.radius;
+            
+            const largeArcFlag = angleSpan > Math.PI ? 1 : 0;
+            
+            // Create path data
+            const pathData = [
+              'M', startX, startY,
+              'A', el.radius, el.radius, 0, largeArcFlag, sweepFlag, endX, endY
+            ].join(' ');
+            
+            // Create path and text
+            const path = new Konva.Path({
+              data: pathData,
+              visible: false
+            });
+            
+            const textPath = new Konva.TextPath({
+              text: textContent,
+              data: pathData,
+              fontSize: fontSize,
+              fontFamily: el.fontFamily || 'Arial',
+              fill: el.fill === 'gold-gradient' ? '#FFD700' : (el.fill || 'black'),
+              textBaseline: el.flipped ? 'bottom' : 'top',
+              align: 'center'
+            });
+            
+            group.add(path);
+            group.add(textPath);
+            parent.add(group);
+            break;
+        }
+      }
+      
+      // Wait for all images to be fully loaded and rendered
+      if (imageLoadPromises.length > 0) {
+        console.log('[BatchRenderer] Waiting for all images to load...');
+        await Promise.all(imageLoadPromises);
+        console.log('[BatchRenderer] All images loaded');
+      }
+    }
+    destroy() {
+      this.renderQueue = [];
+      this.isRendering = false;
+      if (this.stage) {
+        this.stage.destroy();
+        this.stage = null;
+      }
+      if (this.tempContainer && this.tempContainer.parentNode) {
+        document.body.removeChild(this.tempContainer);
+        this.tempContainer = null;
+      }
+    }
   }
 
   // Export for use in theme
   window.ProductCustomizerModal = ProductCustomizerModal;
+  window.ProductCustomizerBatchRenderer = ProductCustomizerBatchRenderer;
 }
