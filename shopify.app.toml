@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://inside-synthetic-gilbert-dev.trycloudflare.com"
+application_url = "https://sleeping-comply-relevant-hidden.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://inside-synthetic-gilbert-dev.trycloudflare.com/auth/callback",
-  "https://inside-synthetic-gilbert-dev.trycloudflare.com/auth/shopify/callback",
-  "https://inside-synthetic-gilbert-dev.trycloudflare.com/api/auth/callback"
+  "https://sleeping-comply-relevant-hidden.trycloudflare.com/auth/callback",
+  "https://sleeping-comply-relevant-hidden.trycloudflare.com/auth/shopify/callback",
+  "https://sleeping-comply-relevant-hidden.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://inside-synthetic-gilbert-dev.trycloudflare.com"
+url = "https://sleeping-comply-relevant-hidden.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 
