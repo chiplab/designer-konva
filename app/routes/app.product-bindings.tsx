@@ -13,6 +13,8 @@ import {
   BlockStack,
   EmptyState,
   Banner,
+  Button,
+  InlineStack,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -105,6 +107,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       return {
         ...edge.node,
         templateName: templateName || 'Unknown Template',
+        templateExists: !!templateName,
+        templateId: templateId,
       };
     });
   
@@ -116,6 +120,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function ProductBindings() {
   const { variantsWithTemplates, totalVariants } = useLoaderData<typeof loader>();
+  
+  // Count variants with missing templates
+  const variantsWithMissingTemplates = variantsWithTemplates.filter((v: any) => !v.templateExists);
   
   const emptyStateMarkup = (
     <EmptyState
@@ -138,6 +145,16 @@ export default function ProductBindings() {
           out of {totalVariants} total variants.
         </p>
       </Banner>
+      
+      {variantsWithMissingTemplates.length > 0 && (
+        <Banner tone="warning">
+          <p>
+            {variantsWithMissingTemplates.length} variant(s) have missing templates! 
+            These templates may have been deleted or the IDs are incorrect. 
+            Use the "Fix" button to reassign templates or "Clear" to remove the assignment.
+          </p>
+        </Banner>
+      )}
       
       <ResourceList
         resourceName={{ singular: "variant", plural: "variants" }}
@@ -179,13 +196,15 @@ export default function ProductBindings() {
                       {variant.displayName} • ${variant.price}
                     </Text>
                   </div>
-                  <Badge tone="success">
+                  <Badge tone={variant.templateExists ? "success" : "critical"}>
                     {variant.templateName}
                   </Badge>
                 </div>
-                <Text variant="bodySm" tone="subdued" as="p">
-                  Template ID: {variant.metafield.value}
-                </Text>
+                <InlineStack gap="200" align="space-between">
+                  <Text variant="bodySm" tone="subdued" as="p">
+                    Template ID: {variant.metafield.value}
+                  </Text>
+                </InlineStack>
               </BlockStack>
             </ResourceItem>
           );
