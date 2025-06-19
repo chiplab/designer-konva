@@ -201,7 +201,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     return productLayout?.baseImageUrl || '/media/images/8-spot-red-base-image.png';
   };
   
-  const [baseImageUrl, setBaseImageUrl] = React.useState(getVariantImage());
+  const baseImageUrl = getVariantImage(); // Read-only base image based on variant
   // Use 'anonymous' only for external URLs (S3), not for local files
   const [baseImage] = useImage(baseImageUrl, baseImageUrl.startsWith('http') ? 'anonymous' : undefined);
   
@@ -246,15 +246,15 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     }
     
     // Default fallback
-    const canvasWidth = shopifyVariant ? 1368 : (productLayout?.width || 1000);
-    const canvasHeight = shopifyVariant ? 1368 : (productLayout?.height || 1000);
-    const diameter = Math.min(canvasWidth, canvasHeight) * 0.744;
+    const canvasWidth = shopifyVariant || layoutVariant ? 1200 : (productLayout?.width || 1000);
+    const canvasHeight = shopifyVariant || layoutVariant ? 1200 : (productLayout?.height || 1000);
+    const diameter = 894; // Fixed size for design area
     const radius = diameter / 2;
     
     return {
       width: diameter,
       height: diameter,
-      cornerRadius: radius,
+      cornerRadius: 447, // Half of 894px for perfect circle
       x: canvasWidth / 2 - radius,
       y: canvasHeight / 2 - radius,
       visible: true
@@ -940,12 +940,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       await Promise.all(fontLoadPromises);
     }
     
-    // Load assets (with fallback to local defaults)
-    if (state.assets) {
-      if (state.assets.baseImage) {
-        setBaseImageUrl(state.assets.baseImage);
-      }
-    }
+    // Assets are now handled by getVariantImage() based on the variant/layout
   };
 
   // Apply text updates from modal state
@@ -2652,89 +2647,6 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
               </div>
             </div>
           )}
-        </div>
-        
-        {/* Base Image Controls in Top Nav */}
-        <div style={{ display: 'inline-block', marginLeft: '20px' }}>
-          <select
-            value={baseImageUrl}
-            onChange={(e) => setBaseImageUrl(e.target.value)}
-            style={{ 
-              padding: '8px 16px', 
-              fontSize: '14px',
-              marginRight: '10px',
-              borderRadius: '4px',
-              border: '1px solid #ddd',
-              cursor: 'pointer',
-              background: 'white',
-            }}
-          >
-            <option value="/media/images/8-spot-red-base-image.png">Red Base</option>
-            <option value="/media/images/8-spot-black-base.png">Black Base</option>
-            <option value="/media/images/8-spot-blue-base.png">Blue Base</option>
-            <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-red-base-image.png">Red Base (S3)</option>
-            <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-black-base.png">Black Base (S3)</option>
-            <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-blue-base.png">Blue Base (S3)</option>
-          </select>
-          
-          <label style={{ 
-            padding: '8px 16px', 
-            fontSize: '14px', 
-            backgroundColor: '#f0f0f0',
-            border: '1px solid #ccc',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            display: 'inline-block',
-            transition: 'all 0.2s',
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e8e8e8'}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f0f0f0'}
-          >
-            Upload Base Image
-            <input
-              type="file"
-              accept="image/*"
-              style={{ display: 'none' }}
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  const formData = new FormData();
-                  formData.append('file', file);
-                  formData.append('assetType', 'image');
-                  
-                  try {
-                    const response = await fetch('/api/assets/upload', {
-                      method: 'POST',
-                      body: formData,
-                    });
-                    const result = await response.json();
-                    if (result.success) {
-                      setBaseImageUrl(result.asset.url);
-                      setNotification({ 
-                        message: 'Base image uploaded successfully!', 
-                        type: 'success' 
-                      });
-                      setTimeout(() => setNotification(null), 3000);
-                    } else {
-                      console.error('Upload failed:', result);
-                      setNotification({ 
-                        message: `Upload failed: ${result.error}`, 
-                        type: 'error' 
-                      });
-                      setTimeout(() => setNotification(null), 5000);
-                    }
-                  } catch (error) {
-                    console.error('Upload error:', error);
-                    setNotification({ 
-                      message: 'Failed to upload image: ' + (error instanceof Error ? error.message : 'Unknown error'), 
-                      type: 'error' 
-                    });
-                    setTimeout(() => setNotification(null), 5000);
-                  }
-                }
-              }}
-            />
-          </label>
         </div>
         
         {/* Canvas Size Debug Info */}
