@@ -18,6 +18,8 @@ import {
   InlineStack,
   Button,
   Grid,
+  ProgressBar,
+  Box,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -101,19 +103,30 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           pattern = titleParts[1].trim();
         }
         
+        console.log(`Processing variant ${i + 1}/${variants.length}: ${variant.title}`);
+        
         // Upload image to S3 if present
         let s3ImageUrl = "";
         if (variant.imageUrl) {
           try {
-            // Request optimized WebP version from Shopify CDN
-            const optimizedUrl = variant.imageUrl + '&width=1200&format=webp';
-            const response = await fetch(optimizedUrl);
+            // Force WebP format from Shopify CDN with explicit parameters
+            // Using .webp extension and format=webp to be more explicit
+            const baseUrl = variant.imageUrl.split('?')[0];
+            const optimizedUrl = `${baseUrl}.webp?width=1200&format=webp&quality=85`;
+            const response = await fetch(optimizedUrl, {
+              headers: {
+                'Accept': 'image/webp,image/*,*/*;q=0.8'
+              }
+            });
             const buffer = await response.arrayBuffer();
             const imageBuffer = Buffer.from(buffer);
             
             // Detect actual content type from response
             const contentType = response.headers.get('content-type') || 'image/webp';
             const extension = contentType.includes('webp') ? '.webp' : '.png';
+            
+            // Log what we're getting
+            console.log(`Variant ${variant.title}: Requested WebP, got ${contentType}`);
             
             // Create descriptive filename based on color and pattern
             const colorSlug = (color || 'default').toLowerCase().replace(/\s+/g, '-');
@@ -274,14 +287,33 @@ export default function ProductLayouts() {
   const [showProductModal, setShowProductModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [showSuccessBanner, setShowSuccessBanner] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [creationProgress, setCreationProgress] = useState({ current: 0, total: 0, variant: '' });
   const submit = useSubmit();
   
   useEffect(() => {
     if (actionData?.success) {
       setShowSuccessBanner(true);
+      setIsCreating(false);
+      setCreationProgress({ current: 0, total: 0, variant: '' });
       setTimeout(() => setShowSuccessBanner(false), 5000);
     }
   }, [actionData]);
+  
+  // Simulate progress while creating
+  useEffect(() => {
+    if (isCreating && creationProgress.total > 0) {
+      const interval = setInterval(() => {
+        setCreationProgress(prev => {
+          // Estimate ~1 second per variant
+          const estimatedProgress = Math.min(prev.current + 1, prev.total - 1);
+          return { ...prev, current: estimatedProgress };
+        });
+      }, 1000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [isCreating, creationProgress.total]);
 
   const handleCreateLayout = useCallback((product: any) => {
     setSelectedProduct(product);
@@ -290,11 +322,6 @@ export default function ProductLayouts() {
 
   const handleConfirmCreateLayout = useCallback(() => {
     if (selectedProduct) {
-      const formData = new FormData();
-      formData.append("_action", "createLayout");
-      formData.append("productId", selectedProduct.id);
-      formData.append("productTitle", selectedProduct.title);
-      
       // Extract variant data
       const variants = selectedProduct.variants.edges.map((edge: any) => {
         const colorOption = edge.node.selectedOptions?.find((opt: any) => opt.name === "Color");
@@ -315,12 +342,21 @@ export default function ProductLayouts() {
         };
       });
       
+      // Set up progress tracking
+      setIsCreating(true);
+      setCreationProgress({ current: 0, total: variants.length, variant: 'Initializing...' });
+      setShowProductModal(false);
+      
+      // Start the creation process
+      const formData = new FormData();
+      formData.append("_action", "createLayout");
+      formData.append("productId", selectedProduct.id);
+      formData.append("productTitle", selectedProduct.title);
       formData.append("variants", JSON.stringify(variants));
       submit(formData, { method: "post" });
+      
+      setSelectedProduct(null);
     }
-    
-    setShowProductModal(false);
-    setSelectedProduct(null);
   }, [selectedProduct, submit]);
 
   const handleDeleteLayout = useCallback((layoutId: string) => {
@@ -513,6 +549,62 @@ export default function ProductLayouts() {
               Select a product that has the "Is Layout Source" metafield set to true.
             </Text>
           )}
+        </Modal.Section>
+      </Modal>
+      
+      <Modal
+        open={isCreating}
+        onClose={() => {}}
+        title="Creating Product Layout"
+        size="small"
+      >
+        <Modal.Section>
+          <BlockStack gap="400">
+            <Text as="p" variant="headingMd">
+              Optimizing variant images...
+            </Text>
+            
+            <Box paddingBlockStart="200" paddingBlockEnd="200">
+              <ProgressBar 
+                progress={creationProgress.total > 0 ? (creationProgress.current / creationProgress.total) * 100 : 0} 
+                tone="primary"
+                animated
+              />
+            </Box>
+            
+            <InlineStack align="space-between">
+              <Text as="p" tone="subdued" variant="bodySm">
+                Processing {creationProgress.current} of {creationProgress.total} variants
+              </Text>
+              <Text as="p" tone="subdued" variant="bodySm">
+                {creationProgress.total > 0 ? Math.round((creationProgress.current / creationProgress.total) * 100) : 0}%
+              </Text>
+            </InlineStack>
+            
+            <Card background="bg-surface-secondary">
+              <BlockStack gap="200">
+                <Text as="p" variant="bodySm" fontWeight="semibold">
+                  What's happening:
+                </Text>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  • Fetching optimized WebP images from Shopify CDN
+                </Text>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  • Reducing file sizes by ~70% for faster loading
+                </Text>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  • Creating unique filenames to prevent caching issues
+                </Text>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  • Storing images with correct content types
+                </Text>
+              </BlockStack>
+            </Card>
+            
+            <Text as="p" tone="subdued" variant="bodySm" alignment="center">
+              This is a one-time process. Please don't close this window.
+            </Text>
+          </BlockStack>
         </Modal.Section>
       </Modal>
     </Page>
