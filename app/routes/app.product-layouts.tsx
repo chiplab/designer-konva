@@ -95,30 +95,40 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         let s3ImageUrl = "";
         if (variant.imageUrl) {
           try {
-            // Download image from Shopify
-            const response = await fetch(variant.imageUrl);
+            // Extract color and pattern for filename before processing
+            const titleParts = variant.title.split(" / ");
+            let color = null;
+            let pattern = null;
+            
+            if (titleParts.length === 2) {
+              color = titleParts[0].trim();
+              pattern = titleParts[1].trim();
+            }
+            
+            // Request optimized WebP version from Shopify CDN
+            const optimizedUrl = variant.imageUrl + '&width=1200&format=webp';
+            const response = await fetch(optimizedUrl);
             const buffer = await response.arrayBuffer();
             const imageBuffer = Buffer.from(buffer);
             
-            // Upload to S3
-            const s3Key = `layouts/${session.shop}/${layout.id}/variants/${variant.id}/base-image.jpg`;
-            const s3Url = await uploadToS3(s3Key, imageBuffer, { contentType: 'image/jpeg' });
+            // Detect actual content type from response
+            const contentType = response.headers.get('content-type') || 'image/webp';
+            const extension = contentType.includes('webp') ? '.webp' : '.png';
+            
+            // Create descriptive filename based on color and pattern
+            const colorSlug = (color || 'default').toLowerCase().replace(/\s+/g, '-');
+            const patternSlug = pattern ? `-${pattern.toLowerCase().replace(/\s+/g, '-')}` : '';
+            const fileName = `${colorSlug}${patternSlug}-base${extension}`;
+            
+            // Upload with correct naming and content type
+            const s3Key = `layouts/${session.shop}/${layout.id}/variants/${variant.id}/${fileName}`;
+            const s3Url = await uploadToS3(s3Key, imageBuffer, { contentType });
             s3ImageUrl = s3Url;
           } catch (error) {
             console.error(`Failed to upload image for variant ${variant.id}:`, error);
             // Use Shopify URL as fallback
             s3ImageUrl = variant.imageUrl;
           }
-        }
-        
-        // Extract color and pattern from variant title
-        const titleParts = variant.title.split(" / ");
-        let color = null;
-        let pattern = null;
-        
-        if (titleParts.length === 2) {
-          color = titleParts[0].trim();
-          pattern = titleParts[1].trim();
         }
         
         // Create layout variant
