@@ -1,12 +1,26 @@
 /**
  * Generates a thumbnail for a template using server-side Konva rendering
  * Based on the proven implementation from api.test-template-render.tsx
+ * 
+ * IMPORTANT: This function uses browser-like APIs that can contaminate the Node.js environment.
+ * It should only be called in isolated contexts (like separate worker processes).
  */
 export async function generateTemplateThumbnail(
   canvasData: string,
   shop: string,
   templateId: string
 ): Promise<string | null> {
+  // Save ALL original global state to ensure complete restoration
+  const originalGlobals = {
+    window: global.window,
+    document: global.document,
+    HTMLCanvasElement: global.HTMLCanvasElement,
+    HTMLImageElement: global.HTMLImageElement,
+    Image: global.Image,
+    Konva: global.Konva,
+    devicePixelRatio: global.devicePixelRatio,
+  };
+  
   try {
     const state = JSON.parse(canvasData);
     const { width, height } = state.dimensions;
@@ -394,5 +408,22 @@ export async function generateTemplateThumbnail(
   } catch (error) {
     console.error('Error generating template thumbnail:', error);
     return null;
+  } finally {
+    // Restore ALL original global state to prevent contamination
+    Object.keys(originalGlobals).forEach(key => {
+      if (originalGlobals[key] === undefined) {
+        delete global[key];
+      } else {
+        global[key] = originalGlobals[key];
+      }
+    });
+    
+    // Also clean up any additional globals that might have been created
+    const additionalGlobals = ['navigator', 'screen', 'location', 'history'];
+    additionalGlobals.forEach(key => {
+      if (global[key] && !originalGlobals[key]) {
+        delete global[key];
+      }
+    });
   }
 }

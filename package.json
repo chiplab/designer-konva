@@ -22,6 +22,7 @@
     "setup-fonts": "node scripts/setup-fonts.mjs",
     "generate-font-previews": "node scripts/generate-font-previews.mjs",
     "db:tunnel": "./scripts/rds-tunnel.sh",
+    "db:tunnel:stable": "./scripts/rds-tunnel-stable.sh",
     "db:studio": "prisma studio",
     "debug:templates": "node debug-templates.mjs"
   },

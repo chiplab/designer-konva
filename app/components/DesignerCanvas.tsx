@@ -134,6 +134,13 @@ interface DesignerCanvasProps {
       value: string;
     }>;
   } | null;
+  layoutVariant?: {
+    id: string;
+    variantTitle: string;
+    baseImageUrl: string;
+    color?: string | null;
+    pattern?: string | null;
+  } | null;
   initialState?: {
     templateId?: string;
     variantId?: string;
@@ -154,23 +161,28 @@ interface DesignerCanvasProps {
   initialColorVariant?: string | null;
 }
 
-const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, productLayout, shopifyProduct, shopifyVariant, initialState, onSave, isAdminView = true, templateColors = [], initialColorVariant }) => {
+const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, productLayout, shopifyProduct, shopifyVariant, layoutVariant, initialState, onSave, isAdminView = true, templateColors = [], initialColorVariant }) => {
   const shapeRef = React.useRef(null);
   const stageRef = React.useRef<any>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = React.useState({ 
-    width: shopifyVariant ? 1368 : (productLayout?.width || 1000), 
-    height: shopifyVariant ? 1368 : (productLayout?.height || 1000)
+    width: (shopifyVariant || layoutVariant) ? 1368 : (productLayout?.width || 1000), 
+    height: (shopifyVariant || layoutVariant) ? 1368 : (productLayout?.height || 1000)
   });
   const [containerSize, setContainerSize] = React.useState({ width: 800, height: 600 });
   // Support for S3 URLs - use variant-specific image if available
   const getVariantImage = () => {
-    // Priority 1: Use Shopify variant image if creating new template
+    // Priority 1: Use layout variant image if available (new layout system)
+    if (layoutVariant?.baseImageUrl) {
+      return layoutVariant.baseImageUrl;
+    }
+    
+    // Priority 2: Use Shopify variant image if creating new template
     if (shopifyVariant?.image?.url) {
       return shopifyVariant.image.url;
     }
     
-    // Priority 2: Use variant image from productLayout if available
+    // Priority 3: Use variant image from productLayout if available (legacy)
     if (productLayout && initialTemplate?.colorVariant) {
       // Try to find a variant image for the template's color
       // We'll need to match against all patterns since we don't know which one yet
@@ -185,14 +197,24 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       }
     }
     
-    // Priority 3: Fall back to base image
+    // Priority 4: Fall back to base image
     return productLayout?.baseImageUrl || '/media/images/8-spot-red-base-image.png';
   };
   
   const [baseImageUrl, setBaseImageUrl] = React.useState(getVariantImage());
-  const [selectedVariantKey, setSelectedVariantKey] = React.useState<string | null>(null);
   // Use 'anonymous' only for external URLs (S3), not for local files
   const [baseImage] = useImage(baseImageUrl, baseImageUrl.startsWith('http') ? 'anonymous' : undefined);
+  
+  // Log base image dimensions when loaded
+  React.useEffect(() => {
+    if (baseImage) {
+      console.log('Base image loaded with dimensions:', {
+        naturalWidth: baseImage.width,
+        naturalHeight: baseImage.height,
+        url: baseImageUrl
+      });
+    }
+  }, [baseImage, baseImageUrl]);
   const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>>([]);
   const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>>([]);
   const [curvedTextElements, setCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>>([]);
@@ -287,8 +309,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   );
 
   React.useEffect(() => {
-    // Fixed canvas size - 1368x1368 for Shopify variants, 1000x1000 for others
-    const newDimensions = shopifyVariant ? {
+    // Fixed canvas size - 1368x1368 for Shopify variants and layout variants, 1000x1000 for others
+    const newDimensions = (shopifyVariant || layoutVariant) ? {
       width: 1368,
       height: 1368
     } : {
@@ -306,7 +328,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     
     // it will log `Konva.Circle` instance
     console.log(shapeRef.current);
-  }, []);
+  }, [shopifyVariant, layoutVariant]);
 
   // Handle container resize
   React.useEffect(() => {
@@ -2522,7 +2544,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                     <input
                       type="range"
                       min="100"
-                      max="1000"
+                      max="1368"
                       value={designableArea.width}
                       onChange={(e) => {
                         const newWidth = parseInt(e.target.value);
@@ -2538,7 +2560,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                     />
                     <button
                       onClick={() => {
-                        const newWidth = Math.min(1000, designableArea.width + 10);
+                        const newWidth = Math.min(1368, designableArea.width + 10);
                         const centerX = designableArea.x + designableArea.width / 2;
                         setDesignableArea(prev => ({ 
                           ...prev, 
@@ -2578,7 +2600,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                     <input
                       type="range"
                       min="100"
-                      max="1000"
+                      max="1368"
                       value={designableArea.height}
                       onChange={(e) => {
                         const newHeight = parseInt(e.target.value);
@@ -2594,7 +2616,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                     />
                     <button
                       onClick={() => {
-                        const newHeight = Math.min(1000, designableArea.height + 10);
+                        const newHeight = Math.min(1368, designableArea.height + 10);
                         const centerY = designableArea.y + designableArea.height / 2;
                         setDesignableArea(prev => ({ 
                           ...prev, 
@@ -2714,49 +2736,6 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
             />
           </label>
         </div>
-        
-        {/* Variant Image Selector - Only show if productLayout has variantImages */}
-        {productLayout?.variantImages && Object.keys(productLayout.variantImages).length > 0 && (
-          <div style={{ display: 'inline-block', marginLeft: '20px' }}>
-            <select
-              value={selectedVariantKey || ''}
-              onChange={(e) => {
-                const key = e.target.value;
-                setSelectedVariantKey(key);
-                if (key && productLayout.variantImages[key]) {
-                  setBaseImageUrl(productLayout.variantImages[key] as string);
-                } else {
-                  setBaseImageUrl(productLayout.baseImageUrl);
-                }
-              }}
-              style={{
-                padding: '8px 16px',
-                fontSize: '14px',
-                borderRadius: '4px',
-                border: '1px solid #ddd',
-                cursor: 'pointer',
-                minWidth: '200px',
-              }}
-            >
-              <option value="">Default Base Image</option>
-              {Object.entries(productLayout.variantImages).map(([key]) => {
-                // Parse the key to get color and pattern
-                const [color, ...patternParts] = key.split('-');
-                const pattern = patternParts.join(' ').replace(/-/g, ' ');
-                const displayName = `${color.charAt(0).toUpperCase() + color.slice(1)} - ${pattern.split(' ').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')}`;
-                
-                return (
-                  <option key={key} value={key}>
-                    {displayName}
-                  </option>
-                );
-              })}
-            </select>
-            <span style={{ marginLeft: '8px', fontSize: '12px', color: '#666' }}>
-              Reference Image
-            </span>
-          </div>
-        )}
         
         {/* Canvas Size Debug Info */}
         <div style={{ marginTop: '10px', padding: '5px', fontSize: '12px', color: '#6c757d', fontFamily: 'monospace' }}>

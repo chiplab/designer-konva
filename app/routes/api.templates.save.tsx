@@ -23,6 +23,9 @@ export async function action({ request }: ActionFunctionArgs) {
     const shopifyProductId = formData.get("shopifyProductId") as string | null;
     const shopifyVariantId = formData.get("shopifyVariantId") as string | null;
     
+    // Layout system support
+    const layoutVariantId = formData.get("layoutVariantId") as string | null;
+    
     // Legacy support
     const productLayoutId = formData.get("productLayoutId") as string | null;
     const colorVariant = formData.get("colorVariant") as string | null;
@@ -32,6 +35,7 @@ export async function action({ request }: ActionFunctionArgs) {
       templateId,
       shopifyProductId,
       shopifyVariantId,
+      layoutVariantId,
       productLayoutId,
       hasCanvasData: !!canvasData,
       hasThumbnail: !!thumbnail
@@ -66,6 +70,7 @@ export async function action({ request }: ActionFunctionArgs) {
           // Update Shopify references if provided
           ...(shopifyProductId && { shopifyProductId }),
           ...(shopifyVariantId && { shopifyVariantId }),
+          ...(layoutVariantId && { layoutVariantId }),
           // Keep legacy fields for now
           colorVariant: colorVariant || existingTemplate.colorVariant,
           updatedAt: new Date(),
@@ -73,9 +78,9 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     } else {
       // Create new template
-      // Prefer Shopify references but support legacy for backward compatibility
-      if (!shopifyProductId && !productLayoutId) {
-        return json({ error: "Product reference is required for new templates" }, { status: 400 });
+      // Prefer layout system, then Shopify references, then legacy
+      if (!layoutVariantId && !shopifyProductId && !productLayoutId) {
+        return json({ error: "Product or layout reference is required for new templates" }, { status: 400 });
       }
       
       if (shopifyProductId && !shopifyVariantId) {
@@ -87,10 +92,12 @@ export async function action({ request }: ActionFunctionArgs) {
           name,
           shop: session.shop,
           canvasData,
+          // Layout system
+          layoutVariantId,
           // New Shopify references
           shopifyProductId,
           shopifyVariantId,
-          // Legacy fields (will be null if using Shopify references)
+          // Legacy fields (will be null if using newer systems)
           productLayoutId,
           colorVariant,
           thumbnail: null, // We'll update this after S3 upload

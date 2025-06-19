@@ -27,7 +27,7 @@ import { uploadToS3 } from "../services/s3.server";
 // GraphQL query to get products with layout source metafield
 const PRODUCTS_WITH_LAYOUT_SOURCE_QUERY = `#graphql
   query GetProductsWithLayoutSource($cursor: String) {
-    products(first: 100, after: $cursor, query: "metafield_key:'is_template_source' AND metafield_value:'true'") {
+    products(first: 100, after: $cursor, query: "metafield.custom_designer.is_template_source:true") {
       edges {
         node {
           id
@@ -52,7 +52,7 @@ const PRODUCTS_WITH_LAYOUT_SOURCE_QUERY = `#graphql
               }
             }
           }
-          metafield(namespace: "custom", key: "is_template_source") {
+          metafield(namespace: "custom_designer", key: "is_template_source") {
             value
           }
         }
@@ -218,10 +218,26 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       
       const data = await response.json();
       
+      // Debug logging
+      console.log("GraphQL response:", JSON.stringify(data, null, 2));
+      
       if (data.data?.products?.edges) {
-        productsWithLayoutSource.push(...data.data.products.edges.map((edge: any) => edge.node));
+        // Filter to only include products that actually have the metafield set to true
+        const filteredProducts = data.data.products.edges
+          .map((edge: any) => edge.node)
+          .filter((product: any) => {
+            // Check if the metafield exists and is set to "true"
+            const hasMetafield = product.metafield?.value === "true";
+            if (hasMetafield) {
+              console.log(`Product "${product.title}" has is_template_source = true`);
+            }
+            return hasMetafield;
+          });
+        
+        productsWithLayoutSource.push(...filteredProducts);
         cursor = data.data.products.pageInfo.hasNextPage ? data.data.products.pageInfo.endCursor : null;
       } else {
+        console.error("No products data in response:", data);
         break;
       }
     } while (cursor);
@@ -270,11 +286,24 @@ export default function ProductLayouts() {
       formData.append("productTitle", selectedProduct.title);
       
       // Extract variant data
-      const variants = selectedProduct.variants.edges.map((edge: any) => ({
-        id: edge.node.id,
-        title: edge.node.displayName || edge.node.title,
-        imageUrl: edge.node.image?.url || null,
-      }));
+      const variants = selectedProduct.variants.edges.map((edge: any) => {
+        const colorOption = edge.node.selectedOptions?.find((opt: any) => opt.name === "Color");
+        const patternOption = edge.node.selectedOptions?.find((opt: any) => 
+          opt.name === "Edge Pattern" || opt.name === "Pattern"
+        );
+        
+        // Construct title as "Color / Pattern" if both are available
+        let variantTitle = edge.node.displayName || edge.node.title;
+        if (colorOption && patternOption) {
+          variantTitle = `${colorOption.value} / ${patternOption.value}`;
+        }
+        
+        return {
+          id: edge.node.id,
+          title: variantTitle,
+          imageUrl: edge.node.image?.url || null,
+        };
+      });
       
       formData.append("variants", JSON.stringify(variants));
       submit(formData, { method: "post" });
@@ -335,7 +364,7 @@ export default function ProductLayouts() {
                     size="large"
                   />
                   <Text variant="bodySm" as="p" tone="subdued">
-                    {variant.color || variant.variantTitle}
+                    {variant.color && variant.pattern ? `${variant.color} / ${variant.pattern}` : variant.variantTitle}
                   </Text>
                 </div>
               ))}

@@ -8,15 +8,15 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
 # Check if the CORS config file exists
-if [ ! -f "$PROJECT_ROOT/s3-cors-config.json" ]; then
-  echo "❌ Error: s3-cors-config.json not found in project root"
+if [ ! -f "$PROJECT_ROOT/s3-cors-config-cli.json" ]; then
+  echo "❌ Error: s3-cors-config-cli.json not found in project root"
   exit 1
 fi
 
 # Apply CORS configuration
 aws s3api put-bucket-cors \
   --bucket shopify-designs \
-  --cors-configuration "file://$PROJECT_ROOT/s3-cors-config.json" \
+  --cors-configuration "file://$PROJECT_ROOT/s3-cors-config-cli.json" \
   --region us-west-1
 
 if [ $? -eq 0 ]; then

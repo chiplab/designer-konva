@@ -37,11 +37,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const productId = url.searchParams.get("productId");
   const variantId = url.searchParams.get("variantId");
   const layoutId = url.searchParams.get("layoutId"); // Legacy support
+  const layoutVariantId = url.searchParams.get("layoutVariantId"); // New layout system
   
   let template = null;
   let productLayout = null;
   let shopifyProduct = null;
   let shopifyVariant = null;
+  let layoutVariant = null;
   
   if (templateId) {
     // Loading existing template
@@ -93,6 +95,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         shop: session.shop,
       },
     });
+  } else if (layoutVariantId) {
+    // New layout system - load the layout variant with its layout
+    layoutVariant = await db.layoutVariant.findFirst({
+      where: {
+        id: layoutVariantId,
+      },
+      include: {
+        layout: true,
+      },
+    });
+    
+    // Verify the layout belongs to this shop
+    if (layoutVariant && layoutVariant.layout.shop !== session.shop) {
+      layoutVariant = null;
+    }
   }
   
   return json({
@@ -101,11 +118,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     productLayout,
     shopifyProduct,
     shopifyVariant,
+    layoutVariant,
   });
 };
 
 export default function Designer() {
-  const { template, productLayout, shopifyProduct, shopifyVariant } = useLoaderData<typeof loader>();
+  const { template, productLayout, shopifyProduct, shopifyVariant, layoutVariant } = useLoaderData<typeof loader>();
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [templateName, setTemplateName] = useState(template?.name || "");
   const [products, setProducts] = useState<any[]>([]);
@@ -126,6 +144,8 @@ export default function Designer() {
     title = `Edit: ${template.name}`;
   } else if (shopifyVariant) {
     title = `New Template: ${shopifyVariant.displayName}`;
+  } else if (layoutVariant) {
+    title = `New Template: ${layoutVariant.variantTitle}`;
   } else if (productLayout) {
     title = `New Template for ${productLayout.name}`;
   }
@@ -334,6 +354,16 @@ export default function Designer() {
         formData.append('productLayoutId', productLayout.id);
       }
       
+      // New layout system
+      if (layoutVariant?.id) {
+        formData.append('layoutVariantId', layoutVariant.id);
+        
+        // Also extract and send color from layout variant
+        if (layoutVariant.color && !colorVariant) {
+          formData.append('colorVariant', layoutVariant.color.toLowerCase());
+        }
+      }
+      
       // Log all formData entries
       console.log('FormData being sent:');
       for (const [key, value] of formData.entries()) {
@@ -390,6 +420,7 @@ export default function Designer() {
           productLayout={productLayout}
           shopifyProduct={shopifyProduct}
           shopifyVariant={shopifyVariant}
+          layoutVariant={layoutVariant}
           onSave={handleOpenSaveModal}
           isAdminView={true}
         />
