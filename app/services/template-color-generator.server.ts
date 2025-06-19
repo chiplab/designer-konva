@@ -471,14 +471,40 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
     throw new Error("Master template not found");
   }
   
-  if (!masterTemplate.colorVariant || !masterTemplate.shopifyProductId) {
-    throw new Error("Master template must have a color variant and Shopify product ID");
+  // Check if we have either legacy or layout-based product reference
+  if (!masterTemplate.shopifyProductId && !masterTemplate.layoutVariantId) {
+    throw new Error("Master template must have either a Shopify product ID or layout variant");
   }
+  
+  // Determine product IDs - one for layout (source) and one for selling
+  let layoutProductId = null;
+  let sellingProductId = masterTemplate.shopifyProductId;
+  
+  if (masterTemplate.layoutVariantId) {
+    const layoutVariant = await db.layoutVariant.findUnique({
+      where: { id: masterTemplate.layoutVariantId },
+      include: { layout: true },
+    });
+    if (layoutVariant) {
+      layoutProductId = layoutVariant.layout.shopifyProductId;
+      console.log(`Master template uses layout from source product: ${layoutProductId}`);
+    }
+  }
+  
+  // For getting combinations, use selling product ID if available, otherwise layout product ID
+  const productId = sellingProductId || layoutProductId;
+  
+  if (!productId) {
+    throw new Error("Unable to determine product ID for variant generation");
+  }
+  
+  console.log(`Using product ID for combinations: ${productId}`);
+  console.log(`Using layout product ID for base images: ${layoutProductId || 'none (will not find base images)'}`)
   
   // Get ALL pattern-color combinations from the product
   const allCombinations = await getAllPatternColorCombinations(
     admin,
-    masterTemplate.shopifyProductId
+    productId
   );
   
   console.log(`Found ${allCombinations.length} total pattern-color combinations`);
@@ -487,28 +513,65 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
   const patterns = [...new Set(allCombinations.map(c => c.pattern))];
   console.log(`Unique patterns: ${patterns.join(', ')}`);
   
-  // Get the source color mapping
-  const sourceColor = await db.templateColor.findUnique({
+  // Debug: log the actual combinations
+  console.log('All combinations found:');
+  allCombinations.slice(0, 5).forEach(c => {
+    console.log(`  - ${c.color} / ${c.pattern}`);
+  });
+  if (allCombinations.length > 5) {
+    console.log(`  ... and ${allCombinations.length - 5} more`);
+  }
+  
+  // We'll get the source color mapping after we determine the master color
+  let sourceColor = null;
+  
+  // Parse the master template's canvas data
+  const canvasData = JSON.parse(masterTemplate.canvasData);
+  
+  // Use the product ID we already determined
+  const productIdForVariants = productId;
+  
+  // Make layoutProductId available for base image lookups
+  const layoutProductIdForBaseImages = layoutProductId;
+  
+  // Generate templates for ALL combinations (excluding the master's own combination)
+  const createdTemplates = [];
+  
+  // Get master color and pattern - handle both legacy and layout-based templates
+  let masterColor = masterTemplate.colorVariant;
+  let masterPattern = "";
+  
+  // If using layout system, get color and pattern from layout variant
+  if (!masterColor && masterTemplate.layoutVariantId) {
+    const layoutVariant = await db.layoutVariant.findUnique({
+      where: { id: masterTemplate.layoutVariantId },
+    });
+    if (layoutVariant) {
+      masterColor = layoutVariant.color;
+      masterPattern = layoutVariant.pattern || "";
+      console.log(`Using color/pattern from layout variant: ${masterColor}/${masterPattern}`);
+    }
+  }
+  
+  if (!masterColor) {
+    throw new Error("Unable to determine master template color");
+  }
+  
+  const masterColorNormalized = normalizeColorName(masterColor);
+  
+  // Now get the source color mapping
+  sourceColor = await db.templateColor.findUnique({
     where: {
-      chipColor: masterTemplate.colorVariant.toLowerCase(),
+      chipColor: masterColorNormalized,
     },
   });
   
   if (!sourceColor) {
-    throw new Error(`Color mapping not found for ${masterTemplate.colorVariant}`);
+    throw new Error(`Color mapping not found for ${masterColor} (normalized: ${masterColorNormalized})`);
   }
   
-  // Parse the master template's canvas data
-  const canvasData = JSON.parse(masterTemplate.canvasData);
-  const { shopifyProductId } = masterTemplate;
-  
-  // Generate templates for ALL combinations (excluding the master's own combination)
-  const createdTemplates = [];
-  const masterColorNormalized = normalizeColorName(masterTemplate.colorVariant);
-  
-  // Get the master's pattern if it has a variant ID
-  let masterPattern = "";
-  if (masterTemplate.shopifyVariantId) {
+  // Get the master's pattern if it has a variant ID (legacy path)
+  if (!masterPattern && masterTemplate.shopifyVariantId) {
     const GET_VARIANT = `#graphql
       query GetVariant($id: ID!) {
         productVariant(id: $id) {
@@ -534,6 +597,9 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
     }
   }
   
+  console.log(`\nStarting variant generation loop...`);
+  console.log(`Master: color="${masterColor}" (normalized="${masterColorNormalized}"), pattern="${masterPattern}"`);
+  
   for (const combination of allCombinations) {
     // Skip the master template's own combination
     if (normalizeColorName(combination.color) === masterColorNormalized && 
@@ -541,6 +607,8 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
       console.log(`Skipping master template's combination: ${combination.color}/${combination.pattern}`);
       continue;
     }
+    
+    console.log(`\nProcessing combination: ${combination.color} / ${combination.pattern}`);
     
     try {
       // Get the target color mapping using proper normalization
@@ -588,18 +656,31 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
       }
       
       // Get the correct base image for this color/pattern combination
+      // Use layoutProductId (source product) for finding base images, not the selling product
+      const productIdForBaseImage = layoutProductIdForBaseImages || productIdForVariants;
+      console.log(`Looking for base image: productId="${productIdForBaseImage}", color="${combination.color}", pattern="${combination.pattern}"`);
       const baseImageUrl = await getBaseImageForVariant(
         admin,
-        shopifyProductId,
+        productIdForBaseImage,
         combination.color,
         combination.pattern
       );
       
-      if (baseImageUrl && newCanvasData.assets) {
-        console.log(`Setting base image for ${combination.color}/${combination.pattern}: ${baseImageUrl}`);
+      if (baseImageUrl) {
+        console.log(`✅ Found base image for ${combination.color}/${combination.pattern}: ${baseImageUrl}`);
+        // Ensure assets object exists
+        if (!newCanvasData.assets) {
+          newCanvasData.assets = {};
+        }
         newCanvasData.assets.baseImage = baseImageUrl;
       } else {
-        console.warn(`No base image found for ${combination.color}/${combination.pattern}, using fallback`);
+        console.warn(`❌ No base image found for ${combination.color}/${combination.pattern}, this variant will have no base image`);
+        // Remove the base image for this variant since we don't have the correct one
+        // This is better than using the wrong base image
+        if (newCanvasData.assets) {
+          delete newCanvasData.assets.baseImage;
+          console.log(`   Removed base image from variant to prevent using wrong image`);
+        }
       }
       
       // Format the color and pattern names properly
@@ -608,16 +689,48 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ');
       
+      // Find the corresponding layout variant for this color/pattern combination
+      let layoutVariantIdForNewTemplate = null;
+      // Use layoutProductId (source product) to find the layout variant, not selling product
+      if (layoutProductIdForBaseImages) {
+        const layoutForVariant = await db.layout.findFirst({
+          where: {
+            shopifyProductId: layoutProductIdForBaseImages,
+          },
+          include: {
+            layoutVariants: true,
+          },
+        });
+        
+        if (layoutForVariant) {
+          const matchingLayoutVariant = layoutForVariant.layoutVariants.find((lv) => {
+            const normalizedLvColor = normalizeColorName(lv.color || '');
+            const normalizedTargetColor = normalizeColorName(combination.color);
+            return normalizedLvColor === normalizedTargetColor &&
+                   lv.pattern?.toLowerCase() === combination.pattern.toLowerCase();
+          });
+          
+          if (matchingLayoutVariant) {
+            layoutVariantIdForNewTemplate = matchingLayoutVariant.id;
+            console.log(`   Found layout variant for ${combination.color}/${combination.pattern}: ${layoutVariantIdForNewTemplate}`);
+          } else {
+            console.warn(`   No layout variant found for ${combination.color}/${combination.pattern}`);
+          }
+        }
+      }
+      
       // Create the new template
       const newTemplate = await db.template.create({
         data: {
           name: `${formattedColorName} / ${combination.pattern} Template`,
           shop,
-          shopifyProductId,
+          shopifyProductId: productIdForVariants, // Use the determined product ID
           shopifyVariantId: null, // Will be updated by matching function
           canvasData: JSON.stringify(newCanvasData),
           masterTemplateId,
           isColorVariant: true,
+          // Link to the correct layout variant for this color/pattern
+          layoutVariantId: layoutVariantIdForNewTemplate,
           // Legacy fields
           productLayoutId: masterTemplate.productLayoutId,
           colorVariant: targetColor.chipColor, // Use chipColor for database consistency
@@ -642,7 +755,7 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
 }
 
 /**
- * Gets the base image URL for a specific color/pattern combination from the source product
+ * Gets the base image URL for a specific color/pattern combination from the Layout system
  */
 async function getBaseImageForVariant(
   admin: any,
@@ -650,56 +763,76 @@ async function getBaseImageForVariant(
   color: string,
   pattern: string
 ): Promise<string | null> {
-  const GET_PRODUCT_VARIANTS = `#graphql
-    query GetProductVariants($id: ID!) {
-      product(id: $id) {
-        variants(first: 100) {
-          edges {
-            node {
-              id
-              image {
-                url
-              }
-              selectedOptions {
-                name
-                value
-              }
-            }
-          }
-        }
-      }
-    }
-  `;
-  
   try {
-    const response = await admin.graphql(GET_PRODUCT_VARIANTS, {
-      variables: { id: sourceProductId }
+    console.log(`\n🔍 getBaseImageForVariant called with:`);
+    console.log(`   productId: ${sourceProductId}`);
+    console.log(`   color: "${color}"`);
+    console.log(`   pattern: "${pattern}"`);
+    
+    // First, find the Layout for this product
+    const layout = await db.layout.findFirst({
+      where: {
+        shopifyProductId: sourceProductId,
+      },
+      include: {
+        layoutVariants: true,
+      },
     });
     
-    const data = await response.json();
-    const variants = data.data?.product?.variants?.edges || [];
+    if (!layout) {
+      console.warn(`❌ No layout found for product ${sourceProductId}`);
+      return null;
+    }
     
-    // Find the variant that matches both color and pattern
-    const matchingVariant = variants.find((edge: any) => {
-      const colorOption = edge.node.selectedOptions.find((opt: any) => opt.name === "Color");
-      const patternOption = edge.node.selectedOptions.find((opt: any) => 
-        opt.name === "Edge Pattern" || opt.name === "Pattern"
-      );
-      
-      if (colorOption && patternOption) {
-        const normalizedShopifyColor = normalizeColorName(colorOption.value);
+    console.log(`✅ Found layout with ${layout.layoutVariants.length} variants`);
+    
+    // Log all available variants for debugging
+    console.log(`Available layout variants:`);
+    layout.layoutVariants.forEach((v, index) => {
+      console.log(`   [${index}] color="${v.color}", pattern="${v.pattern}", url="${v.baseImageUrl}"`);
+    });
+    
+    // Find the LayoutVariant that matches both color and pattern
+    const matchingVariant = layout.layoutVariants.find((variant) => {
+      if (variant.color && variant.pattern) {
+        const normalizedVariantColor = normalizeColorName(variant.color);
         const normalizedTargetColor = normalizeColorName(color);
         
-        return normalizedShopifyColor === normalizedTargetColor &&
-               patternOption.value.toLowerCase() === pattern.toLowerCase();
+        const isMatch = normalizedVariantColor === normalizedTargetColor &&
+                       variant.pattern.toLowerCase() === pattern.toLowerCase();
+        
+        if (isMatch) {
+          console.log(`   ✅ MATCH: variant color="${variant.color}" (normalized="${normalizedVariantColor}") matches target="${color}" (normalized="${normalizedTargetColor}")`);
+        }
+        
+        return isMatch;
       }
       
       return false;
     });
     
-    return matchingVariant?.node?.image?.url || null;
+    if (matchingVariant) {
+      console.log(`✅ Found exact match for ${color}/${pattern}: ${matchingVariant.baseImageUrl}`);
+      return matchingVariant.baseImageUrl;
+    }
+    
+    console.log(`❌ No exact match found for ${color}/${pattern}`);
+    
+    // If no exact match, try to find a variant with the same pattern but any color
+    // This is better than using the master template's color for all variants
+    const samePatternVariant = layout.layoutVariants.find((variant) => {
+      return variant.pattern && variant.pattern.toLowerCase() === pattern.toLowerCase();
+    });
+    
+    if (samePatternVariant) {
+      console.warn(`⚠️ No exact match for ${color}/${pattern}, using same pattern variant: ${samePatternVariant.color}/${samePatternVariant.pattern}`);
+      return samePatternVariant.baseImageUrl;
+    }
+    
+    console.warn(`❌ No matching variant found for ${color}/${pattern} in layout`);
+    return null;
   } catch (error) {
-    console.error(`Error getting base image for ${color}/${pattern}:`, error);
+    console.error(`💥 Error getting base image for ${color}/${pattern}:`, error);
     return null;
   }
 }

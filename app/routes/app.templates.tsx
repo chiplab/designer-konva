@@ -6,8 +6,6 @@ import {
   Page,
   Layout,
   Card,
-  ResourceList,
-  ResourceItem,
   Text,
   Thumbnail,
   EmptyState,
@@ -18,16 +16,13 @@ import {
   Button,
   BlockStack,
   Collapsible,
-  Icon,
   ButtonGroup,
-  Tabs,
   InlineStack,
+  Grid,
 } from "@shopify/polaris";
 import {
   ChevronDownIcon,
   ChevronRightIcon,
-  DeleteIcon,
-  RefreshIcon,
 } from "@shopify/polaris-icons";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -97,7 +92,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }, { status: 404 });
       }
 
-      // Delete all templates
+      // First, delete any CustomerDesigns that reference these templates
+      const deletedDesigns = await db.customerDesign.deleteMany({
+        where: {
+          templateId: { in: templateIds },
+        },
+      });
+      
+      console.log(`Deleted ${deletedDesigns.count} customer designs associated with ${templateIds.length} templates`);
+
+      // Now delete all templates
       await db.template.deleteMany({
         where: {
           id: { in: templateIds },
@@ -107,7 +111,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       return json({ 
         success: true, 
-        message: `${templates.length} template(s) deleted successfully` 
+        message: `${templates.length} template(s) deleted successfully${deletedDesigns.count > 0 ? ` (and ${deletedDesigns.count} associated designs)` : ''}` 
       });
     } catch (error) {
       console.error("Error deleting templates:", error);
@@ -542,14 +546,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }, { status: 404 });
       }
 
-      // Delete the template
+      // First, delete any CustomerDesigns that reference this template
+      const deletedDesigns = await db.customerDesign.deleteMany({
+        where: {
+          templateId: templateId,
+        },
+      });
+      
+      console.log(`Deleted ${deletedDesigns.count} customer designs associated with template ${templateId}`);
+
+      // Now delete the template
       await db.template.delete({
         where: { id: templateId },
       });
 
       return json({ 
         success: true, 
-        message: `Template "${template.name}" deleted successfully` 
+        message: `Template "${template.name}" deleted successfully${deletedDesigns.count > 0 ? ` (and ${deletedDesigns.count} associated designs)` : ''}` 
       });
     } catch (error) {
       console.error("Error deleting template:", error);
@@ -637,10 +650,26 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
     include: {
       productLayout: true,
+      layoutVariant: {
+        include: {
+          layout: true,
+        },
+      },
     },
     orderBy: {
       updatedAt: "desc",
     },
+  });
+  
+  // Get available layouts for template creation
+  const layouts = await db.layout.findMany({
+    where: { shop: session.shop },
+    include: {
+      layoutVariants: {
+        orderBy: { position: 'asc' },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
   });
   
   // Get unique product IDs from templates
@@ -747,12 +776,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     templates, 
     templateGroups, 
     standaloneTemplates,
-    productNames 
+    productNames,
+    layouts 
   });
 };
 
 export default function Templates() {
-  const { templates, templateGroups, standaloneTemplates, productNames } = useLoaderData<typeof loader>();
+  const { templates, templateGroups, standaloneTemplates, productNames, layouts } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -768,9 +798,14 @@ export default function Templates() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [deleteAllVariantsModalOpen, setDeleteAllVariantsModalOpen] = useState(false);
   const [masterToDeleteVariants, setMasterToDeleteVariants] = useState<{ id: string; name: string; variantCount: number } | null>(null);
-  const [filter, setFilter] = useState<'all' | 'masters' | 'variants' | 'standalone'>('all');
+  const [layoutSelectorOpen, setLayoutSelectorOpen] = useState(false);
+  const [selectedLayout, setSelectedLayout] = useState<any>(null);
+  const [selectedLayoutVariant, setSelectedLayoutVariant] = useState<any>(null);
   const submit = useSubmit();
   const navigate = useNavigate();
+  
+  // Removed automatic thumbnail job checking
+  // Users must manually click "Process Pending Thumbnails" to avoid contamination
   
   useEffect(() => {
     if (actionData?.success) {
@@ -961,10 +996,17 @@ export default function Templates() {
                 clearInterval(checkInterval);
                 // @ts-ignore - shopify is globally available in embedded apps
                 if (typeof shopify !== 'undefined' && shopify.toast) {
-                  shopify.toast.show(`✅ ${jobStatus.result?.message || 'All variants generated successfully!'}`, { duration: 5000 });
+                  const message = jobStatus.result?.thumbnailJobRequired 
+                    ? '✅ Variants created! Click "Process Pending Thumbnails" button above to generate preview images.'
+                    : jobStatus.result?.message || 'All variants generated successfully!';
+                  shopify.toast.show(message, { duration: 8000 });
                 }
-                // Refresh the page
-                navigate(".", { replace: true });
+                
+                // Don't auto-trigger thumbnail processing to avoid contamination
+                // User must manually click the button
+                
+                // Refresh the page to show new variants
+                window.location.reload();
               } else if (jobStatus.status === 'failed') {
                 clearInterval(checkInterval);
                 // @ts-ignore - shopify is globally available in embedded apps
@@ -995,7 +1037,7 @@ export default function Templates() {
           if (typeof shopify !== 'undefined' && shopify.toast) {
             shopify.toast.show(result.message, { duration: 5000 });
           }
-          navigate(".", { replace: true });
+          window.location.reload();
         }
       } else {
         // @ts-ignore - shopify is globally available in embedded apps
@@ -1034,7 +1076,7 @@ export default function Templates() {
       heading="Create your first template"
       action={{
         content: "Create template",
-        url: "/app/designer",
+        onAction: () => setLayoutSelectorOpen(true),
       }}
       image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
     >
@@ -1278,7 +1320,7 @@ export default function Templates() {
       )}
       
       <TitleBar title="Templates">
-        <button variant="primary" onClick={() => window.location.href = "/app/product-layouts"}>
+        <button variant="primary" onClick={() => setLayoutSelectorOpen(true)}>
           Create template
         </button>
       </TitleBar>
@@ -1289,23 +1331,59 @@ export default function Templates() {
               <BlockStack gap="400">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text variant="headingMd" as="h2">Bulk Actions</Text>
-                  <Button
-                    onClick={async () => {
-                      const formData = new FormData();
-                      formData.append("_action", "syncAllVariantThumbnails");
-                      submit(formData, { method: "post" });
-                      
-                      // @ts-ignore - shopify is globally available in embedded apps
-                      if (typeof shopify !== 'undefined' && shopify.toast) {
-                        shopify.toast.show("Checking which variants need thumbnails...");
-                      }
-                    }}
-                  >
-                    Sync ALL missing thumbnails
-                  </Button>
+                  <ButtonGroup>
+                    <Button
+                      onClick={async () => {
+                        try {
+                          const response = await fetch('/api/process-thumbnail-jobs', {
+                            method: 'POST',
+                          });
+                          
+                          const result = await response.json();
+                          
+                          // @ts-ignore - shopify is globally available in embedded apps
+                          if (typeof shopify !== 'undefined' && shopify.toast) {
+                            if (result.success) {
+                              shopify.toast.show(result.message || 'Thumbnail processing complete');
+                              if (result.processed > 0) {
+                                // Reload after a short delay to show updated thumbnails
+                                setTimeout(() => window.location.reload(), 2000);
+                              }
+                            } else {
+                              shopify.toast.show(result.error || 'Failed to process thumbnails', { error: true });
+                            }
+                          }
+                        } catch (error) {
+                          console.error('Error processing thumbnails:', error);
+                          // @ts-ignore - shopify is globally available in embedded apps
+                          if (typeof shopify !== 'undefined' && shopify.toast) {
+                            shopify.toast.show('Failed to process thumbnails', { error: true });
+                          }
+                        }
+                      }}
+                      tone="success"
+                    >
+                      Process Pending Thumbnails
+                    </Button>
+                    <Button
+                      onClick={async () => {
+                        const formData = new FormData();
+                        formData.append("_action", "syncAllVariantThumbnails");
+                        submit(formData, { method: "post" });
+                        
+                        // @ts-ignore - shopify is globally available in embedded apps
+                        if (typeof shopify !== 'undefined' && shopify.toast) {
+                          shopify.toast.show("Checking which variants need thumbnails...");
+                        }
+                      }}
+                    >
+                      Sync ALL missing thumbnails
+                    </Button>
+                  </ButtonGroup>
                 </div>
                 <Text variant="bodySm" tone="subdued" as="p">
-                  This will sync thumbnails to all variants that don't have images yet
+                  • <strong>Process Pending Thumbnails</strong>: Generate thumbnails for templates created without previews (use after "Generate variants")<br/>
+                  • <strong>Sync ALL missing thumbnails</strong>: Upload existing thumbnails to Shopify product variants that don't have images yet
                 </Text>
                 
                 {/* Group templates by product */}
@@ -1589,6 +1667,95 @@ export default function Templates() {
           <Text as="p" tone="subdued">
             This will only delete the color variants, not the master template. This action cannot be undone.
           </Text>
+        </Modal.Section>
+      </Modal>
+      
+      <Modal
+        open={layoutSelectorOpen}
+        onClose={() => {
+          setLayoutSelectorOpen(false);
+          setSelectedLayout(null);
+          setSelectedLayoutVariant(null);
+        }}
+        title="Select Layout for Template"
+        primaryAction={selectedLayoutVariant ? {
+          content: "Create Template",
+          onAction: () => {
+            if (selectedLayoutVariant) {
+              // Navigate to designer with layout variant
+              navigate(`/app/designer?layoutVariantId=${selectedLayoutVariant.id}`);
+            }
+          },
+        } : undefined}
+        secondaryActions={[{
+          content: "Cancel",
+          onAction: () => {
+            setLayoutSelectorOpen(false);
+            setSelectedLayout(null);
+            setSelectedLayoutVariant(null);
+          },
+        }]}
+        size="large"
+      >
+        <Modal.Section>
+          {layouts.length === 0 ? (
+            <EmptyState
+              heading="No layouts available"
+              action={{
+                content: "Create a layout",
+                url: "/app/product-layouts",
+              }}
+              image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+            >
+              <p>Create a product layout first to start designing templates.</p>
+            </EmptyState>
+          ) : (
+            <BlockStack gap="400">
+              <Text as="p">
+                Select a layout and variant to create your template from:
+              </Text>
+              
+              {layouts.map((layout) => (
+                <Card key={layout.id}>
+                  <BlockStack gap="300">
+                    <InlineStack align="space-between">
+                      <Text variant="headingMd" as="h3">{layout.productTitle}</Text>
+                      <Badge>{layout.layoutVariants.length} variants</Badge>
+                    </InlineStack>
+                    
+                    <Grid columns={{ xs: 3, sm: 4, md: 6 }}>
+                      {layout.layoutVariants.map((variant) => (
+                        <div 
+                          key={variant.id}
+                          onClick={() => {
+                            setSelectedLayout(layout);
+                            setSelectedLayoutVariant(variant);
+                          }}
+                          style={{ 
+                            cursor: 'pointer',
+                            textAlign: 'center',
+                            padding: '8px',
+                            borderRadius: '8px',
+                            border: selectedLayoutVariant?.id === variant.id ? '2px solid #5c6ac4' : '2px solid transparent',
+                            backgroundColor: selectedLayoutVariant?.id === variant.id ? '#f4f6f8' : 'transparent',
+                          }}
+                        >
+                          <Thumbnail
+                            source={variant.baseImageUrl}
+                            alt={variant.variantTitle}
+                            size="large"
+                          />
+                          <Text variant="bodySm" as="p">
+                            {variant.color || variant.variantTitle}
+                          </Text>
+                        </div>
+                      ))}
+                    </Grid>
+                  </BlockStack>
+                </Card>
+              ))}
+            </BlockStack>
+          )}
         </Modal.Section>
       </Modal>
     </Page>

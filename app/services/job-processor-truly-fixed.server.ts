@@ -174,7 +174,7 @@ export async function processGenerateVariantsJob(
     
     // Complete the job WITHOUT generating thumbnails
     await completeJob(jobId, {
-      message: `Successfully generated ${createdTemplates.length} variants with metafield bindings. Thumbnails will be generated separately.`,
+      message: `Successfully generated ${createdTemplates.length} variants with metafield bindings. Thumbnails can be generated separately via the "Process Thumbnails" button.`,
       templatesCreated: createdTemplates.length,
       metafieldsSet: templatesToBind.length,
       templates: createdTemplates.map(t => ({ 
@@ -183,13 +183,14 @@ export async function processGenerateVariantsJob(
         pattern: t.pattern 
       })),
       thumbnailsPending: true, // Flag to indicate thumbnails need generation
+      thumbnailJobRequired: true, // New flag to indicate manual thumbnail generation is needed
     });
     
     console.log(`Job ${jobId}: Completed successfully (without thumbnails)`);
     
-    // PHASE 2: Schedule thumbnail generation as a separate background task
-    // This will run AFTER the job is complete and won't pollute the admin API context
-    console.log(`Job ${jobId}: Scheduling thumbnail generation as separate task...`);
+    // PHASE 2: Create thumbnail job but DON'T process it automatically
+    // This prevents contamination of the main server process
+    console.log(`Job ${jobId}: Creating thumbnail generation job (manual trigger required)...`);
     
     // Create a new job specifically for thumbnail generation
     const { createJob } = await import("./job-queue.server");
@@ -204,18 +205,23 @@ export async function processGenerateVariantsJob(
       createdTemplates.length
     );
     
-    console.log(`Job ${jobId}: Created thumbnail generation job ${thumbnailJob.id}`);
+    console.log(`Job ${jobId}: Created thumbnail generation job ${thumbnailJob.id} - requires manual processing`);
     
-    // Process the thumbnail job immediately in the background
-    // This is safe because the current job is already complete
-    setTimeout(async () => {
-      try {
-        console.log(`Starting thumbnail generation job ${thumbnailJob.id} in background...`);
-        await processJob(thumbnailJob.id, shop, null); // No admin needed for thumbnails
-      } catch (error) {
-        console.error(`Failed to process thumbnail job ${thumbnailJob.id}:`, error);
-      }
-    }, 1000); // Wait 1 second to ensure clean separation
+    // Clear any cached modules to prevent contamination
+    try {
+      const moduleKeys = Object.keys(require.cache).filter(key => 
+        key.includes('job-queue') || 
+        key.includes('job-processor')
+      );
+      
+      moduleKeys.forEach(key => {
+        delete require.cache[key];
+      });
+      
+      console.log(`Job ${jobId}: Cleared ${moduleKeys.length} job-related modules from cache`);
+    } catch (error) {
+      console.error(`Job ${jobId}: Failed to clear module cache:`, error);
+    }
     
   } catch (error) {
     console.error(`Job ${jobId}: Failed with error:`, error);
@@ -232,13 +238,24 @@ export async function processGenerateThumbnailsJob(
   data: JobData
 ) {
   try {
+    // Add a delay to ensure the main process has completed
+    // This helps prevent contamination issues
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
     await startJob(jobId);
     
     const { templates, masterTemplateId, masterPattern } = data;
     console.log(`Job ${jobId}: Generating thumbnails for ${templates.length} templates...`);
     
-    // Import thumbnail generator - this is safe because no admin API calls will follow
-    const { generateTemplateThumbnail } = await import("./template-thumbnail-generator.server");
+    // Import thumbnail generator - isolate the import to prevent contamination
+    let generateTemplateThumbnail: any;
+    try {
+      const module = await import("./template-thumbnail-generator.server");
+      generateTemplateThumbnail = module.generateTemplateThumbnail;
+    } catch (error) {
+      console.error(`Job ${jobId}: Failed to import thumbnail generator:`, error);
+      throw new Error("Failed to import thumbnail generator");
+    }
     
     const BATCH_SIZE = 5;
     let processedCount = 0;
@@ -313,6 +330,47 @@ export async function processGenerateThumbnailsJob(
     });
     
     console.log(`Job ${jobId}: Thumbnail generation completed`);
+    
+    // Aggressive module cache cleanup to prevent contamination
+    try {
+      // Clear ALL cached modules that could be contaminated
+      const moduleKeys = Object.keys(require.cache).filter(key => 
+        key.includes('canvas') || 
+        key.includes('konva') || 
+        key.includes('use-image') ||
+        key.includes('template-thumbnail-generator') ||
+        key.includes('@napi-rs') ||
+        key.includes('job-processor') ||
+        key.includes('job-worker') ||
+        key.includes('template-sync') ||
+        key.includes('template-color-generator') ||
+        key.includes('s3.server') ||
+        key.includes('font-loader')
+      );
+      
+      moduleKeys.forEach(key => {
+        delete require.cache[key];
+      });
+      
+      console.log(`Job ${jobId}: Cleared ${moduleKeys.length} potentially contaminated modules from cache`);
+      
+      // Clean up any browser-like globals that might have leaked
+      const browserGlobals = ['window', 'document', 'navigator', 'screen', 'location', 'history', 'Konva'];
+      browserGlobals.forEach(key => {
+        if (global[key]) {
+          delete global[key];
+          console.log(`Job ${jobId}: Cleaned up global.${key}`);
+        }
+      });
+      
+      // Force garbage collection if available
+      if (global.gc) {
+        global.gc();
+        console.log(`Job ${jobId}: Forced garbage collection`);
+      }
+    } catch (error) {
+      console.error(`Job ${jobId}: Failed to clear module cache:`, error);
+    }
     
   } catch (error) {
     console.error(`Job ${jobId}: Failed with error:`, error);
