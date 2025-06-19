@@ -83,9 +83,54 @@ if (typeof CanvasTextRenderer === 'undefined') {
 
   async loadTemplate(templateId) {
     try {
+      console.log(`[CanvasTextRenderer] Loading template: ${templateId}`);
       const response = await fetch(`${this.apiUrl}/api/public/templates/${templateId}`);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error(`[CanvasTextRenderer] Template API error (${response.status}):`, errorData);
+        
+        // If it's a 404, provide more context
+        if (response.status === 404) {
+          console.error(`[CanvasTextRenderer] Template not found: ${templateId}`);
+          console.error('[CanvasTextRenderer] This may be due to:');
+          console.error('1. Template was deleted but metafield still references it');
+          console.error('2. Template ID mismatch between metafield and database');
+          console.error('3. Template exists in different shop (cross-shop contamination)');
+          
+          // Try to provide a fallback - create a simple empty template
+          console.warn('[CanvasTextRenderer] Creating fallback empty template');
+          this.template = {
+            id: templateId,
+            name: 'Fallback Template',
+            dimensions: { width: 600, height: 400 },
+            backgroundColor: '#ffffff',
+            elements: {
+              textElements: [{
+                id: 'fallback-text',
+                text: 'Click to customize',
+                x: 300,
+                y: 200,
+                fontFamily: 'Arial',
+                fontSize: 24,
+                fill: '#000000'
+              }]
+            }
+          };
+          
+          // Initialize with fallback
+          this.initializeStage();
+          this.render();
+          this.onReady();
+          return;
+        }
+        
+        throw new Error(`Template API returned ${response.status}: ${errorData.error || 'Unknown error'}`);
+      }
+      
       const data = await response.json();
       this.template = data.template;
+      console.log(`[CanvasTextRenderer] Template loaded successfully: ${this.template.name}`);
       
       // Initialize Konva stage
       this.initializeStage();
@@ -100,7 +145,8 @@ if (typeof CanvasTextRenderer === 'undefined') {
       this.render();
       this.onReady();
     } catch (error) {
-      console.error('Failed to load template:', error);
+      console.error('[CanvasTextRenderer] Failed to load template:', error);
+      throw error; // Re-throw to allow calling code to handle it
     }
   }
   

@@ -13,6 +13,8 @@ import {
   BlockStack,
   EmptyState,
   Banner,
+  Button,
+  InlineStack,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -105,6 +107,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       return {
         ...edge.node,
         templateName: templateName || 'Unknown Template',
+        templateExists: !!templateName,
+        templateId: templateId,
       };
     });
   
@@ -116,6 +120,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function ProductBindings() {
   const { variantsWithTemplates, totalVariants } = useLoaderData<typeof loader>();
+  
+  // Count variants with missing templates
+  const variantsWithMissingTemplates = variantsWithTemplates.filter((v: any) => !v.templateExists);
   
   const emptyStateMarkup = (
     <EmptyState
@@ -138,6 +145,16 @@ export default function ProductBindings() {
           out of {totalVariants} total variants.
         </p>
       </Banner>
+      
+      {variantsWithMissingTemplates.length > 0 && (
+        <Banner tone="warning">
+          <p>
+            {variantsWithMissingTemplates.length} variant(s) have missing templates! 
+            These templates may have been deleted or the IDs are incorrect. 
+            Use the "Fix" button to reassign templates or "Clear" to remove the assignment.
+          </p>
+        </Banner>
+      )}
       
       <ResourceList
         resourceName={{ singular: "variant", plural: "variants" }}
@@ -179,13 +196,86 @@ export default function ProductBindings() {
                       {variant.displayName} • ${variant.price}
                     </Text>
                   </div>
-                  <Badge tone="success">
+                  <Badge tone={variant.templateExists ? "success" : "critical"}>
                     {variant.templateName}
                   </Badge>
                 </div>
-                <Text variant="bodySm" tone="subdued" as="p">
-                  Template ID: {variant.metafield.value}
-                </Text>
+                <InlineStack gap="200" align="space-between">
+                  <Text variant="bodySm" tone="subdued" as="p">
+                    Template ID: {variant.metafield.value}
+                  </Text>
+                  {!variant.templateExists && (
+                    <InlineStack gap="200">
+                      <Button
+                        size="slim"
+                        onClick={() => {
+                          fetch('/api/diagnose-variant-template', {
+                            method: 'POST',
+                            body: new URLSearchParams({ 
+                              variantId: variant.id, 
+                              action: 'diagnose' 
+                            })
+                          })
+                          .then(res => res.json())
+                          .then(data => {
+                            console.log('Diagnosis:', data);
+                            if (data.suggestedFix) {
+                              if (confirm(`${data.suggestedFix.reason}\n\nFix by assigning template "${data.suggestedFix.templateName}"?`)) {
+                                fetch('/api/fix-template-metafields', {
+                                  method: 'POST',
+                                  body: new URLSearchParams({ 
+                                    variantId: variant.id,
+                                    action: 'fix',
+                                    newTemplateId: data.suggestedFix.newTemplateId
+                                  })
+                                })
+                                .then(res => res.json())
+                                .then(result => {
+                                  if (result.success) {
+                                    alert(result.message);
+                                    window.location.reload();
+                                  } else {
+                                    alert(`Error: ${result.error}`);
+                                  }
+                                });
+                              }
+                            } else {
+                              alert('No automatic fix available. Check console for details.');
+                            }
+                          });
+                        }}
+                      >
+                        Fix
+                      </Button>
+                      <Button
+                        size="slim"
+                        tone="critical"
+                        onClick={() => {
+                          if (confirm('Clear the template assignment for this variant?')) {
+                            fetch('/api/fix-template-metafields', {
+                              method: 'POST',
+                              body: new URLSearchParams({ 
+                                variantId: variant.id,
+                                action: 'clear'
+                              })
+                            })
+                            .then(res => res.json())
+                            .then(result => {
+                              if (result.success) {
+                                alert(result.message);
+                                window.location.reload();
+                              } else {
+                                alert(`Error: ${result.error}`);
+                              }
+                            });
+                          }
+                        }}
+                      >
+                        Clear
+                      </Button>
+                    </InlineStack>
+                  )}
+                </InlineStack>
               </BlockStack>
             </ResourceItem>
           );

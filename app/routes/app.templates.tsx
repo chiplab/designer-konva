@@ -1323,6 +1323,33 @@ export default function Templates() {
         <button variant="primary" onClick={() => setLayoutSelectorOpen(true)}>
           Create template
         </button>
+        <button onClick={() => {
+          const variantId = prompt("Enter the Shopify variant ID to diagnose (e.g., gid://shopify/ProductVariant/123456789):");
+          if (variantId) {
+            fetch('/api/diagnose-variant-template', {
+              method: 'POST',
+              body: new URLSearchParams({ variantId, action: 'diagnose' })
+            })
+            .then(res => res.json())
+            .then(data => {
+              console.log('Variant diagnosis:', data);
+              if (data.template && !data.template.found) {
+                if (confirm(`Template ${data.variant.metafieldValue} not found. Would you like to see suggestions?`)) {
+                  console.log('Suggested templates:', data.productTemplates);
+                  alert(`Found ${data.productTemplates.count} templates for this product. Check console for details.`);
+                }
+              } else {
+                alert('Template found and valid. Check console for full diagnosis.');
+              }
+            })
+            .catch(err => {
+              console.error('Diagnosis error:', err);
+              alert('Error diagnosing variant. Check console.');
+            });
+          }
+        }}>
+          Diagnose Variant
+        </button>
       </TitleBar>
       <Layout>
         <Layout.Section>
