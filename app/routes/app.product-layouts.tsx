@@ -91,20 +91,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       for (let i = 0; i < variants.length; i++) {
         const variant = variants[i];
         
+        // Extract color and pattern from variant title
+        const titleParts = variant.title.split(" / ");
+        let color = null;
+        let pattern = null;
+        
+        if (titleParts.length === 2) {
+          color = titleParts[0].trim();
+          pattern = titleParts[1].trim();
+        }
+        
         // Upload image to S3 if present
         let s3ImageUrl = "";
         if (variant.imageUrl) {
           try {
-            // Extract color and pattern for filename before processing
-            const titleParts = variant.title.split(" / ");
-            let color = null;
-            let pattern = null;
-            
-            if (titleParts.length === 2) {
-              color = titleParts[0].trim();
-              pattern = titleParts[1].trim();
-            }
-            
             // Request optimized WebP version from Shopify CDN
             const optimizedUrl = variant.imageUrl + '&width=1200&format=webp';
             const response = await fetch(optimizedUrl);
