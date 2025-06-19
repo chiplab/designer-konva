@@ -309,10 +309,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   );
 
   React.useEffect(() => {
-    // Fixed canvas size - 1368x1368 for Shopify variants and layout variants, 1000x1000 for others
+    // Fixed canvas size - 1200x1200 for Shopify variants and layout variants, 1000x1000 for others
     const newDimensions = (shopifyVariant || layoutVariant) ? {
-      width: 1368,
-      height: 1368
+      width: 1200,
+      height: 1200
     } : {
       width: 1000,
       height: 1000
