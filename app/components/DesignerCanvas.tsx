@@ -165,32 +165,91 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   const shapeRef = React.useRef(null);
   const stageRef = React.useRef<any>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  // Current side being edited
+  const [currentSide, setCurrentSide] = React.useState<'front' | 'back'>('front');
+  
   const [dimensions, setDimensions] = React.useState({ 
     width: (shopifyVariant || layoutVariant) ? 1368 : (productLayout?.width || 1000), 
     height: (shopifyVariant || layoutVariant) ? 1368 : (productLayout?.height || 1000)
   });
   const [containerSize, setContainerSize] = React.useState({ width: 800, height: 600 });
+  
+  // Front side state
+  const [frontTextElements, setFrontTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>>([]);
+  const [frontGradientTextElements, setFrontGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>>([]);
+  const [frontCurvedTextElements, setFrontCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>>([]);
+  const [frontImageElements, setFrontImageElements] = React.useState<Array<{id: string, url: string, x: number, y: number, width: number, height: number, rotation?: number, zIndex?: number}>>([]);
+  const [frontBackgroundColor, setFrontBackgroundColor] = React.useState('transparent');
+  const [frontBaseImageUrl, setFrontBaseImageUrl] = React.useState<string>('');
+  
+  // Back side state
+  const [backTextElements, setBackTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>>([]);
+  const [backGradientTextElements, setBackGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>>([]);
+  const [backCurvedTextElements, setBackCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>>([]);
+  const [backImageElements, setBackImageElements] = React.useState<Array<{id: string, url: string, x: number, y: number, width: number, height: number, rotation?: number, zIndex?: number}>>([]);
+  const [backBackgroundColor, setBackBackgroundColor] = React.useState('transparent');
+  const [backBaseImageUrl, setBackBaseImageUrl] = React.useState<string>('');
+  
+  // Get current side's state dynamically
+  const textElements = currentSide === 'front' ? frontTextElements : backTextElements;
+  const setTextElements = currentSide === 'front' ? setFrontTextElements : setBackTextElements;
+  const gradientTextElements = currentSide === 'front' ? frontGradientTextElements : backGradientTextElements;
+  const setGradientTextElements = currentSide === 'front' ? setFrontGradientTextElements : setBackGradientTextElements;
+  const curvedTextElements = currentSide === 'front' ? frontCurvedTextElements : backCurvedTextElements;
+  const setCurvedTextElements = currentSide === 'front' ? setFrontCurvedTextElements : setBackCurvedTextElements;
+  const imageElements = currentSide === 'front' ? frontImageElements : backImageElements;
+  const setImageElements = currentSide === 'front' ? setFrontImageElements : setBackImageElements;
+  const backgroundColor = currentSide === 'front' ? frontBackgroundColor : backBackgroundColor;
+  const setBackgroundColor = currentSide === 'front' ? setFrontBackgroundColor : setBackBackgroundColor;
+  
+  // Clipboard for copy/paste
+  const [clipboard, setClipboard] = React.useState<{
+    type: 'text' | 'gradientText' | 'curvedText' | 'image';
+    data: any;
+    sourceSide: 'front' | 'back';
+  } | null>(null);
+  
   // Support for S3 URLs - use variant-specific image if available
-  const getVariantImage = () => {
+  const getVariantImage = (side: 'front' | 'back' = 'front') => {
     // Only use S3 URLs from saved templates or layout variants
     // No fallbacks - if image is missing, let it 404
     
     // Use base image from saved template canvas data
-    if (initialTemplate?.canvasData) {
+    if (initialTemplate) {
       try {
-        const canvasData = typeof initialTemplate.canvasData === 'string' 
-          ? JSON.parse(initialTemplate.canvasData) 
-          : initialTemplate.canvasData;
-        if (canvasData?.assets?.baseImage) {
-          return canvasData.assets.baseImage;
+        // Check for new dual-sided format first
+        if (side === 'front' && initialTemplate.frontCanvasData) {
+          const frontData = typeof initialTemplate.frontCanvasData === 'string' 
+            ? JSON.parse(initialTemplate.frontCanvasData) 
+            : initialTemplate.frontCanvasData;
+          if (frontData?.assets?.baseImage) {
+            return frontData.assets.baseImage;
+          }
+        } else if (side === 'back' && initialTemplate.backCanvasData) {
+          const backData = typeof initialTemplate.backCanvasData === 'string' 
+            ? JSON.parse(initialTemplate.backCanvasData) 
+            : initialTemplate.backCanvasData;
+          if (backData?.assets?.baseImage) {
+            return backData.assets.baseImage;
+          }
+        }
+        
+        // Fall back to legacy single-sided format for front only
+        if (side === 'front' && initialTemplate.canvasData) {
+          const canvasData = typeof initialTemplate.canvasData === 'string' 
+            ? JSON.parse(initialTemplate.canvasData) 
+            : initialTemplate.canvasData;
+          if (canvasData?.assets?.baseImage) {
+            return canvasData.assets.baseImage;
+          }
         }
       } catch (e) {
         console.warn('Failed to parse canvas data for base image:', e);
       }
     }
     
-    // Use layout variant S3 image
-    if (layoutVariant?.baseImageUrl) {
+    // Use layout variant S3 image (only for front side)
+    if (side === 'front' && layoutVariant?.baseImageUrl) {
       return layoutVariant.baseImageUrl;
     }
     
@@ -198,24 +257,26 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     return '';
   };
   
-  const baseImageUrl = getVariantImage(); // Read-only base image based on variant
-  // Use 'anonymous' only for external URLs (S3), not for local files
+  // Initialize base image URLs
+  React.useEffect(() => {
+    setFrontBaseImageUrl(getVariantImage('front'));
+    setBackBaseImageUrl(getVariantImage('back'));
+  }, [initialTemplate, layoutVariant]);
+  
+  // Load base images for both sides
+  const baseImageUrl = currentSide === 'front' ? frontBaseImageUrl : backBaseImageUrl;
   const [baseImage] = useImage(baseImageUrl, baseImageUrl.startsWith('http') ? 'anonymous' : undefined);
   
   // Log base image dimensions when loaded
   React.useEffect(() => {
     if (baseImage) {
-      console.log('Base image loaded with dimensions:', {
+      console.log(`Base image loaded for ${currentSide} side with dimensions:`, {
         naturalWidth: baseImage.width,
         naturalHeight: baseImage.height,
         url: baseImageUrl
       });
     }
-  }, [baseImage, baseImageUrl]);
-  const [textElements, setTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>>([]);
-  const [gradientTextElements, setGradientTextElements] = React.useState<Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>>([]);
-  const [curvedTextElements, setCurvedTextElements] = React.useState<Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>>([]);
-  const [imageElements, setImageElements] = React.useState<Array<{id: string, url: string, x: number, y: number, width: number, height: number, rotation?: number, zIndex?: number}>>([]);
+  }, [baseImage, baseImageUrl, currentSide]);
   const [designableArea, setDesignableArea] = React.useState(() => {
     // Use designableArea from productLayout if available
     if (productLayout?.designableArea) {
@@ -257,7 +318,6 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       visible: true
     };
   });
-  const [backgroundColor, setBackgroundColor] = React.useState('transparent');
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -652,6 +712,122 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       setSelectedId(newEl.id);
     }
   };
+  
+  // Helper function to get element type
+  const getElementType = (elementId: string): 'text' | 'gradientText' | 'curvedText' | 'image' | null => {
+    if (textElements.find(el => el.id === elementId)) return 'text';
+    if (gradientTextElements.find(el => el.id === elementId)) return 'gradientText';
+    if (curvedTextElements.find(el => el.id === elementId)) return 'curvedText';
+    if (imageElements.find(el => el.id === elementId)) return 'image';
+    return null;
+  };
+  
+  // Copy element to clipboard
+  const copyElement = (elementId: string) => {
+    const elementType = getElementType(elementId);
+    if (!elementType) return;
+    
+    let element;
+    switch (elementType) {
+      case 'text':
+        element = textElements.find(el => el.id === elementId);
+        break;
+      case 'gradientText':
+        element = gradientTextElements.find(el => el.id === elementId);
+        break;
+      case 'curvedText':
+        element = curvedTextElements.find(el => el.id === elementId);
+        break;
+      case 'image':
+        element = imageElements.find(el => el.id === elementId);
+        break;
+    }
+    
+    if (element) {
+      setClipboard({
+        type: elementType,
+        data: { ...element },
+        sourceSide: currentSide
+      });
+      
+      setNotification({
+        type: 'info',
+        message: 'Element copied to clipboard'
+      });
+      
+      // Auto-hide notification after 3 seconds
+      setTimeout(() => setNotification(null), 3000);
+    }
+  };
+  
+  // Paste element from clipboard
+  const pasteElement = () => {
+    if (!clipboard) return;
+    
+    // Get the highest zIndex for new element
+    const maxZIndex = Math.max(...unifiedElements.map(el => el.zIndex), -1) + 1;
+    
+    // Generate new ID for pasted element
+    const timestamp = Date.now();
+    const newId = `${clipboard.type}-${timestamp}`;
+    
+    // Create pasted element with offset position
+    const pastedElement = {
+      ...clipboard.data,
+      id: newId,
+      zIndex: maxZIndex
+    };
+    
+    // Offset position differently for cross-side paste
+    const offset = clipboard.sourceSide !== currentSide ? 40 : 20;
+    
+    switch (clipboard.type) {
+      case 'text':
+      case 'gradientText':
+        pastedElement.x = clipboard.data.x + offset;
+        pastedElement.y = clipboard.data.y + offset;
+        break;
+      case 'curvedText':
+        pastedElement.x = clipboard.data.x + offset;
+        pastedElement.topY = clipboard.data.topY + offset;
+        break;
+      case 'image':
+        pastedElement.x = clipboard.data.x + offset;
+        pastedElement.y = clipboard.data.y + offset;
+        break;
+    }
+    
+    // Add to current side
+    switch (clipboard.type) {
+      case 'text':
+        setTextElements(prev => [...prev, pastedElement]);
+        break;
+      case 'gradientText':
+        setGradientTextElements(prev => [...prev, pastedElement]);
+        break;
+      case 'curvedText':
+        setCurvedTextElements(prev => [...prev, pastedElement]);
+        break;
+      case 'image':
+        setImageElements(prev => [...prev, pastedElement]);
+        break;
+    }
+    
+    // Select the new element
+    setSelectedId(newId);
+    
+    // Show feedback
+    const crossSide = clipboard.sourceSide !== currentSide;
+    setNotification({
+      type: 'success',
+      message: crossSide 
+        ? `Element pasted from ${clipboard.sourceSide} to ${currentSide}`
+        : 'Element pasted'
+    });
+    
+    // Auto-hide notification after 3 seconds
+    setTimeout(() => setNotification(null), 3000);
+  };
 
 
   // Update floating toolbar position
@@ -876,34 +1052,26 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
 
   // Canvas state serialization functions
   const getCanvasState = () => {
-    // If backgroundColor is a gradient, store the gradient info
-    let backgroundGradient = undefined;
-    if (backgroundColor === 'linear-gradient') {
-      backgroundGradient = {
-        type: 'linear',
-        colorStops: (window as any).__tempBackgroundGradient?.type === 'linear' 
-          ? (window as any).__tempBackgroundGradient.colorStops 
-          : [0, '#c8102e', 1, '#ffaaaa']
-      };
-    } else if (backgroundColor === 'radial-gradient') {
-      backgroundGradient = {
-        type: 'radial',
-        colorStops: (window as any).__tempBackgroundGradient?.type === 'radial'
-          ? (window as any).__tempBackgroundGradient.colorStops
-          : [0, '#c8102e', 1, '#ffaaaa']
-      };
-    }
-    
-    // Debug logging for gradient colors
-    if (backgroundGradient) {
-      console.log('[DesignerCanvas] Capturing background gradient:', backgroundGradient);
-    }
-    
-    // Debug: Log z-index values
-    console.log('Canvas state z-indexes:');
-    textElements.forEach(el => console.log('Text:', el.text, 'zIndex:', el.zIndex));
-    curvedTextElements.forEach(el => console.log('Curved:', el.text, 'zIndex:', el.zIndex));
-    imageElements.forEach(el => console.log('Image:', el.id, 'zIndex:', el.zIndex));
+    // Helper function to get background gradient for a side
+    const getBackgroundGradient = (bgColor: string) => {
+      let backgroundGradient = undefined;
+      if (bgColor === 'linear-gradient') {
+        backgroundGradient = {
+          type: 'linear',
+          colorStops: (window as any).__tempBackgroundGradient?.type === 'linear' 
+            ? (window as any).__tempBackgroundGradient.colorStops 
+            : [0, '#c8102e', 1, '#ffaaaa']
+        };
+      } else if (bgColor === 'radial-gradient') {
+        backgroundGradient = {
+          type: 'radial',
+          colorStops: (window as any).__tempBackgroundGradient?.type === 'radial'
+            ? (window as any).__tempBackgroundGradient.colorStops
+            : [0, '#c8102e', 1, '#ffaaaa']
+        };
+      }
+      return backgroundGradient;
+    };
     
     // Ensure all elements have z-indexes before saving
     let nextZIndex = 0;
@@ -917,10 +1085,47 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       });
     };
     
+    // Create state for both sides
+    const frontState = {
+      dimensions,
+      backgroundColor: frontBackgroundColor,
+      backgroundGradient: getBackgroundGradient(frontBackgroundColor),
+      designableArea,
+      elements: {
+        textElements: ensureZIndex(frontTextElements),
+        curvedTextElements: ensureZIndex(frontCurvedTextElements),
+        gradientTextElements: ensureZIndex(frontGradientTextElements),
+        imageElements: ensureZIndex(frontImageElements)
+      },
+      assets: {
+        baseImage: frontBaseImageUrl,
+      }
+    };
+    
+    const backState = {
+      dimensions,
+      backgroundColor: backBackgroundColor,
+      backgroundGradient: getBackgroundGradient(backBackgroundColor),
+      designableArea,
+      elements: {
+        textElements: ensureZIndex(backTextElements),
+        curvedTextElements: ensureZIndex(backCurvedTextElements),
+        gradientTextElements: ensureZIndex(backGradientTextElements),
+        imageElements: ensureZIndex(backImageElements)
+      },
+      assets: {
+        baseImage: backBaseImageUrl,
+      }
+    };
+    
+    // Return dual-sided format
     return {
+      front: frontState,
+      back: backState,
+      // Include legacy format for backward compatibility (current side's state)
       dimensions,
       backgroundColor,
-      backgroundGradient,
+      backgroundGradient: getBackgroundGradient(backgroundColor),
       designableArea,
       elements: {
         textElements: ensureZIndex(textElements),
@@ -937,44 +1142,70 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   const loadCanvasState = async (state: any) => {
     if (!state) return;
     
-    // Load dimensions and background
-    if (state.dimensions) setDimensions(state.dimensions);
-    if (state.backgroundColor) setBackgroundColor(state.backgroundColor);
-    if (state.designableArea) setDesignableArea(state.designableArea);
-    
-    // Store gradient info if present (for new format)
-    if (state.backgroundGradient) {
-      // Store gradient data for rendering
-      // We'll need to update the rendering logic to use this
-      (window as any).__tempBackgroundGradient = state.backgroundGradient;
-    }
-    
-    // Load elements
-    if (state.elements) {
-      if (state.elements.textElements) setTextElements(state.elements.textElements);
-      if (state.elements.curvedTextElements) setCurvedTextElements(state.elements.curvedTextElements);
-      if (state.elements.gradientTextElements) setGradientTextElements(state.elements.gradientTextElements);
-      if (state.elements.imageElements) setImageElements(state.elements.imageElements);
+    // Helper function to apply state to a specific side
+    const applySideState = async (sideState: any, side: 'front' | 'back') => {
+      if (!sideState) return;
       
-      // Load all fonts used in the template
+      // Load dimensions and designable area (shared between sides)
+      if (sideState.dimensions) setDimensions(sideState.dimensions);
+      if (sideState.designableArea) setDesignableArea(sideState.designableArea);
+      
+      // Load side-specific properties
+      if (side === 'front') {
+        if (sideState.backgroundColor) setFrontBackgroundColor(sideState.backgroundColor);
+        if (sideState.backgroundGradient) {
+          (window as any).__tempBackgroundGradient = sideState.backgroundGradient;
+        }
+        if (sideState.elements) {
+          if (sideState.elements.textElements) setFrontTextElements(sideState.elements.textElements);
+          if (sideState.elements.curvedTextElements) setFrontCurvedTextElements(sideState.elements.curvedTextElements);
+          if (sideState.elements.gradientTextElements) setFrontGradientTextElements(sideState.elements.gradientTextElements);
+          if (sideState.elements.imageElements) setFrontImageElements(sideState.elements.imageElements);
+        }
+        if (sideState.assets?.baseImage) setFrontBaseImageUrl(sideState.assets.baseImage);
+      } else {
+        if (sideState.backgroundColor) setBackBackgroundColor(sideState.backgroundColor);
+        if (sideState.backgroundGradient && currentSide === 'back') {
+          (window as any).__tempBackgroundGradient = sideState.backgroundGradient;
+        }
+        if (sideState.elements) {
+          if (sideState.elements.textElements) setBackTextElements(sideState.elements.textElements);
+          if (sideState.elements.curvedTextElements) setBackCurvedTextElements(sideState.elements.curvedTextElements);
+          if (sideState.elements.gradientTextElements) setBackGradientTextElements(sideState.elements.gradientTextElements);
+          if (sideState.elements.imageElements) setBackImageElements(sideState.elements.imageElements);
+        }
+        if (sideState.assets?.baseImage) setBackBaseImageUrl(sideState.assets.baseImage);
+      }
+      
+      // Load fonts for this side
       const fontsToLoad = new Set<string>();
+      sideState.elements?.textElements?.forEach((el: any) => {
+        if (el.fontFamily) fontsToLoad.add(el.fontFamily);
+      });
+      sideState.elements?.curvedTextElements?.forEach((el: any) => {
+        if (el.fontFamily) fontsToLoad.add(el.fontFamily);
+      });
+      sideState.elements?.gradientTextElements?.forEach((el: any) => {
+        if (el.fontFamily) fontsToLoad.add(el.fontFamily);
+      });
       
-      state.elements.textElements?.forEach((el: any) => {
-        if (el.fontFamily) fontsToLoad.add(el.fontFamily);
-      });
-      state.elements.curvedTextElements?.forEach((el: any) => {
-        if (el.fontFamily) fontsToLoad.add(el.fontFamily);
-      });
-      state.elements.gradientTextElements?.forEach((el: any) => {
-        if (el.fontFamily) fontsToLoad.add(el.fontFamily);
-      });
-      
-      // Load all unique fonts
       const fontLoadPromises = Array.from(fontsToLoad).map(fontFamily => loadFont(fontFamily));
       await Promise.all(fontLoadPromises);
-    }
+    };
     
-    // Assets are now handled by getVariantImage() based on the variant/layout
+    // Check if it's the new dual-sided format
+    if (state.front || state.back) {
+      // Load both sides
+      if (state.front) {
+        await applySideState(state.front, 'front');
+      }
+      if (state.back) {
+        await applySideState(state.back, 'back');
+      }
+    } else {
+      // Legacy single-sided format - load into front side only
+      await applySideState(state, 'front');
+    }
   };
 
   // Apply text updates from modal state
@@ -1703,10 +1934,33 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   // Load initial template if provided
   React.useEffect(() => {
     const loadInitialTemplate = async () => {
-      if (initialTemplate && initialTemplate.canvasData) {
+      if (initialTemplate) {
         try {
-          const canvasData = JSON.parse(initialTemplate.canvasData);
-          await loadCanvasState(canvasData);
+          // Check for new dual-sided format first
+          if (initialTemplate.frontCanvasData || initialTemplate.backCanvasData) {
+            const dualSidedState: any = {};
+            
+            if (initialTemplate.frontCanvasData) {
+              dualSidedState.front = typeof initialTemplate.frontCanvasData === 'string'
+                ? JSON.parse(initialTemplate.frontCanvasData)
+                : initialTemplate.frontCanvasData;
+            }
+            
+            if (initialTemplate.backCanvasData) {
+              dualSidedState.back = typeof initialTemplate.backCanvasData === 'string'
+                ? JSON.parse(initialTemplate.backCanvasData)
+                : initialTemplate.backCanvasData;
+            }
+            
+            await loadCanvasState(dualSidedState);
+          } 
+          // Fall back to legacy single-sided format
+          else if (initialTemplate.canvasData) {
+            const canvasData = typeof initialTemplate.canvasData === 'string'
+              ? JSON.parse(initialTemplate.canvasData)
+              : initialTemplate.canvasData;
+            await loadCanvasState(canvasData);
+          }
         } catch (error) {
           console.error('Error loading initial template:', error);
         }
@@ -1759,6 +2013,18 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   // Keyboard shortcuts
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+C or Cmd+C to copy
+      if (e.key === 'c' && (e.ctrlKey || e.metaKey) && selectedId) {
+        e.preventDefault();
+        copyElement(selectedId);
+      }
+      
+      // Ctrl+V or Cmd+V to paste
+      if (e.key === 'v' && (e.ctrlKey || e.metaKey) && clipboard) {
+        e.preventDefault();
+        pasteElement();
+      }
+      
       // Ctrl+D or Cmd+D to duplicate
       if (e.key === 'd' && (e.ctrlKey || e.metaKey) && selectedId) {
         e.preventDefault();
@@ -1780,7 +2046,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId]);
+  }, [selectedId, clipboard]);
 
   // Close color picker when clicking outside
   React.useEffect(() => {
@@ -3331,6 +3597,66 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         >
           {/* Actions Group */}
           <button
+            onClick={() => copyElement(selectedId)}
+            style={{
+              width: '36px',
+              height: '36px',
+              padding: '6px',
+              border: 'none',
+              borderRadius: '6px',
+              background: 'white',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '16px',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+            title="Copy (Ctrl+C)"
+          >
+            📋
+          </button>
+          
+          {clipboard && (
+            <button
+              onClick={pasteElement}
+              style={{
+                width: '36px',
+                height: '36px',
+                padding: '6px',
+                border: 'none',
+                borderRadius: '6px',
+                background: 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '16px',
+                transition: 'all 0.2s',
+                position: 'relative'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+              title={`Paste ${clipboard.type} from ${clipboard.sourceSide} (Ctrl+V)`}
+            >
+              📄
+              {clipboard.sourceSide !== currentSide && (
+                <div style={{
+                  position: 'absolute',
+                  top: '-2px',
+                  right: '-2px',
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: '#6fd0f5',
+                }}/>
+              )}
+            </button>
+          )}
+          
+          <button
             onClick={duplicateElement}
             style={{
               width: '36px',
@@ -3350,7 +3676,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
             title="Duplicate (Ctrl+D)"
           >
-            📋
+            ➕
           </button>
           <button
             onClick={deleteSelectedElement}
@@ -4229,6 +4555,171 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
             }
           }
         `}} />
+      </div>
+      
+      {/* Right Side Panel */}
+      <div style={{
+        width: '240px',
+        background: 'white',
+        boxShadow: '-2px 0 4px rgba(0,0,0,0.1)',
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative'
+      }}>
+        {/* Sides Section */}
+        <div style={{ padding: '16px', borderBottom: '1px solid #e6e6e6' }}>
+          <h4 style={{ 
+            margin: '0 0 12px 0', 
+            fontSize: '14px', 
+            fontWeight: 'bold',
+            color: '#000'
+          }}>
+            Sides
+          </h4>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {/* Front Side Button */}
+            <button
+              onClick={() => {
+                setCurrentSide('front');
+                setSelectedId(null); // Clear selection when switching
+              }}
+              style={{
+                padding: '12px 16px',
+                border: currentSide === 'front' ? '2px solid #6fd0f5' : '1px solid #e6e6e6',
+                borderRadius: '4px',
+                background: currentSide === 'front' ? '#f0fbff' : 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'all 0.2s',
+                fontSize: '14px',
+                fontWeight: currentSide === 'front' ? 'bold' : 'normal'
+              }}
+              onMouseEnter={(e) => {
+                if (currentSide !== 'front') {
+                  e.currentTarget.style.background = '#f8f9fa';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (currentSide !== 'front') {
+                  e.currentTarget.style.background = 'white';
+                }
+              }}
+            >
+              <div style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '4px',
+                background: currentSide === 'front' ? '#6fd0f5' : '#e6e6e6',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '12px',
+                color: currentSide === 'front' ? 'white' : '#666',
+                fontWeight: 'bold'
+              }}>
+                F
+              </div>
+              <span>Front</span>
+            </button>
+            
+            {/* Back Side Button */}
+            <button
+              onClick={() => {
+                setCurrentSide('back');
+                setSelectedId(null); // Clear selection when switching
+              }}
+              style={{
+                padding: '12px 16px',
+                border: currentSide === 'back' ? '2px solid #6fd0f5' : '1px solid #e6e6e6',
+                borderRadius: '4px',
+                background: currentSide === 'back' ? '#f0fbff' : 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'all 0.2s',
+                fontSize: '14px',
+                fontWeight: currentSide === 'back' ? 'bold' : 'normal'
+              }}
+              onMouseEnter={(e) => {
+                if (currentSide !== 'back') {
+                  e.currentTarget.style.background = '#f8f9fa';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (currentSide !== 'back') {
+                  e.currentTarget.style.background = 'white';
+                }
+              }}
+            >
+              <div style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '4px',
+                background: currentSide === 'back' ? '#6fd0f5' : '#e6e6e6',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '12px',
+                color: currentSide === 'back' ? 'white' : '#666',
+                fontWeight: 'bold'
+              }}>
+                B
+              </div>
+              <span>Back</span>
+            </button>
+          </div>
+        </div>
+        
+        {/* Clipboard Indicator */}
+        {clipboard && (
+          <div style={{ 
+            padding: '12px 16px', 
+            background: '#f8f9fa',
+            borderBottom: '1px solid #e6e6e6'
+          }}>
+            <div style={{
+              fontSize: '12px',
+              color: '#666',
+              marginBottom: '4px'
+            }}>
+              Clipboard
+            </div>
+            <div style={{
+              fontSize: '13px',
+              color: '#000',
+              marginBottom: '8px'
+            }}>
+              {clipboard.type} from {clipboard.sourceSide}
+            </div>
+            <button
+              onClick={() => setClipboard(null)}
+              style={{
+                padding: '4px 8px',
+                fontSize: '12px',
+                background: 'white',
+                border: '1px solid #e6e6e6',
+                borderRadius: '3px',
+                cursor: 'pointer',
+                color: '#666'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#f8f9fa';
+                e.currentTarget.style.color = '#000';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'white';
+                e.currentTarget.style.color = '#666';
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -80,7 +80,9 @@ model Template {
   id               String         @id @default(cuid())
   name             String
   shop             String
-  canvasData       String
+  canvasData       String         // Keep for backward compatibility
+  frontCanvasData  String?        // New: Front side data
+  backCanvasData   String?        // New: Back side data
   thumbnail        String?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt

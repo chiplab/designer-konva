@@ -30,6 +30,28 @@ export async function action({ request }: ActionFunctionArgs) {
     const productLayoutId = formData.get("productLayoutId") as string | null;
     const colorVariant = formData.get("colorVariant") as string | null;
     
+    // Parse canvas data to check for dual-sided format
+    let parsedCanvasData: any;
+    let frontCanvasData: string | null = null;
+    let backCanvasData: string | null = null;
+    
+    try {
+      parsedCanvasData = JSON.parse(canvasData);
+      
+      // Check if it's the new dual-sided format
+      if (parsedCanvasData.front || parsedCanvasData.back) {
+        frontCanvasData = parsedCanvasData.front ? JSON.stringify(parsedCanvasData.front) : null;
+        backCanvasData = parsedCanvasData.back ? JSON.stringify(parsedCanvasData.back) : null;
+        
+        // For backward compatibility, set canvasData to the front side
+        if (frontCanvasData) {
+          canvasData = frontCanvasData;
+        }
+      }
+    } catch (e) {
+      console.error("Error parsing canvas data:", e);
+    }
+    
     console.log("Save API received:", {
       name,
       templateId,
@@ -38,6 +60,8 @@ export async function action({ request }: ActionFunctionArgs) {
       layoutVariantId,
       productLayoutId,
       hasCanvasData: !!canvasData,
+      hasFrontData: !!frontCanvasData,
+      hasBackData: !!backCanvasData,
       hasThumbnail: !!thumbnail
     });
 
@@ -67,6 +91,9 @@ export async function action({ request }: ActionFunctionArgs) {
         data: {
           name,
           canvasData,
+          // New dual-sided fields
+          ...(frontCanvasData && { frontCanvasData }),
+          ...(backCanvasData && { backCanvasData }),
           // Update Shopify references if provided
           ...(shopifyProductId && { shopifyProductId }),
           ...(shopifyVariantId && { shopifyVariantId }),
@@ -92,6 +119,9 @@ export async function action({ request }: ActionFunctionArgs) {
           name,
           shop: session.shop,
           canvasData,
+          // New dual-sided fields
+          frontCanvasData,
+          backCanvasData,
           // Layout system
           layoutVariantId,
           // New Shopify references
