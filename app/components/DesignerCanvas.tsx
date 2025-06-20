@@ -248,8 +248,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       }
     }
     
-    // Use layout variant S3 image (only for front side)
-    if (side === 'front' && layoutVariant?.baseImageUrl) {
+    // Use layout variant S3 image for both sides (poker chips look the same on both sides)
+    if (layoutVariant?.baseImageUrl) {
       return layoutVariant.baseImageUrl;
     }
     

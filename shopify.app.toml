@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://evaluated-grid-lid-strategies.trycloudflare.com"
+application_url = "https://wake-invoice-remedies-grows.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://evaluated-grid-lid-strategies.trycloudflare.com/auth/callback",
-  "https://evaluated-grid-lid-strategies.trycloudflare.com/auth/shopify/callback",
-  "https://evaluated-grid-lid-strategies.trycloudflare.com/api/auth/callback"
+  "https://wake-invoice-remedies-grows.trycloudflare.com/auth/callback",
+  "https://wake-invoice-remedies-grows.trycloudflare.com/auth/shopify/callback",
+  "https://wake-invoice-remedies-grows.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://evaluated-grid-lid-strategies.trycloudflare.com"
+url = "https://wake-invoice-remedies-grows.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 

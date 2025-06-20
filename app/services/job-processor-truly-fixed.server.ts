@@ -274,8 +274,11 @@ export async function processGenerateThumbnailsJob(
           if (dbTemplate) {
             console.log(`Job ${jobId}: Generating thumbnail for template ${templateId}...`);
             
+            // Use front canvas data if available (dual-sided), otherwise use legacy canvas data
+            const canvasDataToRender = dbTemplate.frontCanvasData || dbTemplate.canvasData;
+            
             const thumbnailUrl = await generateTemplateThumbnail(
-              dbTemplate.canvasData,
+              canvasDataToRender,
               shop,
               templateId
             );
@@ -306,8 +309,12 @@ export async function processGenerateThumbnailsJob(
       if (masterTemplate && !masterTemplate.thumbnail) {
         try {
           console.log(`Job ${jobId}: Generating master template thumbnail...`);
+          
+          // Use front canvas data if available (dual-sided), otherwise use legacy canvas data
+          const canvasDataToRender = masterTemplate.frontCanvasData || masterTemplate.canvasData;
+          
           const thumbnailUrl = await generateTemplateThumbnail(
-            masterTemplate.canvasData,
+            canvasDataToRender,
             shop,
             masterTemplateId
           );
