@@ -76,7 +76,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     cursor = data.productVariants.pageInfo.endCursor;
   }
   
-  // Get all templates for this shop
+  // Get all templates for this shop with thumbnail and dual-sided info
   const templates = await db.template.findMany({
     where: {
       shop: session.shop,
@@ -84,11 +84,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     select: {
       id: true,
       name: true,
+      thumbnail: true,
+      frontCanvasData: true,
+      backCanvasData: true,
     },
   });
   
-  // Create a map for quick template lookup
-  const templateMap = new Map(templates.map(t => [t.id, t.name]));
+  // Create a map for quick template lookup with full template data
+  const templateMap = new Map(templates.map(t => [t.id, t]));
   
   // Debug: Log template IDs
   console.log('Templates in database:', templates.map(t => ({ id: t.id, name: t.name })));
@@ -98,17 +101,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     .filter((edge: any) => edge.node.metafield?.value)
     .map((edge: any) => {
       const templateId = edge.node.metafield.value;
-      const templateName = templateMap.get(templateId);
+      const template = templateMap.get(templateId);
       
-      if (!templateName) {
+      if (!template) {
         console.log(`Template ${templateId} not found in database for variant ${edge.node.displayName}`);
       }
       
       return {
         ...edge.node,
-        templateName: templateName || 'Unknown Template',
-        templateExists: !!templateName,
+        templateName: template?.name || 'Unknown Template',
+        templateExists: !!template,
         templateId: templateId,
+        templateThumbnail: template?.thumbnail,
+        isDualSided: !!(template?.frontCanvasData || template?.backCanvasData),
+        hasFrontData: !!template?.frontCanvasData,
+        hasBackData: !!template?.backCanvasData,
       };
     });
   
@@ -196,14 +203,53 @@ export default function ProductBindings() {
                       {variant.displayName} • ${variant.price}
                     </Text>
                   </div>
-                  <Badge tone={variant.templateExists ? "success" : "critical"}>
-                    {variant.templateName}
-                  </Badge>
+                  <InlineStack gap="200">
+                    <Badge tone={variant.templateExists ? "success" : "critical"}>
+                      {variant.templateName}
+                    </Badge>
+                    {variant.isDualSided && (
+                      <Badge tone="info">Dual-sided</Badge>
+                    )}
+                  </InlineStack>
                 </div>
-                <InlineStack gap="200" align="space-between">
+                
+                {/* Template Preview Section */}
+                {variant.templateThumbnail && (
+                  <div style={{ marginTop: "8px" }}>
+                    <Text variant="bodySm" tone="subdued" as="p" style={{ marginBottom: "4px" }}>
+                      Template Preview:
+                    </Text>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      <Thumbnail
+                        source={variant.templateThumbnail}
+                        alt="Template preview"
+                        size="large"
+                      />
+                      {variant.isDualSided && (
+                        <div style={{ fontSize: "12px", color: "#6d7175" }}>
+                          <div>✅ Front side</div>
+                          <div>{variant.hasBackData ? "✅" : "❌"} Back side</div>
+                          <div style={{ marginTop: "4px", fontStyle: "italic" }}>
+                            (Preview shows front only)
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                <InlineStack gap="400" align="space-between">
                   <Text variant="bodySm" tone="subdued" as="p">
                     Template ID: {variant.metafield.value}
                   </Text>
+                  <InlineStack gap="200">
+                    <Button
+                      size="slim"
+                      url={`/app/designer?template=${variant.templateId}`}
+                    >
+                      Edit Template
+                    </Button>
+                  </InlineStack>
                 </InlineStack>
               </BlockStack>
             </ResourceItem>

@@ -1103,7 +1103,9 @@ export default function Templates() {
   };
 
   const renderTemplateItem = (template: any, isVariant: boolean = false) => {
-    const { id, name, thumbnail, colorVariant, shopifyVariantId, isColorVariant } = template;
+    const { id, name, thumbnail, colorVariant, shopifyVariantId, isColorVariant, frontCanvasData, backCanvasData } = template;
+    const isDualSided = !!(frontCanvasData || backCanvasData);
+    
     const media = thumbnail ? (
       <Thumbnail
         source={thumbnail}
@@ -1144,10 +1146,18 @@ export default function Templates() {
             {colorVariant && (
               <span>{colorChips[colorVariant.toLowerCase()] || ''} {colorVariant}</span>
             )}
+            {isDualSided && (
+              <Badge tone="info">Dual-sided</Badge>
+            )}
             {needsAssignment && (
               <Badge tone="warning">Unassigned</Badge>
             )}
           </InlineStack>
+          {isDualSided && (
+            <Text variant="bodySm" tone="subdued" as="p">
+              Front: {frontCanvasData ? '✅' : '❌'} | Back: {backCanvasData ? '✅' : '❌'}
+            </Text>
+          )}
         </div>
         <ButtonGroup>
           <Button
