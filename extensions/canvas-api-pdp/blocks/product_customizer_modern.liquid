@@ -254,7 +254,10 @@
                     mainProductImage.style.transition = 'opacity 0.3s, filter 0.3s';
                   }
                   
-                  // Generate preview with full canvas state
+                  // First restore all cached variant swatches
+                  restoreVariantSwatchesOnLoad(variantId);
+                  
+                  // Then generate preview for the current variant
                   if (typeof generateVariantPreviewWithCanvasState === 'function') {
                     await generateVariantPreviewWithCanvasState(variantId, templateId, globalData.canvasState);
                   } else {
@@ -324,6 +327,9 @@
                     setTimeout(() => observer.disconnect(), 5000);
                   }
                   
+                  // First restore all cached variant swatches
+                  restoreVariantSwatchesOnLoad(variantId);
+                  
                   // Check if the function is available (script is loaded)
                   if (typeof generateVariantPreviewWithText === 'function') {
                     await generateVariantPreviewWithText(variantId, templateId, textData.textUpdates);
@@ -347,6 +353,11 @@
             
             // Only check for saved customization if we don't have global text
             checkSavedCustomization(variantId);
+            
+            // Always restore cached swatches if we have active customization
+            if (hasActiveCustomization) {
+              restoreVariantSwatchesOnLoad(variantId);
+            }
           } else {
             // Hide button if variant has no template
             customizeBtn.parentElement.style.display = 'none';
@@ -399,6 +410,12 @@
             if (hasActiveCustomization) {
               event.preventDefault();
               event.stopImmediatePropagation();
+              
+              // Immediately restore swatches and protect them
+              setTimeout(() => {
+                restoreVariantSwatchesOnLoad(event.detail.variant.id);
+                protectCustomizedSwatches();
+              }, 0);
             }
             handleVariantChange(event.detail.variant.id);
           }
@@ -410,6 +427,12 @@
             if (hasActiveCustomization) {
               event.preventDefault();
               event.stopImmediatePropagation();
+              
+              // Immediately restore swatches and protect them
+              setTimeout(() => {
+                restoreVariantSwatchesOnLoad(event.detail.variant.id);
+                protectCustomizedSwatches();
+              }, 0);
             }
             handleVariantChange(event.detail.variant.id);
           }
@@ -422,6 +445,14 @@
           const currentVariantId = urlParams.get('variant');
           if (currentVariantId && currentVariantId !== lastVariantId) {
             lastVariantId = currentVariantId;
+            // Protect swatches before handling change
+            if (hasActiveCustomization) {
+              // Immediately restore swatches and protect them
+              setTimeout(() => {
+                restoreVariantSwatchesOnLoad(currentVariantId);
+                protectCustomizedSwatches();
+              }, 0);
+            }
             handleVariantChange(currentVariantId);
           }
         }, 500);
@@ -429,6 +460,14 @@
         // Also listen for form changes on variant selectors
         document.querySelectorAll('[name="id"], [name="variant"]').forEach(function(selector) {
           selector.addEventListener('change', function(event) {
+            // Protect swatches before handling change
+            if (hasActiveCustomization) {
+              // Immediately restore swatches and protect them
+              setTimeout(() => {
+                restoreVariantSwatchesOnLoad(event.target.value);
+                protectCustomizedSwatches();
+              }, 0);
+            }
             handleVariantChange(event.target.value);
           });
         });
@@ -438,7 +477,261 @@
         if (initialVariantId) {
           checkSavedCustomization(initialVariantId);
         }
+        
+        // Restore variant swatches if we have global canvas state
+        if (hasActiveCustomization) {
+          restoreVariantSwatchesOnLoad(initialVariantId);
+        }
+        
+        // Clean up expired localStorage data
+        cleanupExpiredData();
       }
+      
+      // Function to clean up expired localStorage data
+      function cleanupExpiredData() {
+        const keysToCheck = [];
+        
+        // Find all variant preview keys
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('variant_previews_')) {
+            keysToCheck.push(key);
+          }
+        }
+        
+        // Check and remove expired data
+        keysToCheck.forEach(key => {
+          try {
+            const data = JSON.parse(localStorage.getItem(key));
+            if (!data.timestamp || Date.now() - data.timestamp >= 30 * 24 * 60 * 60 * 1000) {
+              localStorage.removeItem(key);
+              console.log('[ProductCustomizer] Removed expired data:', key);
+            }
+          } catch (e) {
+            // Invalid data, remove it
+            localStorage.removeItem(key);
+          }
+        });
+        
+        // Also check if global canvas state exists but is expired
+        // If so, clear all associated variant previews
+        const globalStateKey = 'customization_global_state';
+        const savedGlobalState = localStorage.getItem(globalStateKey);
+        if (!savedGlobalState || !hasActiveCustomization) {
+          // No active customization, clear all variant previews
+          keysToCheck.forEach(key => {
+            if (key.startsWith('variant_previews_')) {
+              localStorage.removeItem(key);
+              console.log('[ProductCustomizer] Cleared variant previews (no active customization)');
+            }
+          });
+        }
+      }
+      
+      // Function to restore saved variant swatches on page load
+      function restoreVariantSwatchesOnLoad(variantId) {
+        console.log('[ProductCustomizer] Checking for saved variant swatches');
+        
+        // Use passed variantId or try to get current from button
+        const currentVariantId = variantId || customizeBtn?.dataset.variantId || '{{ product.selected_or_first_available_variant.id }}';
+        
+        // Get current variant info to determine the pattern
+        const currentVariantTitle = getVariantTitleForId(currentVariantId);
+        if (!currentVariantTitle) {
+          console.log('[ProductCustomizer] Could not determine variant title');
+          return;
+        }
+        
+        const parts = currentVariantTitle.split(' / ');
+        const edgePattern = parts.length > 1 ? parts[1].trim() : null;
+        
+        if (!edgePattern) {
+          console.log('[ProductCustomizer] Could not determine pattern');
+          return;
+        }
+        
+        // Look for saved variant previews for this pattern
+        const variantPreviewsKey = `variant_previews_${edgePattern}`;
+        const savedPreviews = localStorage.getItem(variantPreviewsKey);
+        
+        if (!savedPreviews) {
+          console.log('[ProductCustomizer] No saved previews found for pattern:', edgePattern);
+          return;
+        }
+        
+        try {
+          const previewData = JSON.parse(savedPreviews);
+          
+          // Check if data is less than 30 days old
+          if (!previewData.timestamp || Date.now() - previewData.timestamp >= 30 * 24 * 60 * 60 * 1000) {
+            console.log('[ProductCustomizer] Saved previews expired');
+            localStorage.removeItem(variantPreviewsKey);
+            return;
+          }
+          
+          console.log(`[ProductCustomizer] Found saved previews for ${Object.keys(previewData.previews).length} variants`);
+          
+          // Wait a bit for DOM to stabilize after variant change
+          setTimeout(() => {
+            // Apply saved previews to swatches
+            let restoredCount = 0;
+            Object.entries(previewData.previews).forEach(([color, previewUrl]) => {
+              // Try multiple swatch selection methods
+              let swatchFound = false;
+              
+              // Method 1: Direct swatch element with data attributes
+              let swatch = document.querySelector(`.swatch[data-swatch-value="${color}"]`) ||
+                          document.querySelector(`.swatch[data-value="${color}"]`) ||
+                          document.querySelector(`.swatch[title="${color}"]`);
+              
+              if (swatch) {
+                applyPreviewToSwatch(swatch, previewUrl);
+                restoredCount++;
+                swatchFound = true;
+              }
+              
+              // Method 2: Find by radio input value
+              if (!swatchFound) {
+                const inputs = document.querySelectorAll('input[type="radio"][name*="Color"], input[type="radio"][name*="color"]');
+                for (const input of inputs) {
+                  if (input.value === color || input.value.toLowerCase() === color.toLowerCase()) {
+                    // Look for adjacent swatch in various configurations
+                    let targetSwatch = input.nextElementSibling;
+                    if (targetSwatch?.classList.contains('swatch')) {
+                      applyPreviewToSwatch(targetSwatch, previewUrl);
+                      restoredCount++;
+                      swatchFound = true;
+                      break;
+                    }
+                    
+                    // Sometimes swatch is wrapped in a label
+                    const label = input.closest('label');
+                    if (label) {
+                      targetSwatch = label.querySelector('.swatch');
+                      if (targetSwatch) {
+                        applyPreviewToSwatch(targetSwatch, previewUrl);
+                        restoredCount++;
+                        swatchFound = true;
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+              
+              // Method 3: Find by CSS background image containing the color
+              if (!swatchFound) {
+                const allSwatches = document.querySelectorAll('.swatch');
+                for (const sw of allSwatches) {
+                  const style = sw.getAttribute('style') || '';
+                  if (style.toLowerCase().includes(color.toLowerCase())) {
+                    applyPreviewToSwatch(sw, previewUrl);
+                    restoredCount++;
+                    break;
+                  }
+                }
+              }
+            });
+            
+            console.log(`[ProductCustomizer] Restored ${restoredCount} variant swatches`);
+            
+            // Double-check and reapply after a short delay to handle any theme updates
+            setTimeout(() => {
+              const customizedSwatches = document.querySelectorAll('[data-multi-preview="true"]');
+              console.log(`[ProductCustomizer] Verifying ${customizedSwatches.length} customized swatches`);
+              
+              customizedSwatches.forEach(swatch => {
+                const currentStyle = swatch.getAttribute('style');
+                if (!currentStyle || !currentStyle.includes('url(')) {
+                  // Swatch was reset, find the preview URL and reapply
+                  const swatchValue = swatch.dataset.swatchValue || swatch.dataset.value || swatch.title;
+                  if (swatchValue && previewData.previews[swatchValue]) {
+                    applyPreviewToSwatch(swatch, previewData.previews[swatchValue]);
+                  }
+                }
+              });
+            }, 500);
+            
+          }, 100); // Initial delay to let DOM settle
+          
+        } catch (error) {
+          console.error('[ProductCustomizer] Error restoring swatches:', error);
+        }
+      }
+      
+      // Helper function to apply preview to a swatch element
+      function applyPreviewToSwatch(swatch, previewUrl) {
+        // Store original if not already stored
+        if (!swatch.dataset.originalBackground) {
+          swatch.dataset.originalBackground = swatch.getAttribute('style');
+        }
+        
+        swatch.setAttribute('style', `--swatch-background: url(${previewUrl});`);
+        swatch.setAttribute('data-multi-preview', 'true');
+      }
+      
+      // Function to protect customized swatches from being reset by theme
+      function protectCustomizedSwatches() {
+        // Find all customized swatches
+        const customizedSwatches = document.querySelectorAll('[data-multi-preview="true"]');
+        
+        console.log(`[ProductCustomizer] Protecting ${customizedSwatches.length} customized swatches`);
+        
+        customizedSwatches.forEach(swatch => {
+          // Store current customized background
+          const currentStyle = swatch.getAttribute('style');
+          
+          // Create a more persistent observer that restores the style multiple times
+          let restoreCount = 0;
+          const maxRestores = 10;
+          
+          const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+              if (mutation.attributeName === 'style' && 
+                  swatch.getAttribute('style') !== currentStyle &&
+                  swatch.dataset.multiPreview === 'true' &&
+                  restoreCount < maxRestores) {
+                // Theme tried to reset the swatch, restore our custom style
+                console.log('[ProductCustomizer] Restoring customized swatch style');
+                swatch.setAttribute('style', currentStyle);
+                restoreCount++;
+                
+                // Force a redraw to ensure the style sticks
+                swatch.offsetHeight; // Trigger reflow
+              }
+            });
+          });
+          
+          // Observe for a longer time with more aggressive protection
+          observer.observe(swatch, { attributes: true, attributeFilter: ['style'] });
+          
+          // Also reapply the style periodically as a backup
+          const intervalId = setInterval(() => {
+            if (swatch.getAttribute('style') !== currentStyle && swatch.dataset.multiPreview === 'true') {
+              swatch.setAttribute('style', currentStyle);
+            }
+          }, 50);
+          
+          // Stop observing and intervals after 5 seconds
+          setTimeout(() => {
+            observer.disconnect();
+            clearInterval(intervalId);
+          }, 5000);
+        });
+        
+        // Also try to restore swatches again after protection period
+        setTimeout(() => {
+          const currentVariantId = customizeBtn?.dataset.variantId || '{{ product.selected_or_first_available_variant.id }}';
+          restoreVariantSwatchesOnLoad(currentVariantId);
+        }, 1000);
+      }
+      
+      // Helper function to get variant title by ID
+      function getVariantTitleForId(variantId) {
+        const variantInfo = variantData[variantId];
+        return variantInfo ? variantInfo.title : null;
+      }
+      
       
       initializeWhenReady();
     });

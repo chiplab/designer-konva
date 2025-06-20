@@ -780,6 +780,18 @@ if (typeof ProductCustomizerModal === 'undefined') {
     const customizedSpans = document.querySelectorAll('span[data-customization-preview="true"]');
     const multiPreviews = document.querySelectorAll('span[data-multi-preview="true"]');
     
+    // Clear saved variant previews from localStorage when restoring
+    const currentVariantTitle = this.getVariantTitle();
+    if (currentVariantTitle) {
+      const parts = currentVariantTitle.split(' / ');
+      const edgePattern = parts.length > 1 ? parts[1].trim() : null;
+      if (edgePattern) {
+        const variantPreviewsKey = `variant_previews_${edgePattern}`;
+        localStorage.removeItem(variantPreviewsKey);
+        console.log(`[ProductCustomizer] Cleared saved previews for pattern: ${edgePattern}`);
+      }
+    }
+    
     // Restore customized img elements
     customizedImages.forEach(swatch => {
       if (swatch.dataset.originalSrc) {
@@ -1256,6 +1268,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Process each variant (except current one)
     let processedCount = 0;
+    const variantPreviews = {}; // Store preview URLs for localStorage
+    
     for (const variant of colorVariants) {
       if (variant.color === currentColor) {
         console.log(`[ProductCustomizer] Skipping current color: ${currentColor}`);
@@ -1283,6 +1297,11 @@ if (typeof ProductCustomizerModal === 'undefined') {
         );
         console.log(`[ProductCustomizer] Preview generated for ${variant.color}:`, preview ? 'success' : 'failed');
         
+        // Store the preview URL
+        if (preview) {
+          variantPreviews[variant.color] = preview;
+        }
+        
         // Update swatch
         if (variant.element && variant.element.classList.contains('swatch')) {
           // Store original if not already stored
@@ -1301,6 +1320,16 @@ if (typeof ProductCustomizerModal === 'undefined') {
       } catch (error) {
         console.error(`[ProductCustomizer] Failed to generate preview for ${variant.color}:`, error);
       }
+    }
+    
+    // Store all variant previews in localStorage for quick retrieval on page load
+    if (Object.keys(variantPreviews).length > 0) {
+      const variantPreviewsKey = `variant_previews_${edgePattern}`;
+      localStorage.setItem(variantPreviewsKey, JSON.stringify({
+        previews: variantPreviews,
+        timestamp: Date.now()
+      }));
+      console.log(`[ProductCustomizer] Stored ${Object.keys(variantPreviews).length} variant previews for pattern: ${edgePattern}`);
     }
     
     // Cleanup
