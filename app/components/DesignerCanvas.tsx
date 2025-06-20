@@ -172,17 +172,32 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   const [containerSize, setContainerSize] = React.useState({ width: 800, height: 600 });
   // Support for S3 URLs - use variant-specific image if available
   const getVariantImage = () => {
-    // Priority 1: Use layout variant image if available (new layout system)
+    // Priority 1: Use base image from initial template canvas data if available
+    // This handles the case when loading from a saved design
+    if (initialTemplate?.canvasData) {
+      try {
+        const canvasData = typeof initialTemplate.canvasData === 'string' 
+          ? JSON.parse(initialTemplate.canvasData) 
+          : initialTemplate.canvasData;
+        if (canvasData?.assets?.baseImage) {
+          return canvasData.assets.baseImage;
+        }
+      } catch (e) {
+        console.warn('Failed to parse canvas data for base image:', e);
+      }
+    }
+    
+    // Priority 2: Use layout variant image if available (new layout system)
     if (layoutVariant?.baseImageUrl) {
       return layoutVariant.baseImageUrl;
     }
     
-    // Priority 2: Use Shopify variant image if creating new template
+    // Priority 3: Use Shopify variant image if creating new template
     if (shopifyVariant?.image?.url) {
       return shopifyVariant.image.url;
     }
     
-    // Priority 3: Use variant image from productLayout if available (legacy)
+    // Priority 4: Use variant image from productLayout if available (legacy)
     if (productLayout && initialTemplate?.colorVariant) {
       // Try to find a variant image for the template's color
       // We'll need to match against all patterns since we don't know which one yet
@@ -197,11 +212,11 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       }
     }
     
-    // Priority 4: Fall back to base image
+    // Priority 5: Fall back to base image
     return productLayout?.baseImageUrl || '/media/images/8-spot-red-base-image.png';
   };
   
-  const [baseImageUrl, setBaseImageUrl] = React.useState(getVariantImage());
+  const baseImageUrl = getVariantImage(); // Read-only base image based on variant
   // Use 'anonymous' only for external URLs (S3), not for local files
   const [baseImage] = useImage(baseImageUrl, baseImageUrl.startsWith('http') ? 'anonymous' : undefined);
   
@@ -246,15 +261,15 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     }
     
     // Default fallback
-    const canvasWidth = shopifyVariant ? 1368 : (productLayout?.width || 1000);
-    const canvasHeight = shopifyVariant ? 1368 : (productLayout?.height || 1000);
-    const diameter = Math.min(canvasWidth, canvasHeight) * 0.744;
+    const canvasWidth = shopifyVariant || layoutVariant ? 1200 : (productLayout?.width || 1000);
+    const canvasHeight = shopifyVariant || layoutVariant ? 1200 : (productLayout?.height || 1000);
+    const diameter = 894; // Fixed size for design area
     const radius = diameter / 2;
     
     return {
       width: diameter,
       height: diameter,
-      cornerRadius: radius,
+      cornerRadius: 447, // Half of 894px for perfect circle
       x: canvasWidth / 2 - radius,
       y: canvasHeight / 2 - radius,
       visible: true
@@ -280,6 +295,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   // Font Management - Using curated fonts from S3
   const [showFontPicker, setShowFontPicker] = React.useState(false);
   const [showFontBrowser, setShowFontBrowser] = React.useState(false);
+  
+  // Text Panel state
+  const [showTextPanel, setShowTextPanel] = React.useState(true);
+  const [editingTextId, setEditingTextId] = React.useState<string | null>(null);
   
   // Priority fonts for immediate loading
   const priorityFontIds = ['arial', 'roboto', 'open-sans', 'montserrat', 'playfair-display'];
@@ -309,10 +328,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   );
 
   React.useEffect(() => {
-    // Fixed canvas size - 1368x1368 for Shopify variants and layout variants, 1000x1000 for others
+    // Fixed canvas size - 1200x1200 for Shopify variants and layout variants, 1000x1000 for others
     const newDimensions = (shopifyVariant || layoutVariant) ? {
-      width: 1368,
-      height: 1368
+      width: 1200,
+      height: 1200
     } : {
       width: 1000,
       height: 1000
@@ -436,7 +455,13 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       });
     });
     
-    return elements.sort((a, b) => a.zIndex - b.zIndex);
+    const sorted = elements.sort((a, b) => a.zIndex - b.zIndex);
+    console.log('Unified elements sorted by zIndex:', sorted.map(el => ({
+      type: el.type,
+      zIndex: el.zIndex,
+      text: el.type === 'image' ? 'image' : el.data.text
+    })));
+    return sorted;
   }, [textElements, gradientTextElements, curvedTextElements, imageElements]);
 
 
@@ -883,16 +908,34 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       };
     }
     
+    // Debug: Log z-index values
+    console.log('Canvas state z-indexes:');
+    textElements.forEach(el => console.log('Text:', el.text, 'zIndex:', el.zIndex));
+    curvedTextElements.forEach(el => console.log('Curved:', el.text, 'zIndex:', el.zIndex));
+    imageElements.forEach(el => console.log('Image:', el.id, 'zIndex:', el.zIndex));
+    
+    // Ensure all elements have z-indexes before saving
+    let nextZIndex = 0;
+    const ensureZIndex = (elements: any[]) => {
+      return elements.map(el => {
+        if (el.zIndex === undefined || el.zIndex === null) {
+          return { ...el, zIndex: nextZIndex++ };
+        }
+        nextZIndex = Math.max(nextZIndex, el.zIndex + 1);
+        return el;
+      });
+    };
+    
     return {
       dimensions,
       backgroundColor,
       backgroundGradient,
       designableArea,
       elements: {
-        textElements,
-        curvedTextElements,
-        gradientTextElements,
-        imageElements
+        textElements: ensureZIndex(textElements),
+        curvedTextElements: ensureZIndex(curvedTextElements),
+        gradientTextElements: ensureZIndex(gradientTextElements),
+        imageElements: ensureZIndex(imageElements)
       },
       assets: {
         baseImage: baseImageUrl,
@@ -940,12 +983,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       await Promise.all(fontLoadPromises);
     }
     
-    // Load assets (with fallback to local defaults)
-    if (state.assets) {
-      if (state.assets.baseImage) {
-        setBaseImageUrl(state.assets.baseImage);
-      }
-    }
+    // Assets are now handled by getVariantImage() based on the variant/layout
   };
 
   // Apply text updates from modal state
@@ -1868,9 +1906,220 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   }, [showDesignColorPicker]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Notification Banner */}
-      {notification && (
+    <div style={{ display: 'flex', height: '100%' }}>
+      {/* Left Text Panel */}
+      <div style={{
+        width: showTextPanel ? '208px' : '0',
+        transition: 'width 0.3s ease',
+        overflow: 'hidden',
+        background: 'white',
+        boxShadow: '2px 0 4px rgba(0,0,0,0.1)',
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative'
+      }}>
+        {/* Text Panel Toggle Tab */}
+        <div
+          onClick={() => setShowTextPanel(!showTextPanel)}
+          style={{
+            position: 'absolute',
+            right: '-32px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            width: '32px',
+            height: '64px',
+            background: 'white',
+            border: '1px solid #e6e6e6',
+            borderLeft: 'none',
+            borderRadius: '0 4px 4px 0',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '14px',
+            fontWeight: 'bold',
+            color: '#666',
+            boxShadow: '2px 0 4px rgba(0,0,0,0.05)',
+            transition: 'all 0.2s',
+            zIndex: 10
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#f8f9fa';
+            e.currentTarget.style.color = '#000';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'white';
+            e.currentTarget.style.color = '#666';
+          }}
+        >
+          T
+        </div>
+        
+        {/* Text Panel Header */}
+        <div style={{ padding: '16px', borderBottom: '1px solid #e6e6e6' }}>
+          <h3 style={{ 
+            margin: 0, 
+            fontSize: '16px', 
+            fontWeight: 'bold',
+            color: '#000',
+            marginBottom: '8px'
+          }}>
+            Text
+          </h3>
+          <p style={{ 
+            margin: 0, 
+            fontSize: '12px', 
+            color: '#666',
+            lineHeight: '1.5'
+          }}>
+            Edit your text below, or click on the field you'd like to edit directly on your design.
+          </p>
+        </div>
+        
+        {/* Text Elements List */}
+        <div style={{ 
+          flex: 1, 
+          padding: '16px',
+          overflowY: 'auto'
+        }}>
+          {/* Regular Text Elements */}
+          {textElements.map((element) => (
+            <div key={element.id} style={{ marginBottom: '12px' }}>
+              <input
+                type="text"
+                value={element.text}
+                onChange={(e) => {
+                  const newText = e.target.value;
+                  setTextElements(prev => 
+                    prev.map(el => 
+                      el.id === element.id ? { ...el, text: newText } : el
+                    )
+                  );
+                }}
+                onFocus={() => {
+                  setSelectedId(element.id);
+                  setEditingTextId(element.id);
+                }}
+                onBlur={() => setEditingTextId(null)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  fontSize: '14px',
+                  lineHeight: '1.5',
+                  border: editingTextId === element.id ? '2px solid #6fd0f5' : '1px solid #e6e6e6',
+                  borderRadius: '4px',
+                  background: '#f8f9fa',
+                  transition: 'all 0.2s',
+                  outline: 'none'
+                }}
+                placeholder="Enter text"
+              />
+            </div>
+          ))}
+          
+          {/* Curved Text Elements */}
+          {curvedTextElements.map((element) => (
+            <div key={element.id} style={{ marginBottom: '12px' }}>
+              <input
+                type="text"
+                value={element.text}
+                onChange={(e) => {
+                  const newText = e.target.value;
+                  setCurvedTextElements(prev => 
+                    prev.map(el => 
+                      el.id === element.id ? { ...el, text: newText } : el
+                    )
+                  );
+                }}
+                onFocus={() => {
+                  setSelectedId(element.id);
+                  setEditingTextId(element.id);
+                }}
+                onBlur={() => setEditingTextId(null)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  fontSize: '14px',
+                  lineHeight: '1.5',
+                  border: editingTextId === element.id ? '2px solid #6fd0f5' : '1px solid #e6e6e6',
+                  borderRadius: '4px',
+                  background: '#f8f9fa',
+                  transition: 'all 0.2s',
+                  outline: 'none'
+                }}
+                placeholder="Enter curved text"
+              />
+            </div>
+          ))}
+          
+          {/* Gradient Text Elements */}
+          {gradientTextElements.map((element) => (
+            <div key={element.id} style={{ marginBottom: '12px' }}>
+              <input
+                type="text"
+                value={element.text}
+                onChange={(e) => {
+                  const newText = e.target.value;
+                  setGradientTextElements(prev => 
+                    prev.map(el => 
+                      el.id === element.id ? { ...el, text: newText } : el
+                    )
+                  );
+                }}
+                onFocus={() => {
+                  setSelectedId(element.id);
+                  setEditingTextId(element.id);
+                }}
+                onBlur={() => setEditingTextId(null)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  fontSize: '14px',
+                  lineHeight: '1.5',
+                  border: editingTextId === element.id ? '2px solid #6fd0f5' : '1px solid #e6e6e6',
+                  borderRadius: '4px',
+                  background: '#f8f9fa',
+                  transition: 'all 0.2s',
+                  outline: 'none'
+                }}
+                placeholder="Enter gradient text"
+              />
+            </div>
+          ))}
+          
+          {/* New Text Field Button */}
+          <button
+            onClick={addText}
+            style={{
+              width: '100%',
+              padding: '10px',
+              marginTop: '16px',
+              fontSize: '14px',
+              fontWeight: '500',
+              color: 'white',
+              background: '#6fd0f5',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#5ab8dd';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = '#6fd0f5';
+            }}
+          >
+            + New Text Field
+          </button>
+        </div>
+      </div>
+      
+      {/* Main Canvas Container */}
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+        {/* Notification Banner */}
+        {notification && (
         <div style={{
           position: 'fixed',
           top: '20px',
@@ -1969,6 +2218,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                       }
                       
                       // Add image to canvas at center of designable area
+                      const maxZIndex = Math.max(...unifiedElements.map(el => el.zIndex), -1) + 1;
                       const newImage = {
                         id: `image-${Date.now()}`,
                         url: result.asset.url,
@@ -1976,13 +2226,15 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                         y: designableArea.y + designableArea.height / 2 - height / 2, // Center vertically
                         width: width,
                         height: height,
-                        rotation: 0
+                        rotation: 0,
+                        zIndex: maxZIndex
                       };
                       setImageElements(prev => [...prev, newImage]);
                     };
                     img.onerror = () => {
                       console.error('Failed to load image for dimensions');
                       // Fallback to square if image fails to load
+                      const maxZIndex = Math.max(...unifiedElements.map(el => el.zIndex), -1) + 1;
                       const newImage = {
                         id: `image-${Date.now()}`,
                         url: result.asset.url,
@@ -1990,7 +2242,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                         y: designableArea.y + designableArea.height / 2 - 50,
                         width: 100,
                         height: 100,
-                        rotation: 0
+                        rotation: 0,
+                        zIndex: maxZIndex
                       };
                       setImageElements(prev => [...prev, newImage]);
                     };
@@ -2652,89 +2905,6 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
               </div>
             </div>
           )}
-        </div>
-        
-        {/* Base Image Controls in Top Nav */}
-        <div style={{ display: 'inline-block', marginLeft: '20px' }}>
-          <select
-            value={baseImageUrl}
-            onChange={(e) => setBaseImageUrl(e.target.value)}
-            style={{ 
-              padding: '8px 16px', 
-              fontSize: '14px',
-              marginRight: '10px',
-              borderRadius: '4px',
-              border: '1px solid #ddd',
-              cursor: 'pointer',
-              background: 'white',
-            }}
-          >
-            <option value="/media/images/8-spot-red-base-image.png">Red Base</option>
-            <option value="/media/images/8-spot-black-base.png">Black Base</option>
-            <option value="/media/images/8-spot-blue-base.png">Blue Base</option>
-            <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-red-base-image.png">Red Base (S3)</option>
-            <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-black-base.png">Black Base (S3)</option>
-            <option value="https://shopify-designs.s3.us-west-1.amazonaws.com/assets/default/images/8-spot-blue-base.png">Blue Base (S3)</option>
-          </select>
-          
-          <label style={{ 
-            padding: '8px 16px', 
-            fontSize: '14px', 
-            backgroundColor: '#f0f0f0',
-            border: '1px solid #ccc',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            display: 'inline-block',
-            transition: 'all 0.2s',
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e8e8e8'}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f0f0f0'}
-          >
-            Upload Base Image
-            <input
-              type="file"
-              accept="image/*"
-              style={{ display: 'none' }}
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  const formData = new FormData();
-                  formData.append('file', file);
-                  formData.append('assetType', 'image');
-                  
-                  try {
-                    const response = await fetch('/api/assets/upload', {
-                      method: 'POST',
-                      body: formData,
-                    });
-                    const result = await response.json();
-                    if (result.success) {
-                      setBaseImageUrl(result.asset.url);
-                      setNotification({ 
-                        message: 'Base image uploaded successfully!', 
-                        type: 'success' 
-                      });
-                      setTimeout(() => setNotification(null), 3000);
-                    } else {
-                      console.error('Upload failed:', result);
-                      setNotification({ 
-                        message: `Upload failed: ${result.error}`, 
-                        type: 'error' 
-                      });
-                      setTimeout(() => setNotification(null), 5000);
-                    }
-                  } catch (error) {
-                    console.error('Upload error:', error);
-                    setNotification({ 
-                      message: 'Failed to upload image: ' + (error instanceof Error ? error.message : 'Unknown error'), 
-                      type: 'error' 
-                    });
-                    setTimeout(() => setNotification(null), 5000);
-                  }
-                }
-              }}
-            />
-          </label>
         </div>
         
         {/* Canvas Size Debug Info */}
@@ -4022,38 +4192,39 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         </div>
       )}
       
-      {/* Font Browser Modal */}
-      <FontBrowser
-        isOpen={showFontBrowser}
-        onClose={() => setShowFontBrowser(false)}
-        onSelectFont={handleFontChange}
-        currentFont={
-          textElements.find(el => el.id === selectedId)?.fontFamily ||
-          gradientTextElements.find(el => el.id === selectedId)?.fontFamily ||
-          curvedTextElements.find(el => el.id === selectedId)?.fontFamily ||
-          'Arial'
-        }
-        previewText={
-          textElements.find(el => el.id === selectedId)?.text ||
-          gradientTextElements.find(el => el.id === selectedId)?.text ||
-          curvedTextElements.find(el => el.id === selectedId)?.text ||
-          "The quick brown fox jumps over the lazy dog"
-        }
-      />
-      
-      {/* CSS Animation for notification */}
-      <style dangerouslySetInnerHTML={{__html: `
-        @keyframes slideDown {
-          from {
-            transform: translateX(-50%) translateY(-20px);
-            opacity: 0;
+        {/* Font Browser Modal */}
+        <FontBrowser
+          isOpen={showFontBrowser}
+          onClose={() => setShowFontBrowser(false)}
+          onSelectFont={handleFontChange}
+          currentFont={
+            textElements.find(el => el.id === selectedId)?.fontFamily ||
+            gradientTextElements.find(el => el.id === selectedId)?.fontFamily ||
+            curvedTextElements.find(el => el.id === selectedId)?.fontFamily ||
+            'Arial'
           }
-          to {
-            transform: translateX(-50%) translateY(0);
-            opacity: 1;
+          previewText={
+            textElements.find(el => el.id === selectedId)?.text ||
+            gradientTextElements.find(el => el.id === selectedId)?.text ||
+            curvedTextElements.find(el => el.id === selectedId)?.text ||
+            "The quick brown fox jumps over the lazy dog"
           }
-        }
-      `}} />
+        />
+        
+        {/* CSS Animation for notification */}
+        <style dangerouslySetInnerHTML={{__html: `
+          @keyframes slideDown {
+            from {
+              transform: translateX(-50%) translateY(-20px);
+              opacity: 0;
+            }
+            to {
+              transform: translateX(-50%) translateY(0);
+              opacity: 1;
+            }
+          }
+        `}} />
+      </div>
     </div>
   );
 };
