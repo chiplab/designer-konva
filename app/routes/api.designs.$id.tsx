@@ -9,6 +9,7 @@ import {
 } from "../services/s3.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
+
   const { id } = params;
   
   // Get shop from header or query
@@ -62,17 +63,44 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           shopifyVariantId: design.template.shopifyVariantId,
         },
       },
+    }, {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, x-shopify-shop-domain",
+        "Cache-Control": "public, max-age=300", // Cache for 5 minutes
+      },
     });
   } catch (error) {
     console.error("Error loading design:", error);
     return json(
       { error: "Failed to load design" },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, x-shopify-shop-domain",
+        },
+      }
     );
   }
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
+  // Handle CORS preflight requests
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, PUT, PATCH, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, x-shopify-shop-domain",
+        "Access-Control-Max-Age": "86400", // Cache preflight for 24 hours
+      },
+    });
+  }
+
   if (request.method !== "PUT" && request.method !== "PATCH") {
     return json({ error: "Method not allowed" }, { status: 405 });
   }

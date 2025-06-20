@@ -315,7 +315,7 @@ if (typeof CanvasTextRenderer === 'undefined') {
           fillRadialGradientEndPoint: { x: designableArea.width / 2, y: designableArea.height / 2 },
           fillRadialGradientStartRadius: 0,
           fillRadialGradientEndRadius: Math.min(designableArea.width, designableArea.height) / 2,
-          fillLinearGradientColorStops: backgroundGradient.colorStops || [0, '#c8102e', 1, '#ffaaaa']
+          fillRadialGradientColorStops: backgroundGradient.colorStops || [0, '#c8102e', 1, '#ffaaaa']
         });
       } else {
         bgRect = new Konva.Rect({
