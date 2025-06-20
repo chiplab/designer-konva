@@ -248,9 +248,15 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       }
     }
     
-    // Use layout variant S3 image for both sides (poker chips look the same on both sides)
-    if (layoutVariant?.baseImageUrl) {
-      return layoutVariant.baseImageUrl;
+    // Use layout variant S3 image with support for different front/back images
+    if (layoutVariant) {
+      if (side === 'front') {
+        // Use explicit front image if available, otherwise fall back to baseImageUrl
+        return layoutVariant.frontBaseImageUrl || layoutVariant.baseImageUrl || '';
+      } else if (side === 'back') {
+        // Use explicit back image if available, otherwise fall back to baseImageUrl
+        return layoutVariant.backBaseImageUrl || layoutVariant.baseImageUrl || '';
+      }
     }
     
     // Return empty string to trigger 404 if no S3 image found
@@ -1621,36 +1627,58 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
           await new Promise(resolve => setTimeout(resolve, 200));
         }
         
-        // Generate thumbnail
+        // Generate thumbnails for both sides
         let thumbnail: string | undefined;
-        try {
-          thumbnail = stageRef.current?.toDataURL({ 
-            x: 0,
-            y: 0,
-            width: dimensions.width * scale,
-            height: dimensions.height * scale,
-            pixelRatio: 1 / scale,
-            mimeType: 'image/png'
-          });
-        } catch (thumbnailError) {
-          console.error('Error generating thumbnail:', thumbnailError);
-          // Try to generate a lower quality thumbnail as fallback
+        let frontThumbnail: string | undefined;
+        let backThumbnail: string | undefined;
+        
+        // Helper function to generate thumbnail
+        const generateThumbnail = async (pixelRatio: number = 1): Promise<string | undefined> => {
           try {
-            thumbnail = stageRef.current?.toDataURL({ 
+            return stageRef.current?.toDataURL({ 
               x: 0,
               y: 0,
               width: dimensions.width * scale,
               height: dimensions.height * scale,
-              pixelRatio: 0.6 / scale,
+              pixelRatio: pixelRatio / scale,
               mimeType: 'image/png'
             });
-          } catch (fallbackError) {
-            console.error('Fallback thumbnail generation also failed:', fallbackError);
+          } catch (error) {
+            console.error('Error generating thumbnail:', error);
+            return undefined;
           }
+        };
+        
+        // Generate thumbnail for current side (for backward compatibility)
+        thumbnail = await generateThumbnail() || await generateThumbnail(0.6);
+        
+        // If this is a dual-sided template, generate thumbnails for both sides
+        const hasDualSides = canvasState.front || canvasState.back;
+        if (hasDualSides) {
+          // Save current side
+          const originalSide = currentSide;
+          
+          // Generate front thumbnail
+          if (canvasState.front) {
+            setCurrentSide('front');
+            await new Promise(resolve => setTimeout(resolve, 100)); // Wait for render
+            frontThumbnail = await generateThumbnail() || await generateThumbnail(0.6);
+          }
+          
+          // Generate back thumbnail
+          if (canvasState.back) {
+            setCurrentSide('back');
+            await new Promise(resolve => setTimeout(resolve, 100)); // Wait for render
+            backThumbnail = await generateThumbnail() || await generateThumbnail(0.6);
+          }
+          
+          // Restore original side
+          setCurrentSide(originalSide);
+          await new Promise(resolve => setTimeout(resolve, 100)); // Wait for render
         }
         
-        // Call the onSave prop with canvas data and thumbnail
-        await onSave(canvasState, thumbnail);
+        // Call the onSave prop with canvas data and thumbnails
+        await onSave(canvasState, thumbnail, frontThumbnail, backThumbnail);
         
         setNotification({ 
           message: 'Template saved successfully!', 
@@ -2418,6 +2446,65 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         </div>
       )}
       <div style={{ padding: '10px', flexShrink: 0, backgroundColor: '#f7f8fa', borderBottom: '1px solid #ddd', maxHeight: '300px', overflowY: 'auto' }}>
+        {/* Side Navigation - Only show if template has dual sides */}
+        {((initialTemplate?.frontCanvasData && initialTemplate?.backCanvasData) || layoutVariant?.backBaseImageUrl) && (
+          <div style={{ display: 'inline-flex', marginRight: '20px', borderRight: '2px solid #ddd', paddingRight: '20px' }}>
+            <button
+              onClick={() => setCurrentSide('front')}
+              style={{
+                padding: '8px 20px',
+                fontSize: '14px',
+                backgroundColor: currentSide === 'front' ? '#007bff' : '#f0f0f0',
+                color: currentSide === 'front' ? 'white' : '#333',
+                border: '1px solid #ccc',
+                borderRadius: '4px 0 0 4px',
+                borderRight: 'none',
+                cursor: 'pointer',
+                fontWeight: currentSide === 'front' ? 'bold' : 'normal',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                if (currentSide !== 'front') {
+                  e.currentTarget.style.backgroundColor = '#e0e0e0';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (currentSide !== 'front') {
+                  e.currentTarget.style.backgroundColor = '#f0f0f0';
+                }
+              }}
+            >
+              Front
+            </button>
+            <button
+              onClick={() => setCurrentSide('back')}
+              style={{
+                padding: '8px 20px',
+                fontSize: '14px',
+                backgroundColor: currentSide === 'back' ? '#007bff' : '#f0f0f0',
+                color: currentSide === 'back' ? 'white' : '#333',
+                border: '1px solid #ccc',
+                borderRadius: '0 4px 4px 0',
+                cursor: 'pointer',
+                fontWeight: currentSide === 'back' ? 'bold' : 'normal',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                if (currentSide !== 'back') {
+                  e.currentTarget.style.backgroundColor = '#e0e0e0';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (currentSide !== 'back') {
+                  e.currentTarget.style.backgroundColor = '#f0f0f0';
+                }
+              }}
+            >
+              Back
+            </button>
+          </div>
+        )}
+        
         <button onClick={addText} style={{ padding: '8px 16px', fontSize: '14px', marginRight: '10px' }}>
           Add Text
         </button>

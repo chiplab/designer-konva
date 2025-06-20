@@ -54,6 +54,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         id: design.template.id,
         name: design.template.name,
         canvasData: design.canvasState,
+        frontCanvasData: design.template.frontCanvasData,
+        backCanvasData: design.template.backCanvasData,
       };
       
       // Get the color variant from the template
@@ -74,6 +76,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         id: template.id,
         name: template.name,
         canvasData: template.canvasData,
+        frontCanvasData: template.frontCanvasData,
+        backCanvasData: template.backCanvasData,
       };
       
       // Get the color variant from the template

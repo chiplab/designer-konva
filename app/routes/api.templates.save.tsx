@@ -15,8 +15,10 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     const formData = await request.formData();
     const name = formData.get("name") as string;
-    const canvasData = formData.get("canvasData") as string;
+    let canvasData = formData.get("canvasData") as string;
     const thumbnail = formData.get("thumbnail") as string | null;
+    const frontThumbnail = formData.get("frontThumbnail") as string | null;
+    const backThumbnail = formData.get("backThumbnail") as string | null;
     const templateId = formData.get("templateId") as string | null;
     
     // New Shopify references
@@ -135,38 +137,63 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    // Upload thumbnail to S3 if provided
+    // Upload thumbnails to S3
     let thumbnailUrl = template.thumbnail; // Keep existing thumbnail if not updating
+    let frontThumbnailUrl = template.frontThumbnail;
+    let backThumbnailUrl = template.backThumbnail;
+    const thumbnailUpdates: any = {};
+
+    // Upload legacy single thumbnail
     if (thumbnail) {
       try {
         const s3Key = generateTemplateThumbnailKey(session.shop, template.id);
         thumbnailUrl = await uploadBase64ImageToS3(s3Key, thumbnail);
-        
-        // Update template with S3 URL
-        await db.template.update({
-          where: { id: template.id },
-          data: { thumbnail: thumbnailUrl },
-        });
+        thumbnailUpdates.thumbnail = thumbnailUrl;
       } catch (s3Error) {
         console.error("Error uploading thumbnail to S3:", s3Error);
-        // Return error info for debugging
-        return json({ 
-          success: true, 
-          template: {
-            ...template,
-            thumbnail: template.thumbnail, // Keep existing thumbnail
-          },
-          warning: `Thumbnail upload failed: ${s3Error instanceof Error ? s3Error.message : 'Unknown error'}`
-        });
       }
     }
 
+    // Upload front thumbnail
+    if (frontThumbnail) {
+      try {
+        const s3Key = generateTemplateThumbnailKey(session.shop, template.id, 'front');
+        frontThumbnailUrl = await uploadBase64ImageToS3(s3Key, frontThumbnail);
+        thumbnailUpdates.frontThumbnail = frontThumbnailUrl;
+      } catch (s3Error) {
+        console.error("Error uploading front thumbnail to S3:", s3Error);
+      }
+    }
+
+    // Upload back thumbnail
+    if (backThumbnail) {
+      try {
+        const s3Key = generateTemplateThumbnailKey(session.shop, template.id, 'back');
+        backThumbnailUrl = await uploadBase64ImageToS3(s3Key, backThumbnail);
+        thumbnailUpdates.backThumbnail = backThumbnailUrl;
+      } catch (s3Error) {
+        console.error("Error uploading back thumbnail to S3:", s3Error);
+      }
+    }
+
+    // Update template with all thumbnail URLs
+    if (Object.keys(thumbnailUpdates).length > 0) {
+      await db.template.update({
+        where: { id: template.id },
+        data: thumbnailUpdates,
+      });
+    }
+
     // Sync thumbnail to any bound product variants
+    // For dual-sided templates, prefer frontThumbnail over the legacy thumbnail
     let syncResult = null;
-    if (thumbnail) {
+    const thumbnailToSync = frontThumbnail || thumbnail;
+    
+    if (thumbnailToSync) {
       try {
         console.log(`Attempting to sync thumbnail for template ${template.id} to product variants...`);
-        syncResult = await syncTemplateThumbnailToVariants(admin, template.id, thumbnail);
+        console.log(`Using ${frontThumbnail ? 'front thumbnail' : 'legacy thumbnail'} for sync`);
+        syncResult = await syncTemplateThumbnailToVariants(admin, template.id, thumbnailToSync);
         console.log(`Sync result:`, syncResult);
       } catch (syncError) {
         console.error("Error syncing thumbnail to variants:", syncError);

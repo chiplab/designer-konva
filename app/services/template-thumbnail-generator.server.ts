@@ -8,7 +8,8 @@
 export async function generateTemplateThumbnail(
   canvasData: string,
   shop: string,
-  templateId: string
+  templateId: string,
+  side?: 'front' | 'back'
 ): Promise<string | null> {
   // Save ALL original global state to ensure complete restoration
   const originalGlobals = {
@@ -420,13 +421,13 @@ export async function generateTemplateThumbnail(
     const base64 = buffer.toString('base64');
     
     // Import S3 service dynamically
-    const { uploadBase64ImageToS3 } = await import('./s3.server');
+    const { uploadBase64ImageToS3, generateTemplateThumbnailKey } = await import('./s3.server');
     
     // Upload to S3
-    const s3Key = `templates/${shop}/${templateId}/thumbnail-${Date.now()}.png`;
+    const s3Key = generateTemplateThumbnailKey(shop, templateId, side);
     const s3Url = await uploadBase64ImageToS3(s3Key, base64, 'image/png');
     
-    console.log('Template thumbnail generated and uploaded:', s3Url);
+    console.log(`Template thumbnail generated and uploaded for ${side || 'primary'}:`, s3Url);
     return s3Url;
     
   } catch (error) {

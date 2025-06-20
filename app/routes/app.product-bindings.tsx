@@ -85,6 +85,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       id: true,
       name: true,
       thumbnail: true,
+      frontThumbnail: true,
+      backThumbnail: true,
       frontCanvasData: true,
       backCanvasData: true,
     },
@@ -113,6 +115,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         templateExists: !!template,
         templateId: templateId,
         templateThumbnail: template?.thumbnail,
+        frontThumbnail: template?.frontThumbnail,
+        backThumbnail: template?.backThumbnail,
         isDualSided: !!(template?.frontCanvasData || template?.backCanvasData),
         hasFrontData: !!template?.frontCanvasData,
         hasBackData: !!template?.backCanvasData,
@@ -214,24 +218,49 @@ export default function ProductBindings() {
                 </div>
                 
                 {/* Template Preview Section */}
-                {variant.templateThumbnail && (
+                {(variant.frontThumbnail || variant.backThumbnail || variant.templateThumbnail) && (
                   <div style={{ marginTop: "8px" }}>
                     <Text variant="bodySm" tone="subdued" as="p" style={{ marginBottom: "4px" }}>
                       Template Preview:
                     </Text>
-                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                      <Thumbnail
-                        source={variant.templateThumbnail}
-                        alt="Template preview"
-                        size="large"
-                      />
+                    <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
+                      {/* Show ONLY dual thumbnails if available, ignoring legacy thumbnail */}
+                      {(variant.frontThumbnail && variant.backThumbnail) ? (
+                        <>
+                          <div>
+                            <Text variant="bodySm" tone="subdued" as="p" style={{ marginBottom: "4px", fontSize: "11px" }}>
+                              Front
+                            </Text>
+                            <Thumbnail
+                              source={variant.frontThumbnail}
+                              alt="Front template preview"
+                              size="large"
+                            />
+                          </div>
+                          <div>
+                            <Text variant="bodySm" tone="subdued" as="p" style={{ marginBottom: "4px", fontSize: "11px" }}>
+                              Back
+                            </Text>
+                            <Thumbnail
+                              source={variant.backThumbnail}
+                              alt="Back template preview"
+                              size="large"
+                            />
+                          </div>
+                        </>
+                      ) : variant.templateThumbnail && !variant.frontThumbnail && !variant.backThumbnail ? (
+                        // Only show legacy thumbnail if NO dual-sided thumbnails exist at all
+                        <Thumbnail
+                          source={variant.templateThumbnail}
+                          alt="Template preview"
+                          size="large"
+                        />
+                      ) : null}
+                      
                       {variant.isDualSided && (
                         <div style={{ fontSize: "12px", color: "#6d7175" }}>
-                          <div>✅ Front side</div>
-                          <div>{variant.hasBackData ? "✅" : "❌"} Back side</div>
-                          <div style={{ marginTop: "4px", fontStyle: "italic" }}>
-                            (Preview shows front only)
-                          </div>
+                          <div>✅ Front side data</div>
+                          <div>{variant.hasBackData ? "✅" : "❌"} Back side data</div>
                         </div>
                       )}
                     </div>

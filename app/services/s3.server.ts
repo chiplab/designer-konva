@@ -103,12 +103,14 @@ export async function uploadBase64ImageToS3(
  * Generate a unique key for template thumbnails
  * @param shopDomain - The shop domain
  * @param templateId - The template ID
+ * @param side - Optional side (front/back) for dual-sided thumbnails
  * @returns A unique S3 key
  */
-export function generateTemplateThumbnailKey(shopDomain: string, templateId: string): string {
+export function generateTemplateThumbnailKey(shopDomain: string, templateId: string, side?: 'front' | 'back'): string {
   const shopName = shopDomain.replace(".myshopify.com", "");
   const timestamp = Date.now();
-  return `templates/${shopName}/${templateId}/thumbnail-${timestamp}.png`;
+  const sidePrefix = side ? `${side}-` : '';
+  return `templates/${shopName}/${templateId}/${sidePrefix}thumbnail-${timestamp}.png`;
 }
 
 /**
