@@ -274,18 +274,60 @@ export async function processGenerateThumbnailsJob(
           if (dbTemplate) {
             console.log(`Job ${jobId}: Generating thumbnail for template ${templateId}...`);
             
-            const thumbnailUrl = await generateTemplateThumbnail(
-              dbTemplate.canvasData,
-              shop,
-              templateId
-            );
+            const thumbnailUpdates: any = {};
             
-            if (thumbnailUrl) {
+            // Check if this is a dual-sided template
+            const isDualSided = dbTemplate.frontCanvasData && dbTemplate.backCanvasData;
+            
+            if (isDualSided) {
+              console.log(`Job ${jobId}: Template ${templateId} is dual-sided, generating front and back thumbnails...`);
+              
+              // Generate front thumbnail
+              const frontThumbnailUrl = await generateTemplateThumbnail(
+                dbTemplate.frontCanvasData,
+                shop,
+                templateId,
+                'front'
+              );
+              
+              if (frontThumbnailUrl) {
+                thumbnailUpdates.frontThumbnail = frontThumbnailUrl;
+                thumbnailUpdates.thumbnail = frontThumbnailUrl; // Set as primary thumbnail for backward compatibility
+              }
+              
+              // Generate back thumbnail
+              const backThumbnailUrl = await generateTemplateThumbnail(
+                dbTemplate.backCanvasData,
+                shop,
+                templateId,
+                'back'
+              );
+              
+              if (backThumbnailUrl) {
+                thumbnailUpdates.backThumbnail = backThumbnailUrl;
+              }
+            } else {
+              // Single-sided template
+              const canvasDataToRender = dbTemplate.frontCanvasData || dbTemplate.canvasData;
+              
+              const thumbnailUrl = await generateTemplateThumbnail(
+                canvasDataToRender,
+                shop,
+                templateId
+              );
+              
+              if (thumbnailUrl) {
+                thumbnailUpdates.thumbnail = thumbnailUrl;
+              }
+            }
+            
+            // Update template with generated thumbnails
+            if (Object.keys(thumbnailUpdates).length > 0) {
               await db.template.update({
                 where: { id: templateId },
-                data: { thumbnail: thumbnailUrl }
+                data: thumbnailUpdates
               });
-              console.log(`Job ${jobId}: Thumbnail generated for ${templateId}`);
+              console.log(`Job ${jobId}: Thumbnails generated for ${templateId}:`, Object.keys(thumbnailUpdates));
             }
           }
           
@@ -303,20 +345,68 @@ export async function processGenerateThumbnailsJob(
         where: { id: masterTemplateId }
       });
       
-      if (masterTemplate && !masterTemplate.thumbnail) {
+      if (masterTemplate) {
         try {
-          console.log(`Job ${jobId}: Generating master template thumbnail...`);
-          const thumbnailUrl = await generateTemplateThumbnail(
-            masterTemplate.canvasData,
-            shop,
-            masterTemplateId
-          );
+          console.log(`Job ${jobId}: Checking master template thumbnail...`);
           
-          if (thumbnailUrl) {
+          const thumbnailUpdates: any = {};
+          const isDualSided = masterTemplate.frontCanvasData && masterTemplate.backCanvasData;
+          
+          if (isDualSided) {
+            // Generate front thumbnail if missing
+            if (!masterTemplate.frontThumbnail) {
+              console.log(`Job ${jobId}: Generating master template front thumbnail...`);
+              const frontThumbnailUrl = await generateTemplateThumbnail(
+                masterTemplate.frontCanvasData,
+                shop,
+                masterTemplateId,
+                'front'
+              );
+              
+              if (frontThumbnailUrl) {
+                thumbnailUpdates.frontThumbnail = frontThumbnailUrl;
+                if (!masterTemplate.thumbnail) {
+                  thumbnailUpdates.thumbnail = frontThumbnailUrl; // Set as primary thumbnail for backward compatibility
+                }
+              }
+            }
+            
+            // Generate back thumbnail if missing
+            if (!masterTemplate.backThumbnail) {
+              console.log(`Job ${jobId}: Generating master template back thumbnail...`);
+              const backThumbnailUrl = await generateTemplateThumbnail(
+                masterTemplate.backCanvasData,
+                shop,
+                masterTemplateId,
+                'back'
+              );
+              
+              if (backThumbnailUrl) {
+                thumbnailUpdates.backThumbnail = backThumbnailUrl;
+              }
+            }
+          } else if (!masterTemplate.thumbnail) {
+            // Single-sided template without thumbnail
+            const canvasDataToRender = masterTemplate.frontCanvasData || masterTemplate.canvasData;
+            
+            const thumbnailUrl = await generateTemplateThumbnail(
+              canvasDataToRender,
+              shop,
+              masterTemplateId
+            );
+            
+            if (thumbnailUrl) {
+              thumbnailUpdates.thumbnail = thumbnailUrl;
+            }
+          }
+          
+          // Update master template with generated thumbnails
+          if (Object.keys(thumbnailUpdates).length > 0) {
             await db.template.update({
               where: { id: masterTemplateId },
-              data: { thumbnail: thumbnailUrl }
+              data: thumbnailUpdates
             });
+            console.log(`Job ${jobId}: Master template thumbnails generated:`, Object.keys(thumbnailUpdates));
           }
         } catch (error) {
           console.error(`Job ${jobId}: Error generating master template thumbnail:`, error);
@@ -407,7 +497,17 @@ export async function processSyncProductThumbnailsJob(
         shop,
         shopifyProductId: productId,
         shopifyVariantId: { not: null },
-        thumbnail: { not: null },
+        OR: [
+          { thumbnail: { not: null } },
+          { frontThumbnail: { not: null } }
+        ]
+      },
+      select: {
+        id: true,
+        name: true,
+        thumbnail: true,
+        frontThumbnail: true,
+        shopifyVariantId: true,
       },
       orderBy: [
         { name: 'asc' }
@@ -480,10 +580,15 @@ export async function processSyncProductThumbnailsJob(
         try {
           // Dynamically import to avoid module initialization issues
           const { syncTemplateThumbnailToVariants } = await import("./template-sync.server");
+          
+          // For dual-sided templates, prefer frontThumbnail over the legacy thumbnail
+          const thumbnailToSync = template.frontThumbnail || template.thumbnail;
+          console.log(`Job ${jobId}: Syncing template ${template.id} using ${template.frontThumbnail ? 'front thumbnail' : 'legacy thumbnail'}`);
+          
           const syncResult = await syncTemplateThumbnailToVariants(
             admin, 
             template.id, 
-            template.thumbnail
+            thumbnailToSync
           );
           
           if (syncResult.syncedCount > 0) {

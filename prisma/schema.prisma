@@ -27,7 +27,6 @@ model Session {
   @@map("session")
 }
 
-// Legacy ProductLayout model (to be removed after migration)
 model ProductLayout {
   id             String     @id @default(cuid())
   name           String
@@ -45,61 +44,60 @@ model ProductLayout {
   @@index([shop])
 }
 
-// New ProductLayout model for refactored architecture
 model Layout {
-  id               String           @id @default(cuid())
+  id               String          @id @default(cuid())
   shop             String
   shopifyProductId String
   productTitle     String
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
   layoutVariants   LayoutVariant[]
-  
+
   @@unique([shop, shopifyProductId])
   @@index([shop])
 }
 
 model LayoutVariant {
-  id                String         @id @default(cuid())
-  layoutId          String
-  shopifyVariantId  String
-  variantTitle      String
-  baseImageUrl      String         // S3 URL for fast loading
-  shopifyImageUrl   String?        // Original Shopify URL for reference
-  position          Int            // Display order
-  color             String?        // Extracted color (e.g., "Red", "Blue")
-  pattern           String?        // Extracted pattern (e.g., "8 Spot", "Solid")
-  layout            Layout         @relation(fields: [layoutId], references: [id], onDelete: Cascade)
-  templates         Template[]
-  
+  id               String     @id @default(cuid())
+  layoutId         String
+  shopifyVariantId String
+  variantTitle     String
+  baseImageUrl     String     // Legacy: single image or front image
+  frontBaseImageUrl String?   // New: explicit front image
+  backBaseImageUrl  String?   // New: explicit back image
+  shopifyImageUrl  String?
+  position         Int
+  color            String?
+  pattern          String?
+  layout           Layout     @relation(fields: [layoutId], references: [id], onDelete: Cascade)
+  templates        Template[]
+
   @@unique([layoutId, shopifyVariantId])
   @@index([layoutId])
 }
 
 model Template {
-  id               String         @id @default(cuid())
+  id               String           @id @default(cuid())
   name             String
   shop             String
   canvasData       String
   thumbnail        String?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  
-  // New architecture reference
-  layoutVariantId  String?
-  layoutVariant    LayoutVariant? @relation(fields: [layoutVariantId], references: [id])
-  
-  // Legacy fields (to be removed after migration)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
   productLayoutId  String?
   colorVariant     String?
-  isColorVariant   Boolean        @default(false)
+  isColorVariant   Boolean          @default(false)
   masterTemplateId String?
   shopifyProductId String?
   shopifyVariantId String?
-  productLayout    ProductLayout? @relation(fields: [productLayoutId], references: [id])
-  
-  // Relations
+  layoutVariantId  String?
+  backCanvasData   String?
+  frontCanvasData  String?
+  backThumbnail    String?
+  frontThumbnail   String?
   customerDesigns  CustomerDesign[]
+  layoutVariant    LayoutVariant?   @relation(fields: [layoutVariantId], references: [id])
+  productLayout    ProductLayout?   @relation(fields: [productLayoutId], references: [id])
 
   @@index([shop])
   @@index([shopifyProductId])
@@ -138,39 +136,26 @@ model Job {
 }
 
 model CustomerDesign {
-  id               String    @id @default(cuid())
-  shop             String
-  customerId       String?
-  email            String?
-  
-  // Design references
-  templateId       String
-  productId        String
-  variantId        String
-  
-  // Design data
-  canvasState      String
-  thumbnail        String
-  name             String?
-  
-  // Status tracking
-  status           String    @default("draft")
-  orderId          String?
-  orderLineItemId  String?
-  
-  // Sharing & Access
-  shareToken       String?   @unique @default(cuid())
-  isPublic         Boolean   @default(false)
-  
-  // Auto-cleanup for drafts
-  expiresAt        DateTime?
-  
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  
-  // Relations
-  template         Template  @relation(fields: [templateId], references: [id])
-  
+  id              String    @id @default(cuid())
+  shop            String
+  customerId      String?
+  email           String?
+  templateId      String
+  productId       String
+  variantId       String
+  canvasState     String
+  thumbnail       String
+  name            String?
+  status          String    @default("draft")
+  orderId         String?
+  orderLineItemId String?
+  shareToken      String?   @unique @default(cuid())
+  isPublic        Boolean   @default(false)
+  expiresAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  template        Template  @relation(fields: [templateId], references: [id])
+
   @@index([shop, customerId])
   @@index([shop, email])
   @@index([shareToken])

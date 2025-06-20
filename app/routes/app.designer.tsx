@@ -143,6 +143,8 @@ export default function Designer() {
   // Canvas data from child component
   const [pendingCanvasData, setPendingCanvasData] = useState<any>(null);
   const [pendingThumbnail, setPendingThumbnail] = useState<string | null>(null);
+  const [pendingFrontThumbnail, setPendingFrontThumbnail] = useState<string | null>(null);
+  const [pendingBackThumbnail, setPendingBackThumbnail] = useState<string | null>(null);
   
   // Determine the title based on what we're doing
   let title = "Template Designer";
@@ -157,9 +159,11 @@ export default function Designer() {
   }
   
   // Load products when modal opens
-  const handleOpenSaveModal = useCallback(async (canvasData: any, thumbnail: string | undefined) => {
+  const handleOpenSaveModal = useCallback(async (canvasData: any, thumbnail: string | undefined, frontThumbnail?: string, backThumbnail?: string) => {
     setPendingCanvasData(canvasData);
     setPendingThumbnail(thumbnail || null);
+    setPendingFrontThumbnail(frontThumbnail || null);
+    setPendingBackThumbnail(backThumbnail || null);
     setSaveModalOpen(true);
     setSaveError(null);
     
@@ -202,6 +206,15 @@ export default function Designer() {
       
       if (pendingThumbnail) {
         formData.append('thumbnail', pendingThumbnail);
+      }
+      
+      // Add dual thumbnails if available
+      if (pendingFrontThumbnail) {
+        formData.append('frontThumbnail', pendingFrontThumbnail);
+      }
+      
+      if (pendingBackThumbnail) {
+        formData.append('backThumbnail', pendingBackThumbnail);
       }
       
       // If editing existing template
@@ -406,7 +419,7 @@ export default function Designer() {
     } finally {
       setSaving(false);
     }
-  }, [templateName, template, selectedVariants, pendingCanvasData, pendingThumbnail, products, shopifyProduct, productLayout]);
+  }, [templateName, template, selectedVariants, pendingCanvasData, pendingThumbnail, pendingFrontThumbnail, pendingBackThumbnail, products, shopifyProduct, productLayout]);
   
   return (
     <Page fullWidth>

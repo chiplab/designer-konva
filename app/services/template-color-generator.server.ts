@@ -354,8 +354,27 @@ export async function generateColorVariants(masterTemplateId: string, shop: stri
   
   console.log(`Found ${targetColors.length} target colors to generate for pattern "${masterPattern}"`);
   
-  // Parse the canvas data
-  const canvasData = JSON.parse(masterTemplate.canvasData);
+  // Parse the canvas data - handle both legacy and dual-sided formats
+  let canvasData: any;
+  let frontCanvasData: any = null;
+  let backCanvasData: any = null;
+  
+  // Check if template uses new dual-sided format
+  if (masterTemplate.frontCanvasData || masterTemplate.backCanvasData) {
+    if (masterTemplate.frontCanvasData) {
+      frontCanvasData = JSON.parse(masterTemplate.frontCanvasData);
+    }
+    if (masterTemplate.backCanvasData) {
+      backCanvasData = JSON.parse(masterTemplate.backCanvasData);
+    }
+    // For backward compatibility, also parse regular canvasData if it exists
+    if (masterTemplate.canvasData) {
+      canvasData = JSON.parse(masterTemplate.canvasData);
+    }
+  } else {
+    // Legacy single-sided format
+    canvasData = JSON.parse(masterTemplate.canvasData);
+  }
   
   // Get all variants for the product to find matching variant IDs
   const { shopifyProductId } = masterTemplate;
@@ -366,35 +385,108 @@ export async function generateColorVariants(masterTemplateId: string, shop: stri
   for (const targetColor of targetColors) {
     try {
       // Process canvas data with color replacement
-      let newCanvasData = processCanvasElement(canvasData, sourceColor, targetColor)
+      let newCanvasData: any = null;
+      let newFrontCanvasData: any = null;
+      let newBackCanvasData: any = null;
       
-      // Process top-level backgroundColor
-      if (newCanvasData.backgroundColor && typeof newCanvasData.backgroundColor === 'string') {
-        const position = findColorPosition(newCanvasData.backgroundColor, sourceColor);
-        if (position) {
-          const newColor = replaceColorByPosition(position, targetColor);
-          if (newColor) {
-            newCanvasData.backgroundColor = newColor;
-          }
-        }
-      }
-      
-      // Process backgroundGradient if present
-      if (newCanvasData.backgroundGradient && newCanvasData.backgroundGradient.colorStops) {
-        const newStops = [...newCanvasData.backgroundGradient.colorStops];
-        // Process color stops (they alternate between position and color)
-        for (let i = 1; i < newStops.length; i += 2) {
-          if (typeof newStops[i] === 'string') {
-            const position = findColorPosition(newStops[i], sourceColor);
-            if (position) {
-              const newColor = replaceColorByPosition(position, targetColor);
-              if (newColor) {
-                newStops[i] = newColor;
-              }
+      // Process legacy single-sided data if it exists
+      if (canvasData) {
+        newCanvasData = processCanvasElement(canvasData, sourceColor, targetColor);
+        
+        // Process top-level backgroundColor
+        if (newCanvasData.backgroundColor && typeof newCanvasData.backgroundColor === 'string') {
+          const position = findColorPosition(newCanvasData.backgroundColor, sourceColor);
+          if (position) {
+            const newColor = replaceColorByPosition(position, targetColor);
+            if (newColor) {
+              newCanvasData.backgroundColor = newColor;
             }
           }
         }
-        newCanvasData.backgroundGradient.colorStops = newStops;
+        
+        // Process backgroundGradient if present
+        if (newCanvasData.backgroundGradient && newCanvasData.backgroundGradient.colorStops) {
+          const newStops = [...newCanvasData.backgroundGradient.colorStops];
+          // Process color stops (they alternate between position and color)
+          for (let i = 1; i < newStops.length; i += 2) {
+            if (typeof newStops[i] === 'string') {
+              const position = findColorPosition(newStops[i], sourceColor);
+              if (position) {
+                const newColor = replaceColorByPosition(position, targetColor);
+                if (newColor) {
+                  newStops[i] = newColor;
+                }
+              }
+            }
+          }
+          newCanvasData.backgroundGradient.colorStops = newStops;
+        }
+      }
+      
+      // Process front side data if it exists
+      if (frontCanvasData) {
+        newFrontCanvasData = processCanvasElement(frontCanvasData, sourceColor, targetColor);
+        
+        // Process top-level backgroundColor for front
+        if (newFrontCanvasData.backgroundColor && typeof newFrontCanvasData.backgroundColor === 'string') {
+          const position = findColorPosition(newFrontCanvasData.backgroundColor, sourceColor);
+          if (position) {
+            const newColor = replaceColorByPosition(position, targetColor);
+            if (newColor) {
+              newFrontCanvasData.backgroundColor = newColor;
+            }
+          }
+        }
+        
+        // Process backgroundGradient for front
+        if (newFrontCanvasData.backgroundGradient && newFrontCanvasData.backgroundGradient.colorStops) {
+          const newStops = [...newFrontCanvasData.backgroundGradient.colorStops];
+          for (let i = 1; i < newStops.length; i += 2) {
+            if (typeof newStops[i] === 'string') {
+              const position = findColorPosition(newStops[i], sourceColor);
+              if (position) {
+                const newColor = replaceColorByPosition(position, targetColor);
+                if (newColor) {
+                  newStops[i] = newColor;
+                }
+              }
+            }
+          }
+          newFrontCanvasData.backgroundGradient.colorStops = newStops;
+        }
+      }
+      
+      // Process back side data if it exists
+      if (backCanvasData) {
+        newBackCanvasData = processCanvasElement(backCanvasData, sourceColor, targetColor);
+        
+        // Process top-level backgroundColor for back
+        if (newBackCanvasData.backgroundColor && typeof newBackCanvasData.backgroundColor === 'string') {
+          const position = findColorPosition(newBackCanvasData.backgroundColor, sourceColor);
+          if (position) {
+            const newColor = replaceColorByPosition(position, targetColor);
+            if (newColor) {
+              newBackCanvasData.backgroundColor = newColor;
+            }
+          }
+        }
+        
+        // Process backgroundGradient for back
+        if (newBackCanvasData.backgroundGradient && newBackCanvasData.backgroundGradient.colorStops) {
+          const newStops = [...newBackCanvasData.backgroundGradient.colorStops];
+          for (let i = 1; i < newStops.length; i += 2) {
+            if (typeof newStops[i] === 'string') {
+              const position = findColorPosition(newStops[i], sourceColor);
+              if (position) {
+                const newColor = replaceColorByPosition(position, targetColor);
+                if (newColor) {
+                  newStops[i] = newColor;
+                }
+              }
+            }
+          }
+          newBackCanvasData.backgroundGradient.colorStops = newStops;
+        }
       }
       
       // Find the corresponding Shopify variant ID
@@ -417,7 +509,10 @@ export async function generateColorVariants(masterTemplateId: string, shop: stri
           shop,
           shopifyProductId,
           shopifyVariantId: null, // Will be updated when we implement variant matching
-          canvasData: JSON.stringify(newCanvasData),
+          // Include both legacy and dual-sided data
+          canvasData: newCanvasData ? JSON.stringify(newCanvasData) : masterTemplate.canvasData,
+          frontCanvasData: newFrontCanvasData ? JSON.stringify(newFrontCanvasData) : null,
+          backCanvasData: newBackCanvasData ? JSON.stringify(newBackCanvasData) : null,
           masterTemplateId,
           isColorVariant: true,
           // Legacy fields
@@ -525,8 +620,27 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
   // We'll get the source color mapping after we determine the master color
   let sourceColor = null;
   
-  // Parse the master template's canvas data
-  const canvasData = JSON.parse(masterTemplate.canvasData);
+  // Parse the master template's canvas data - handle both legacy and dual-sided formats
+  let canvasData: any = null;
+  let frontCanvasData: any = null;
+  let backCanvasData: any = null;
+  
+  // Check if template uses new dual-sided format
+  if (masterTemplate.frontCanvasData || masterTemplate.backCanvasData) {
+    if (masterTemplate.frontCanvasData) {
+      frontCanvasData = JSON.parse(masterTemplate.frontCanvasData);
+    }
+    if (masterTemplate.backCanvasData) {
+      backCanvasData = JSON.parse(masterTemplate.backCanvasData);
+    }
+    // For backward compatibility, also parse regular canvasData if it exists
+    if (masterTemplate.canvasData) {
+      canvasData = JSON.parse(masterTemplate.canvasData);
+    }
+  } else {
+    // Legacy single-sided format
+    canvasData = JSON.parse(masterTemplate.canvasData);
+  }
   
   // Use the product ID we already determined
   const productIdForVariants = productId;
@@ -624,35 +738,108 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
         continue;
       }
       
-      // Process canvas data with color replacement
-      let newCanvasData = processCanvasElement(canvasData, sourceColor, targetColor)
+      // Process canvas data with color replacement - handle both legacy and dual-sided
+      let newCanvasData: any = null;
+      let newFrontCanvasData: any = null;
+      let newBackCanvasData: any = null;
       
-      // Process top-level backgroundColor
-      if (newCanvasData.backgroundColor && typeof newCanvasData.backgroundColor === 'string') {
-        const position = findColorPosition(newCanvasData.backgroundColor, sourceColor);
-        if (position) {
-          const newColor = replaceColorByPosition(position, targetColor);
-          if (newColor) {
-            newCanvasData.backgroundColor = newColor;
-          }
-        }
-      }
-      
-      // Process backgroundGradient if present
-      if (newCanvasData.backgroundGradient && newCanvasData.backgroundGradient.colorStops) {
-        const newStops = [...newCanvasData.backgroundGradient.colorStops];
-        for (let i = 1; i < newStops.length; i += 2) {
-          if (typeof newStops[i] === 'string') {
-            const position = findColorPosition(newStops[i], sourceColor);
-            if (position) {
-              const newColor = replaceColorByPosition(position, targetColor);
-              if (newColor) {
-                newStops[i] = newColor;
-              }
+      // Process legacy single-sided data if it exists
+      if (canvasData) {
+        newCanvasData = processCanvasElement(canvasData, sourceColor, targetColor);
+        
+        // Process top-level backgroundColor
+        if (newCanvasData.backgroundColor && typeof newCanvasData.backgroundColor === 'string') {
+          const position = findColorPosition(newCanvasData.backgroundColor, sourceColor);
+          if (position) {
+            const newColor = replaceColorByPosition(position, targetColor);
+            if (newColor) {
+              newCanvasData.backgroundColor = newColor;
             }
           }
         }
-        newCanvasData.backgroundGradient.colorStops = newStops;
+        
+        // Process backgroundGradient if present
+        if (newCanvasData.backgroundGradient && newCanvasData.backgroundGradient.colorStops) {
+          const newStops = [...newCanvasData.backgroundGradient.colorStops];
+          for (let i = 1; i < newStops.length; i += 2) {
+            if (typeof newStops[i] === 'string') {
+              const position = findColorPosition(newStops[i], sourceColor);
+              if (position) {
+                const newColor = replaceColorByPosition(position, targetColor);
+                if (newColor) {
+                  newStops[i] = newColor;
+                }
+              }
+            }
+          }
+          newCanvasData.backgroundGradient.colorStops = newStops;
+        }
+      }
+      
+      // Process front side data if it exists
+      if (frontCanvasData) {
+        newFrontCanvasData = processCanvasElement(frontCanvasData, sourceColor, targetColor);
+        
+        // Process top-level backgroundColor for front
+        if (newFrontCanvasData.backgroundColor && typeof newFrontCanvasData.backgroundColor === 'string') {
+          const position = findColorPosition(newFrontCanvasData.backgroundColor, sourceColor);
+          if (position) {
+            const newColor = replaceColorByPosition(position, targetColor);
+            if (newColor) {
+              newFrontCanvasData.backgroundColor = newColor;
+            }
+          }
+        }
+        
+        // Process backgroundGradient for front
+        if (newFrontCanvasData.backgroundGradient && newFrontCanvasData.backgroundGradient.colorStops) {
+          const newStops = [...newFrontCanvasData.backgroundGradient.colorStops];
+          for (let i = 1; i < newStops.length; i += 2) {
+            if (typeof newStops[i] === 'string') {
+              const position = findColorPosition(newStops[i], sourceColor);
+              if (position) {
+                const newColor = replaceColorByPosition(position, targetColor);
+                if (newColor) {
+                  newStops[i] = newColor;
+                }
+              }
+            }
+          }
+          newFrontCanvasData.backgroundGradient.colorStops = newStops;
+        }
+      }
+      
+      // Process back side data if it exists
+      if (backCanvasData) {
+        newBackCanvasData = processCanvasElement(backCanvasData, sourceColor, targetColor);
+        
+        // Process top-level backgroundColor for back
+        if (newBackCanvasData.backgroundColor && typeof newBackCanvasData.backgroundColor === 'string') {
+          const position = findColorPosition(newBackCanvasData.backgroundColor, sourceColor);
+          if (position) {
+            const newColor = replaceColorByPosition(position, targetColor);
+            if (newColor) {
+              newBackCanvasData.backgroundColor = newColor;
+            }
+          }
+        }
+        
+        // Process backgroundGradient for back
+        if (newBackCanvasData.backgroundGradient && newBackCanvasData.backgroundGradient.colorStops) {
+          const newStops = [...newBackCanvasData.backgroundGradient.colorStops];
+          for (let i = 1; i < newStops.length; i += 2) {
+            if (typeof newStops[i] === 'string') {
+              const position = findColorPosition(newStops[i], sourceColor);
+              if (position) {
+                const newColor = replaceColorByPosition(position, targetColor);
+                if (newColor) {
+                  newStops[i] = newColor;
+                }
+              }
+            }
+          }
+          newBackCanvasData.backgroundGradient.colorStops = newStops;
+        }
       }
       
       // Get the correct base image for this color/pattern combination
@@ -666,20 +853,78 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
         combination.pattern
       );
       
+      // Handle base images for both legacy and dual-sided templates
       if (baseImageUrl) {
         console.log(`✅ Found base image for ${combination.color}/${combination.pattern}: ${baseImageUrl}`);
-        // Ensure assets object exists
-        if (!newCanvasData.assets) {
-          newCanvasData.assets = {};
+        
+        // For legacy single-sided templates
+        if (newCanvasData) {
+          if (!newCanvasData.assets) {
+            newCanvasData.assets = {};
+          }
+          newCanvasData.assets.baseImage = baseImageUrl;
         }
-        newCanvasData.assets.baseImage = baseImageUrl;
+        
+        // For dual-sided templates, we need to get the layout variant to check for front/back images
+        let frontBaseImage = baseImageUrl; // Default to the single base image
+        let backBaseImage = baseImageUrl;  // Default to the single base image
+        
+        if ((newFrontCanvasData || newBackCanvasData) && layoutProductIdForBaseImages) {
+          // Try to get specific front/back images from the layout variant
+          const layoutForImages = await db.layout.findFirst({
+            where: { shopifyProductId: layoutProductIdForBaseImages },
+            include: { layoutVariants: true },
+          });
+          
+          if (layoutForImages) {
+            const matchingVariant = layoutForImages.layoutVariants.find((lv) => {
+              const normalizedLvColor = normalizeColorName(lv.color || '');
+              const normalizedTargetColor = normalizeColorName(combination.color);
+              return normalizedLvColor === normalizedTargetColor &&
+                     lv.pattern?.toLowerCase() === combination.pattern.toLowerCase();
+            });
+            
+            if (matchingVariant) {
+              // Use specific front/back images if available
+              if (matchingVariant.frontBaseImageUrl) {
+                frontBaseImage = matchingVariant.frontBaseImageUrl;
+                console.log(`   Using specific front image: ${frontBaseImage}`);
+              }
+              if (matchingVariant.backBaseImageUrl) {
+                backBaseImage = matchingVariant.backBaseImageUrl;
+                console.log(`   Using specific back image: ${backBaseImage}`);
+              }
+            }
+          }
+        }
+        
+        // Set base images for front canvas data
+        if (newFrontCanvasData) {
+          if (!newFrontCanvasData.assets) {
+            newFrontCanvasData.assets = {};
+          }
+          newFrontCanvasData.assets.baseImage = frontBaseImage;
+        }
+        
+        // Set base images for back canvas data
+        if (newBackCanvasData) {
+          if (!newBackCanvasData.assets) {
+            newBackCanvasData.assets = {};
+          }
+          newBackCanvasData.assets.baseImage = backBaseImage;
+        }
       } else {
         console.warn(`❌ No base image found for ${combination.color}/${combination.pattern}, this variant will have no base image`);
-        // Remove the base image for this variant since we don't have the correct one
-        // This is better than using the wrong base image
-        if (newCanvasData.assets) {
+        
+        // Remove base images from all canvas data
+        if (newCanvasData?.assets) {
           delete newCanvasData.assets.baseImage;
-          console.log(`   Removed base image from variant to prevent using wrong image`);
+        }
+        if (newFrontCanvasData?.assets) {
+          delete newFrontCanvasData.assets.baseImage;
+        }
+        if (newBackCanvasData?.assets) {
+          delete newBackCanvasData.assets.baseImage;
         }
       }
       
@@ -719,14 +964,17 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
         }
       }
       
-      // Create the new template
+      // Create the new template with dual-sided support
       const newTemplate = await db.template.create({
         data: {
           name: `${formattedColorName} / ${combination.pattern} Template`,
           shop,
           shopifyProductId: productIdForVariants, // Use the determined product ID
           shopifyVariantId: null, // Will be updated by matching function
-          canvasData: JSON.stringify(newCanvasData),
+          // Include both legacy and dual-sided canvas data
+          canvasData: newCanvasData ? JSON.stringify(newCanvasData) : masterTemplate.canvasData,
+          frontCanvasData: newFrontCanvasData ? JSON.stringify(newFrontCanvasData) : null,
+          backCanvasData: newBackCanvasData ? JSON.stringify(newBackCanvasData) : null,
           masterTemplateId,
           isColorVariant: true,
           // Link to the correct layout variant for this color/pattern

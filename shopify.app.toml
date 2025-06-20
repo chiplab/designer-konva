@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://evaluated-grid-lid-strategies.trycloudflare.com"
+application_url = "https://pakistan-sale-hand-trans.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://evaluated-grid-lid-strategies.trycloudflare.com/auth/callback",
-  "https://evaluated-grid-lid-strategies.trycloudflare.com/auth/shopify/callback",
-  "https://evaluated-grid-lid-strategies.trycloudflare.com/api/auth/callback"
+  "https://pakistan-sale-hand-trans.trycloudflare.com/auth/callback",
+  "https://pakistan-sale-hand-trans.trycloudflare.com/auth/shopify/callback",
+  "https://pakistan-sale-hand-trans.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://evaluated-grid-lid-strategies.trycloudflare.com"
+url = "https://pakistan-sale-hand-trans.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 

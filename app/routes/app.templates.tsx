@@ -417,7 +417,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }, { status: 404 });
       }
 
-      if (!template.thumbnail) {
+      // For dual-sided templates, prefer frontThumbnail over the legacy thumbnail
+      const thumbnailToSync = template.frontThumbnail || template.thumbnail;
+      
+      if (!thumbnailToSync) {
         return json({ 
           success: false, 
           error: "Template has no thumbnail to sync" 
@@ -428,7 +431,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const templateSyncModule = await import("../services/template-sync.server");
       
       // Use the original thumbnail sync (not server-side rendering for now)
-      const syncResult = await templateSyncModule.syncTemplateThumbnailToVariants(admin, templateId, template.thumbnail);
+      console.log(`Syncing template ${templateId} using ${template.frontThumbnail ? 'front thumbnail' : 'legacy thumbnail'}`);
+      const syncResult = await templateSyncModule.syncTemplateThumbnailToVariants(admin, templateId, thumbnailToSync);
       
       if (!syncResult.success && syncResult.errors.length > 0) {
         return json({ 
@@ -1103,8 +1107,34 @@ export default function Templates() {
   };
 
   const renderTemplateItem = (template: any, isVariant: boolean = false) => {
-    const { id, name, thumbnail, colorVariant, shopifyVariantId, isColorVariant } = template;
-    const media = thumbnail ? (
+    const { id, name, thumbnail, frontThumbnail, backThumbnail, colorVariant, shopifyVariantId, isColorVariant, frontCanvasData, backCanvasData } = template;
+    const isDualSided = !!(frontCanvasData || backCanvasData);
+    
+    // For dual-sided templates, show both thumbnails
+    const media = (frontThumbnail || backThumbnail) ? (
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <div>
+          <Text variant="bodySm" tone="subdued" as="p" style={{ fontSize: '11px', marginBottom: '4px' }}>
+            Front
+          </Text>
+          <Thumbnail
+            source={frontThumbnail || "https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"}
+            alt={`${name} - Front`}
+            size="medium"
+          />
+        </div>
+        <div>
+          <Text variant="bodySm" tone="subdued" as="p" style={{ fontSize: '11px', marginBottom: '4px' }}>
+            Back
+          </Text>
+          <Thumbnail
+            source={backThumbnail || "https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"}
+            alt={`${name} - Back`}
+            size="medium"
+          />
+        </div>
+      </div>
+    ) : thumbnail ? (
       <Thumbnail
         source={thumbnail}
         alt={name}
@@ -1144,10 +1174,18 @@ export default function Templates() {
             {colorVariant && (
               <span>{colorChips[colorVariant.toLowerCase()] || ''} {colorVariant}</span>
             )}
+            {isDualSided && (
+              <Badge tone="info">Dual-sided</Badge>
+            )}
             {needsAssignment && (
               <Badge tone="warning">Unassigned</Badge>
             )}
           </InlineStack>
+          {isDualSided && (
+            <Text variant="bodySm" tone="subdued" as="p">
+              Front: {frontCanvasData ? '✅' : '❌'} | Back: {backCanvasData ? '✅' : '❌'}
+            </Text>
+          )}
         </div>
         <ButtonGroup>
           <Button
