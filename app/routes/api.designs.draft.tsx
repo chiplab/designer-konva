@@ -8,6 +8,19 @@ import {
 } from "../services/s3.server";
 
 export async function action({ request }: ActionFunctionArgs) {
+  // Handle CORS preflight requests
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, x-shopify-shop-domain",
+        "Access-Control-Max-Age": "86400", // Cache preflight for 24 hours
+      },
+    });
+  }
+
   if (request.method !== "POST") {
     return json({ error: "Method not allowed" }, { status: 405 });
   }
@@ -104,12 +117,25 @@ export async function action({ request }: ActionFunctionArgs) {
         ...design,
         thumbnail: thumbnailUrl,
       },
+    }, {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, x-shopify-shop-domain",
+      },
     });
   } catch (error) {
     console.error("Error creating draft:", error);
     return json(
       { error: "Failed to create draft" },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, x-shopify-shop-domain",
+        },
+      }
     );
   }
 }

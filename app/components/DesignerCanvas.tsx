@@ -172,22 +172,16 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   const [containerSize, setContainerSize] = React.useState({ width: 800, height: 600 });
   // Support for S3 URLs - use variant-specific image if available
   const getVariantImage = () => {
-    console.log('[getVariantImage] Starting image resolution:', {
-      hasInitialTemplate: !!initialTemplate,
-      hasLayoutVariant: !!layoutVariant,
-      hasShopifyVariant: !!shopifyVariant,
-      hasProductLayout: !!productLayout,
-    });
+    // Only use S3 URLs from saved templates or layout variants
+    // No fallbacks - if image is missing, let it 404
     
-    // Priority 1: Use base image from initial template canvas data if available
-    // This handles the case when loading from a saved design
+    // Use base image from saved template canvas data
     if (initialTemplate?.canvasData) {
       try {
         const canvasData = typeof initialTemplate.canvasData === 'string' 
           ? JSON.parse(initialTemplate.canvasData) 
           : initialTemplate.canvasData;
         if (canvasData?.assets?.baseImage) {
-          console.log('[getVariantImage] Using base image from canvas data:', canvasData.assets.baseImage);
           return canvasData.assets.baseImage;
         }
       } catch (e) {
@@ -195,38 +189,13 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       }
     }
     
-    // Priority 2: Use layout variant image if available (new layout system)
+    // Use layout variant S3 image
     if (layoutVariant?.baseImageUrl) {
-      console.log('[getVariantImage] Using layout variant image:', layoutVariant.baseImageUrl);
       return layoutVariant.baseImageUrl;
     }
     
-    // Priority 3: Use Shopify variant image if creating new template
-    if (shopifyVariant?.image?.url) {
-      console.log('[getVariantImage] Using Shopify variant image:', shopifyVariant.image.url);
-      return shopifyVariant.image.url;
-    }
-    
-    // Priority 4: Use variant image from productLayout if available (legacy)
-    if (productLayout && initialTemplate?.colorVariant) {
-      // Try to find a variant image for the template's color
-      // We'll need to match against all patterns since we don't know which one yet
-      const variantImages = productLayout.variantImages || {};
-      const color = initialTemplate.colorVariant;
-      
-      // Look for any variant image with this color
-      for (const [key, url] of Object.entries(variantImages)) {
-        if (key.startsWith(`${color}-`)) {
-          console.log('[getVariantImage] Using productLayout variant image:', url);
-          return url as string;
-        }
-      }
-    }
-    
-    // Priority 5: Fall back to base image
-    const fallback = productLayout?.baseImageUrl || '/media/images/8-spot-red-base-image.png';
-    console.log('[getVariantImage] Using fallback image:', fallback);
-    return fallback;
+    // Return empty string to trigger 404 if no S3 image found
+    return '';
   };
   
   const baseImageUrl = getVariantImage(); // Read-only base image based on variant

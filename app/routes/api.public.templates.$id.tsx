@@ -1,8 +1,26 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
+import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import db from "../db.server";
 
-export async function loader({ params }: LoaderFunctionArgs) {
+// Handle OPTIONS requests
+export async function action({ request }: ActionFunctionArgs) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "86400", // Cache preflight for 24 hours
+      },
+    });
+  }
+  
+  return json({ error: "Method not allowed" }, { status: 405 });
+}
+
+export async function loader({ request, params }: LoaderFunctionArgs) {
+
   const { id } = params;
 
   if (!id) {
@@ -33,9 +51,23 @@ export async function loader({ params }: LoaderFunctionArgs) {
       name: template.name,
     };
 
-    return json({ template: templateData });
+    return json({ template: templateData }, {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Cache-Control": "public, max-age=300", // Cache for 5 minutes
+      },
+    });
   } catch (error) {
     console.error("Error loading template:", error);
-    return json({ error: "Failed to load template" }, { status: 500 });
+    return json({ error: "Failed to load template" }, { 
+      status: 500,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      },
+    });
   }
 }
