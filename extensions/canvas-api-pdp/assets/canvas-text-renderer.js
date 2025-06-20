@@ -604,6 +604,50 @@ if (typeof CanvasTextRenderer === 'undefined') {
     
     return state;
   }
+  
+  async loadCanvasState(canvasState) {
+    if (!canvasState) return;
+    
+    // Preserve the current template's base image if it exists
+    const currentBaseImage = this.template?.assets?.baseImage;
+    
+    // Set the template to the provided canvas state
+    this.template = canvasState;
+    
+    // Restore the original base image if we had one and the new state doesn't
+    if (currentBaseImage && (!this.template.assets || !this.template.assets.baseImage)) {
+      if (!this.template.assets) {
+        this.template.assets = {};
+      }
+      this.template.assets.baseImage = currentBaseImage;
+    }
+    
+    // Clear any previous text updates since we're loading a full state
+    this.textUpdates = {};
+    
+    // Re-initialize the stage if dimensions changed
+    if (this.stage) {
+      const currentWidth = this.stage.width();
+      const currentHeight = this.stage.height();
+      
+      if (currentWidth !== canvasState.dimensions.width || 
+          currentHeight !== canvasState.dimensions.height) {
+        this.stage.destroy();
+        this.initializeStage();
+      }
+    } else {
+      this.initializeStage();
+    }
+    
+    // Load fonts used in the new state
+    await this.loadTemplateFonts();
+    
+    // Preload images
+    await this.preloadImages();
+    
+    // Render with the new state
+    this.render();
+  }
 
   destroy() {
     if (this.stage) {

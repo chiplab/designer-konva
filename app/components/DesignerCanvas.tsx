@@ -881,13 +881,22 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     if (backgroundColor === 'linear-gradient') {
       backgroundGradient = {
         type: 'linear',
-        colorStops: [0, '#c8102e', 1, '#ffaaaa']
+        colorStops: (window as any).__tempBackgroundGradient?.type === 'linear' 
+          ? (window as any).__tempBackgroundGradient.colorStops 
+          : [0, '#c8102e', 1, '#ffaaaa']
       };
     } else if (backgroundColor === 'radial-gradient') {
       backgroundGradient = {
         type: 'radial',
-        colorStops: [0, '#c8102e', 1, '#ffaaaa']
+        colorStops: (window as any).__tempBackgroundGradient?.type === 'radial'
+          ? (window as any).__tempBackgroundGradient.colorStops
+          : [0, '#c8102e', 1, '#ffaaaa']
       };
+    }
+    
+    // Debug logging for gradient colors
+    if (backgroundGradient) {
+      console.log('[DesignerCanvas] Capturing background gradient:', backgroundGradient);
     }
     
     // Debug: Log z-index values
@@ -2616,6 +2625,13 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
               <button
                 onClick={() => {
                   setBackgroundColor('linear-gradient');
+                  // Initialize gradient data if not already set
+                  if (!(window as any).__tempBackgroundGradient || (window as any).__tempBackgroundGradient.type !== 'linear') {
+                    (window as any).__tempBackgroundGradient = {
+                      type: 'linear',
+                      colorStops: [0, '#c8102e', 1, '#ffaaaa']
+                    };
+                  }
                   setShowBackgroundColorPicker(false);
                 }}
                 style={{
@@ -2643,6 +2659,13 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
               <button
                 onClick={() => {
                   setBackgroundColor('radial-gradient');
+                  // Initialize gradient data if not already set
+                  if (!(window as any).__tempBackgroundGradient || (window as any).__tempBackgroundGradient.type !== 'radial') {
+                    (window as any).__tempBackgroundGradient = {
+                      type: 'radial',
+                      colorStops: [0, '#c8102e', 1, '#ffaaaa']
+                    };
+                  }
                   setShowBackgroundColorPicker(false);
                 }}
                 style={{

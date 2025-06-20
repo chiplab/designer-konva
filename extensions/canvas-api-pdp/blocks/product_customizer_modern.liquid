@@ -225,7 +225,55 @@
               await customizer.handleVariantChange(variantId, templateId);
             }
             
-            // Check for global text state and regenerate preview if needed
+            // Check for global canvas state from full designer first
+            const globalStateKey = 'customization_global_state';
+            const savedGlobalState = localStorage.getItem(globalStateKey);
+            
+            if (savedGlobalState) {
+              try {
+                const globalData = JSON.parse(savedGlobalState);
+                if (globalData.canvasState && globalData.timestamp && Date.now() - globalData.timestamp < 30 * 24 * 60 * 60 * 1000) {
+                  // We have global canvas state from full designer
+                  console.log('[ProductCustomizer] Regenerating preview for variant change with full designer state');
+                  
+                  // Update the global flag
+                  hasActiveCustomization = true;
+                  
+                  // Add loading state to product image
+                  const mainProductImage = document.querySelector(
+                    '.media-gallery img:first-of-type, ' +
+                    '.product-media img:first-of-type, ' +
+                    '.product__media--featured img, ' +
+                    '[data-product-featured-image]'
+                  );
+                  
+                  if (mainProductImage) {
+                    // Add loading state
+                    mainProductImage.style.opacity = '0.7';
+                    mainProductImage.style.filter = 'grayscale(50%)';
+                    mainProductImage.style.transition = 'opacity 0.3s, filter 0.3s';
+                  }
+                  
+                  // Generate preview with full canvas state
+                  if (typeof generateVariantPreviewWithCanvasState === 'function') {
+                    await generateVariantPreviewWithCanvasState(variantId, templateId, globalData.canvasState);
+                  } else {
+                    console.log('[ProductCustomizer] Waiting for resources to load before generating preview');
+                    setTimeout(async () => {
+                      if (typeof generateVariantPreviewWithCanvasState === 'function') {
+                        await generateVariantPreviewWithCanvasState(variantId, templateId, globalData.canvasState);
+                      }
+                    }, 500);
+                  }
+                  
+                  return; // Skip other checks
+                }
+              } catch (e) {
+                console.error('Error parsing global canvas state:', e);
+              }
+            }
+            
+            // Otherwise check for global text state and regenerate preview if needed
             const globalTextKey = 'customization_global_text';
             const savedText = localStorage.getItem(globalTextKey);
             
@@ -316,15 +364,31 @@
         let hasActiveCustomization = false;
         
         // Check initial state for customization
-        const globalTextKey = 'customization_global_text';
-        const savedText = localStorage.getItem(globalTextKey);
-        if (savedText) {
+        // First check for global canvas state from full designer
+        const globalStateKey = 'customization_global_state';
+        const savedGlobalState = localStorage.getItem(globalStateKey);
+        if (savedGlobalState) {
           try {
-            const textData = JSON.parse(savedText);
-            if (textData.textUpdates && Object.keys(textData.textUpdates).length > 0) {
+            const globalData = JSON.parse(savedGlobalState);
+            if (globalData.canvasState && globalData.timestamp && Date.now() - globalData.timestamp < 30 * 24 * 60 * 60 * 1000) {
               hasActiveCustomization = true;
+              console.log('[ProductCustomizer] Active customization from full designer detected');
             }
           } catch (e) {}
+        }
+        
+        // Also check for legacy text-only customization
+        if (!hasActiveCustomization) {
+          const globalTextKey = 'customization_global_text';
+          const savedText = localStorage.getItem(globalTextKey);
+          if (savedText) {
+            try {
+              const textData = JSON.parse(savedText);
+              if (textData.textUpdates && Object.keys(textData.textUpdates).length > 0) {
+                hasActiveCustomization = true;
+              }
+            } catch (e) {}
+          }
         }
         
         // Listen for variant changes - try multiple event patterns
