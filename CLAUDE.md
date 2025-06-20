@@ -419,6 +419,47 @@ The modal provides a streamlined customization experience:
 - **Gradient background support**: Renders template background gradients correctly
 - **Bold text rendering**: Properly handles bold fonts in canvas renderer
 
+### State Management Between Full Designer and Product Customizer
+
+The system maintains two types of state for product customization:
+
+1. **Text-Only State** (`customization_global_text`):
+   - Saved when users make text changes in the product customizer modal
+   - Contains only text updates, preserving variant-specific colors and backgrounds
+   - Applied on top of the current variant's template design
+
+2. **Full Canvas State** (`customization_global_state`):
+   - Saved ONLY when users click "Done" in the full designer (`app/routes/full.tsx`)
+   - Contains complete design state: backgrounds, colors, positions, etc.
+   - Becomes the authoritative design for ALL variants (except base images)
+   - Once saved, all variants use this state as their base design
+
+### State Flow:
+
+1. **Before Full Designer**:
+   - Each variant uses its own template with specific colors/backgrounds
+   - Text changes made in product customizer preserve variant properties
+   - Users see different colors when switching variants
+
+2. **After Full Designer** (user clicks "Done"):
+   - Full canvas state is saved globally
+   - ALL variants now use this saved state as their design base
+   - Base images remain variant-specific for product identification
+   - Further text changes apply on top of this global design state
+
+3. **Variant Switching Behavior**:
+   - System checks for global canvas state first
+   - If found: Loads variant's base image + applies global design
+   - If not found: Checks for text-only updates and applies them to variant's template
+   - Preview automatically regenerates when switching variants
+
+### Implementation Details:
+
+- **Message Listener** (lines 1146-1163): Saves full canvas state when receiving "design-saved" from full designer
+- **saveTextState()** (lines 1579-1587): Only saves text updates, not full canvas state
+- **handleVariantChange()** (lines 1606-1686): Applies appropriate state based on what's available
+- **generateVariantPreviewWithCanvasState()**: Renders previews with full canvas state + variant base image
+
 ### Implementation Notes
 
 1. **Metafield Mutation**: Use `metafieldsSet` mutation instead of `productVariantUpdate`:

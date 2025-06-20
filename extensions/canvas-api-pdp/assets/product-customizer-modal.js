@@ -342,11 +342,35 @@ if (typeof ProductCustomizerModal === 'undefined') {
       document.body.style.overflow = 'hidden';
     }
     
-    // First check for global text state (shared across ALL variants)
+    // First check for global canvas state from full designer
+    const globalStateKey = `customization_global_state`;
+    const savedGlobalState = localStorage.getItem(globalStateKey);
+    let globalCanvasState = null;
+    let globalTemplateColors = null;
+    
+    if (savedGlobalState) {
+      try {
+        const globalData = JSON.parse(savedGlobalState);
+        // Check if data is less than 30 days old
+        if (globalData.timestamp && Date.now() - globalData.timestamp < 30 * 24 * 60 * 60 * 1000) {
+          console.log('[ProductCustomizer] Found global canvas state from full designer');
+          globalCanvasState = globalData.canvasState;
+          globalTemplateColors = globalData.templateColors;
+          // Store template colors globally for batch renderer
+          if (globalTemplateColors) {
+            window.__TEMPLATE_COLORS__ = globalTemplateColors;
+          }
+        }
+      } catch (e) {
+        console.error('Error loading global canvas state:', e);
+      }
+    }
+    
+    // Then check for global text state (shared across ALL variants) - legacy support
     const globalTextState = this.loadTextState();
     let savedTextUpdates = null;
     
-    if (globalTextState && globalTextState.textUpdates) {
+    if (!globalCanvasState && globalTextState && globalTextState.textUpdates) {
       savedTextUpdates = globalTextState.textUpdates;
       this.savedTextUpdates = globalTextState.textUpdates;
     }
@@ -421,8 +445,32 @@ if (typeof ProductCustomizerModal === 'undefined') {
       await this.renderer.loadTemplate(this.options.templateId);
     }
     
-    // Apply saved text updates if available
-    if (savedTextUpdates) {
+    // Apply global canvas state if available (from full designer)
+    if (globalCanvasState) {
+      console.log('[ProductCustomizer] Applying global canvas state from full designer');
+      // Wait a moment for the template to fully load
+      setTimeout(() => {
+        // Load the full canvas state
+        this.renderer.loadCanvasState(globalCanvasState);
+        
+        // Update the preview
+        this.updatePreview();
+        
+        // Generate multi-variant previews with the saved state
+        setTimeout(() => {
+          this.currentPreviewUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+          this.updateMainProductImage();
+          this.updateVariantSwatches();
+          
+          // Generate all variant previews
+          if (window.__TEMPLATE_COLORS__ && window.__TEMPLATE_COLORS__.length > 0) {
+            this.generateAllColorVariantPreviews(globalCanvasState);
+          }
+        }, 200);
+      }, 100);
+    }
+    // Apply saved text updates if available (legacy support)
+    else if (savedTextUpdates) {
       // Wait a moment for the template to fully load
       setTimeout(() => {
         Object.keys(savedTextUpdates).forEach(elementId => {
@@ -1095,6 +1143,25 @@ if (typeof ProductCustomizerModal === 'undefined') {
           timestamp: Date.now()
         }));
         
+        // IMPORTANT: Save the full canvas state globally so it persists across variant switches
+        if (event.data.canvasState) {
+          console.log('[ProductCustomizer] Saving global canvas state from full designer');
+          
+          // Clone the canvas state and remove the base image to keep variant-specific images
+          const globalCanvasState = JSON.parse(JSON.stringify(event.data.canvasState));
+          if (globalCanvasState.assets) {
+            delete globalCanvasState.assets.baseImage;
+          }
+          
+          const globalStateKey = `customization_global_state`;
+          localStorage.setItem(globalStateKey, JSON.stringify({
+            canvasState: globalCanvasState,
+            templateColors: event.data.templateColors,
+            designId: event.data.designId,
+            timestamp: Date.now()
+          }));
+        }
+        
         // Update the product page image directly
         const mainProductImage = document.querySelector(
           '.media-gallery img:first-of-type, ' +
@@ -1510,6 +1577,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
   }
   
   saveTextState() {
+    // Save only text updates - don't save full canvas state for text-only changes
+    // Full canvas state should only be saved when coming from the full designer
     const textKey = `customization_global_text`;
     localStorage.setItem(textKey, JSON.stringify({
       textUpdates: this.getCurrentTextUpdates(),
@@ -1544,31 +1613,75 @@ if (typeof ProductCustomizerModal === 'undefined') {
       return;
     }
     
-    // Check if we have global text to apply
-    const globalTextState = this.loadTextState();
-    if (globalTextState && globalTextState.textUpdates) {
-      // We have saved text, regenerate preview with new variant
-      console.log('[ProductCustomizer] Regenerating preview for variant change with saved text');
+    // First check for global canvas state from full designer
+    const globalStateKey = `customization_global_state`;
+    const savedGlobalState = localStorage.getItem(globalStateKey);
+    let globalCanvasState = null;
+    
+    if (savedGlobalState) {
+      try {
+        const globalData = JSON.parse(savedGlobalState);
+        if (globalData.timestamp && Date.now() - globalData.timestamp < 30 * 24 * 60 * 60 * 1000) {
+          console.log('[ProductCustomizer] Found global canvas state for variant change');
+          globalCanvasState = globalData.canvasState;
+          
+          // Store template colors if available
+          if (globalData.templateColors) {
+            window.__TEMPLATE_COLORS__ = globalData.templateColors;
+          }
+        }
+      } catch (e) {
+        console.error('Error loading global canvas state:', e);
+      }
+    }
+    
+    // If we have global canvas state, apply it
+    if (globalCanvasState) {
+      console.log('[ProductCustomizer] Applying global canvas state for variant change');
       
-      // Load the new template
+      // Load the new template first
       await this.renderer.loadTemplate(newTemplateId);
       
-      // Apply the saved text
+      // Apply the saved canvas state
       setTimeout(() => {
-        Object.keys(globalTextState.textUpdates).forEach(elementId => {
-          this.renderer.updateText(elementId, globalTextState.textUpdates[elementId]);
-        });
+        this.renderer.loadCanvasState(globalCanvasState);
         
         // Update preview
         this.updatePreview();
         
         // Generate multi-variant previews if needed
         if (window.__TEMPLATE_COLORS__ && window.__TEMPLATE_COLORS__.length > 0) {
-          // Get canvas state for batch rendering
-          const canvasState = this.renderer.getCanvasState();
-          this.generateAllColorVariantPreviews(canvasState);
+          this.generateAllColorVariantPreviews(globalCanvasState);
         }
       }, 100);
+    }
+    // Otherwise check for global text to apply (legacy support)
+    else {
+      const globalTextState = this.loadTextState();
+      if (globalTextState && globalTextState.textUpdates) {
+        // We have saved text, regenerate preview with new variant
+        console.log('[ProductCustomizer] Regenerating preview for variant change with saved text');
+        
+        // Load the new template
+        await this.renderer.loadTemplate(newTemplateId);
+        
+        // Apply the saved text
+        setTimeout(() => {
+          Object.keys(globalTextState.textUpdates).forEach(elementId => {
+            this.renderer.updateText(elementId, globalTextState.textUpdates[elementId]);
+          });
+          
+          // Update preview
+          this.updatePreview();
+          
+          // Generate multi-variant previews if needed
+          if (window.__TEMPLATE_COLORS__ && window.__TEMPLATE_COLORS__.length > 0) {
+            // Get canvas state for batch rendering
+            const canvasState = this.renderer.getCanvasState();
+            this.generateAllColorVariantPreviews(canvasState);
+          }
+        }, 100);
+      }
     }
   }
 
@@ -2208,9 +2321,91 @@ if (typeof ProductCustomizerModal === 'undefined') {
     }
   }
 
+  // Global function to generate variant preview with full canvas state
+  async function generateVariantPreviewWithCanvasState(variantId, templateId, canvasState) {
+    console.log('[generateVariantPreviewWithCanvasState] Starting preview generation', { variantId, templateId });
+    
+    try {
+      // Ensure required resources are loaded
+      await ensureResourcesLoaded();
+      
+      // Check if we have the CanvasTextRenderer available
+      if (typeof CanvasTextRenderer === 'undefined') {
+        // Load canvas text renderer if not already loaded
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = window.Shopify.routes.root + 'cdn/shop/t/1/assets/canvas-text-renderer.js?v=' + Date.now();
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+      }
+      
+      // Create a temporary container
+      const tempContainer = document.createElement('div');
+      tempContainer.style.cssText = 'position: absolute; left: -9999px; width: 600px; height: 400px;';
+      document.body.appendChild(tempContainer);
+      
+      // Initialize a temporary renderer
+      const renderer = new CanvasTextRenderer(tempContainer, {
+        width: 600,
+        height: 400,
+        apiUrl: '/apps/designer'
+      });
+      
+      try {
+        // Load the template first to get the base image
+        await renderer.loadTemplate(templateId);
+        
+        // Then apply the full canvas state (which excludes base image)
+        await renderer.loadCanvasState(canvasState);
+        
+        // Generate preview
+        const previewUrl = renderer.getDataURL({ pixelRatio: 1 });
+        
+        // Update the product image
+        updateProductImageWithCustomization(previewUrl, true);
+        
+        console.log('[generateVariantPreviewWithCanvasState] Preview generated successfully');
+        
+      } finally {
+        // Clean up
+        renderer.destroy();
+        document.body.removeChild(tempContainer);
+      }
+      
+    } catch (error) {
+      console.error('[generateVariantPreviewWithCanvasState] Error generating preview:', error);
+      
+      // Fallback: Just update the thumbnail from the template if available
+      try {
+        // Check if we have a cached preview for this variant
+        const customizationKey = `customization_${variantId}`;
+        const savedCustomization = localStorage.getItem(customizationKey);
+        
+        if (savedCustomization) {
+          const data = JSON.parse(savedCustomization);
+          if (data.thumbnail) {
+            updateProductImageWithCustomization(data.thumbnail);
+            return;
+          }
+        }
+        
+        // Otherwise try to get the template thumbnail from the page
+        const templateThumb = document.querySelector(`[data-template-thumbnail="${templateId}"]`);
+        if (templateThumb && templateThumb.src) {
+          updateProductImageWithCustomization(templateThumb.src);
+        }
+      } catch (e) {
+        console.error('[generateVariantPreviewWithCanvasState] Fallback failed:', e);
+      }
+    }
+  }
+
   // Export for use in theme
   window.ProductCustomizerModal = ProductCustomizerModal;
   window.ProductCustomizerBatchRenderer = ProductCustomizerBatchRenderer;
   window.generateVariantPreviewWithText = generateVariantPreviewWithText;
+  window.generateVariantPreviewWithCanvasState = generateVariantPreviewWithCanvasState;
   window.updateProductImageWithCustomization = updateProductImageWithCustomization;
 }
