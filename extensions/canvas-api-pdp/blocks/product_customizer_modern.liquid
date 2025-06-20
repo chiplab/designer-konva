@@ -254,7 +254,10 @@
                     mainProductImage.style.transition = 'opacity 0.3s, filter 0.3s';
                   }
                   
-                  // Generate preview with full canvas state
+                  // First restore all cached variant swatches
+                  restoreVariantSwatchesOnLoad();
+                  
+                  // Then generate preview for the current variant
                   if (typeof generateVariantPreviewWithCanvasState === 'function') {
                     await generateVariantPreviewWithCanvasState(variantId, templateId, globalData.canvasState);
                   } else {
@@ -324,6 +327,9 @@
                     setTimeout(() => observer.disconnect(), 5000);
                   }
                   
+                  // First restore all cached variant swatches
+                  restoreVariantSwatchesOnLoad();
+                  
                   // Check if the function is available (script is loaded)
                   if (typeof generateVariantPreviewWithText === 'function') {
                     await generateVariantPreviewWithText(variantId, templateId, textData.textUpdates);
@@ -347,6 +353,11 @@
             
             // Only check for saved customization if we don't have global text
             checkSavedCustomization(variantId);
+            
+            // Always restore cached swatches if we have active customization
+            if (hasActiveCustomization) {
+              restoreVariantSwatchesOnLoad();
+            }
           } else {
             // Hide button if variant has no template
             customizeBtn.parentElement.style.display = 'none';
@@ -399,6 +410,9 @@
             if (hasActiveCustomization) {
               event.preventDefault();
               event.stopImmediatePropagation();
+              
+              // Protect customized swatches from being reset
+              protectCustomizedSwatches();
             }
             handleVariantChange(event.detail.variant.id);
           }
@@ -410,6 +424,9 @@
             if (hasActiveCustomization) {
               event.preventDefault();
               event.stopImmediatePropagation();
+              
+              // Protect customized swatches from being reset
+              protectCustomizedSwatches();
             }
             handleVariantChange(event.detail.variant.id);
           }
@@ -422,6 +439,10 @@
           const currentVariantId = urlParams.get('variant');
           if (currentVariantId && currentVariantId !== lastVariantId) {
             lastVariantId = currentVariantId;
+            // Protect swatches before handling change
+            if (hasActiveCustomization) {
+              protectCustomizedSwatches();
+            }
             handleVariantChange(currentVariantId);
           }
         }, 500);
@@ -429,6 +450,10 @@
         // Also listen for form changes on variant selectors
         document.querySelectorAll('[name="id"], [name="variant"]').forEach(function(selector) {
           selector.addEventListener('change', function(event) {
+            // Protect swatches before handling change
+            if (hasActiveCustomization) {
+              protectCustomizedSwatches();
+            }
             handleVariantChange(event.target.value);
           });
         });
@@ -571,6 +596,35 @@
         
         swatch.setAttribute('style', `--swatch-background: url(${previewUrl});`);
         swatch.setAttribute('data-multi-preview', 'true');
+      }
+      
+      // Function to protect customized swatches from being reset by theme
+      function protectCustomizedSwatches() {
+        // Find all customized swatches
+        const customizedSwatches = document.querySelectorAll('[data-multi-preview="true"]');
+        
+        customizedSwatches.forEach(swatch => {
+          // Store current customized background
+          const currentStyle = swatch.getAttribute('style');
+          
+          // Use MutationObserver to prevent changes
+          const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+              if (mutation.attributeName === 'style' && 
+                  swatch.getAttribute('style') !== currentStyle &&
+                  swatch.dataset.multiPreview === 'true') {
+                // Theme tried to reset the swatch, restore our custom style
+                swatch.setAttribute('style', currentStyle);
+              }
+            });
+          });
+          
+          // Observe for a short time
+          observer.observe(swatch, { attributes: true, attributeFilter: ['style'] });
+          
+          // Stop observing after 2 seconds
+          setTimeout(() => observer.disconnect(), 2000);
+        });
       }
       
       // Helper function to get variant title by ID
