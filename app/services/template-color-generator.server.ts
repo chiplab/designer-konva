@@ -366,7 +366,7 @@ export async function generateColorVariants(masterTemplateId: string, shop: stri
   for (const targetColor of targetColors) {
     try {
       // Process canvas data with color replacement
-      let newCanvasData = processCanvasElement(canvasData, sourceColor, targetColor);
+      let newCanvasData = processCanvasElement(canvasData, sourceColor, targetColor)
       
       // Process top-level backgroundColor
       if (newCanvasData.backgroundColor && typeof newCanvasData.backgroundColor === 'string') {
@@ -625,7 +625,7 @@ export async function generateAllVariants(masterTemplateId: string, shop: string
       }
       
       // Process canvas data with color replacement
-      let newCanvasData = processCanvasElement(canvasData, sourceColor, targetColor);
+      let newCanvasData = processCanvasElement(canvasData, sourceColor, targetColor)
       
       // Process top-level backgroundColor
       if (newCanvasData.backgroundColor && typeof newCanvasData.backgroundColor === 'string') {

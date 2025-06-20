@@ -54,6 +54,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       },
       include: {
         productLayout: true,
+        layoutVariant: {
+          include: {
+            layout: true,
+          },
+        },
       },
     });
     
@@ -75,6 +80,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
     
     productLayout = template?.productLayout;
+    layoutVariant = template?.layoutVariant;
   } else if (productId && variantId) {
     // Creating new template for specific variant
     try {

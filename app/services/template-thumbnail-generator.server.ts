@@ -224,19 +224,43 @@ export async function generateTemplateThumbnail(
     // Collect all elements into a single array with their types
     const allElements: any[] = [];
     
+    // Add elements with proper z-index handling
+    let defaultZIndex = 0;
+    
+    // Add image elements first (usually background)
+    state.elements.imageElements?.forEach((element: any) => {
+      allElements.push({ 
+        ...element, 
+        type: 'image',
+        zIndex: element.zIndex !== undefined ? element.zIndex : defaultZIndex++
+      });
+    });
+    
     // Add text elements
     state.elements.textElements?.forEach((element: any) => {
-      allElements.push({ ...element, type: 'text' });
+      allElements.push({ 
+        ...element, 
+        type: 'text',
+        zIndex: element.zIndex !== undefined ? element.zIndex : defaultZIndex++
+      });
     });
     
     // Add curved text elements
     state.elements.curvedTextElements?.forEach((element: any) => {
-      allElements.push({ ...element, type: 'curvedText' });
+      allElements.push({ 
+        ...element, 
+        type: 'curvedText',
+        zIndex: element.zIndex !== undefined ? element.zIndex : defaultZIndex++
+      });
     });
     
-    // Add image elements
-    state.elements.imageElements?.forEach((element: any) => {
-      allElements.push({ ...element, type: 'image' });
+    // Add gradient text elements if they exist
+    state.elements.gradientTextElements?.forEach((element: any) => {
+      allElements.push({ 
+        ...element, 
+        type: 'gradientText',
+        zIndex: element.zIndex !== undefined ? element.zIndex : defaultZIndex++
+      });
     });
     
     // Sort by zIndex (lower values render first)

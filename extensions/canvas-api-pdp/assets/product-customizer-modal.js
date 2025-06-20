@@ -1633,7 +1633,6 @@ if (typeof ProductCustomizerModal === 'undefined') {
     }
 
     async renderSinglePreview({ canvasState, baseImageUrl, options }) {
-      console.log('[BatchRenderer] renderSinglePreview started');
       const width = options.width || 128;
       const height = options.height || 128;
       const pixelRatio = options.pixelRatio || 0.5;
@@ -1702,11 +1701,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
           contentGroup.add(clipGroup);
           
           // Render background first inside clipped area
-          console.log('[BatchRenderer] Rendering background with clipping');
           await this.renderBackground(clipGroup, canvasState);
           
           // Render all elements inside the clipped area
-          console.log('[BatchRenderer] Rendering elements with clipping');
           await this.renderElements(clipGroup, canvasState.elements, canvasState.designableArea);
         } else {
           // No clipping needed, render directly to content group
@@ -1800,6 +1797,19 @@ if (typeof ProductCustomizerModal === 'undefined') {
           fillLinearGradientStartPoint: { x: 0, y: 0 },
           fillLinearGradientEndPoint: { x: designableArea.width, y: 0 },
           fillLinearGradientColorStops: backgroundGradient.colorStops || [0, '#c8102e', 1, '#ffaaaa']
+        });
+      } else if (backgroundColor === 'radial-gradient' && backgroundGradient) {
+        bgRect = new Konva.Rect({
+          x: designableArea.x,
+          y: designableArea.y,
+          width: designableArea.width,
+          height: designableArea.height,
+          cornerRadius: designableArea.cornerRadius || 0,
+          fillRadialGradientStartPoint: { x: designableArea.width / 2, y: designableArea.height / 2 },
+          fillRadialGradientEndPoint: { x: designableArea.width / 2, y: designableArea.height / 2 },
+          fillRadialGradientStartRadius: 0,
+          fillRadialGradientEndRadius: Math.min(designableArea.width, designableArea.height) / 2,
+          fillRadialGradientColorStops: backgroundGradient.colorStops || [0, '#c8102e', 1, '#ffaaaa']
         });
       } else {
         bgRect = new Konva.Rect({

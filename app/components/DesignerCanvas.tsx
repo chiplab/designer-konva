@@ -172,6 +172,13 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   const [containerSize, setContainerSize] = React.useState({ width: 800, height: 600 });
   // Support for S3 URLs - use variant-specific image if available
   const getVariantImage = () => {
+    console.log('[getVariantImage] Starting image resolution:', {
+      hasInitialTemplate: !!initialTemplate,
+      hasLayoutVariant: !!layoutVariant,
+      hasShopifyVariant: !!shopifyVariant,
+      hasProductLayout: !!productLayout,
+    });
+    
     // Priority 1: Use base image from initial template canvas data if available
     // This handles the case when loading from a saved design
     if (initialTemplate?.canvasData) {
@@ -180,6 +187,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
           ? JSON.parse(initialTemplate.canvasData) 
           : initialTemplate.canvasData;
         if (canvasData?.assets?.baseImage) {
+          console.log('[getVariantImage] Using base image from canvas data:', canvasData.assets.baseImage);
           return canvasData.assets.baseImage;
         }
       } catch (e) {
@@ -189,11 +197,13 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     
     // Priority 2: Use layout variant image if available (new layout system)
     if (layoutVariant?.baseImageUrl) {
+      console.log('[getVariantImage] Using layout variant image:', layoutVariant.baseImageUrl);
       return layoutVariant.baseImageUrl;
     }
     
     // Priority 3: Use Shopify variant image if creating new template
     if (shopifyVariant?.image?.url) {
+      console.log('[getVariantImage] Using Shopify variant image:', shopifyVariant.image.url);
       return shopifyVariant.image.url;
     }
     
@@ -207,13 +217,16 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       // Look for any variant image with this color
       for (const [key, url] of Object.entries(variantImages)) {
         if (key.startsWith(`${color}-`)) {
+          console.log('[getVariantImage] Using productLayout variant image:', url);
           return url as string;
         }
       }
     }
     
     // Priority 5: Fall back to base image
-    return productLayout?.baseImageUrl || '/media/images/8-spot-red-base-image.png';
+    const fallback = productLayout?.baseImageUrl || '/media/images/8-spot-red-base-image.png';
+    console.log('[getVariantImage] Using fallback image:', fallback);
+    return fallback;
   };
   
   const baseImageUrl = getVariantImage(); // Read-only base image based on variant
