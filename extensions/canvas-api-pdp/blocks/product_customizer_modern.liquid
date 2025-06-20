@@ -255,7 +255,7 @@
                   }
                   
                   // First restore all cached variant swatches
-                  restoreVariantSwatchesOnLoad();
+                  restoreVariantSwatchesOnLoad(variantId);
                   
                   // Then generate preview for the current variant
                   if (typeof generateVariantPreviewWithCanvasState === 'function') {
@@ -328,7 +328,7 @@
                   }
                   
                   // First restore all cached variant swatches
-                  restoreVariantSwatchesOnLoad();
+                  restoreVariantSwatchesOnLoad(variantId);
                   
                   // Check if the function is available (script is loaded)
                   if (typeof generateVariantPreviewWithText === 'function') {
@@ -356,7 +356,7 @@
             
             // Always restore cached swatches if we have active customization
             if (hasActiveCustomization) {
-              restoreVariantSwatchesOnLoad();
+              restoreVariantSwatchesOnLoad(variantId);
             }
           } else {
             // Hide button if variant has no template
@@ -466,7 +466,7 @@
         
         // Restore variant swatches if we have global canvas state
         if (hasActiveCustomization) {
-          restoreVariantSwatchesOnLoad();
+          restoreVariantSwatchesOnLoad(initialVariantId);
         }
         
         // Clean up expired localStorage data
@@ -515,11 +515,14 @@
       }
       
       // Function to restore saved variant swatches on page load
-      function restoreVariantSwatchesOnLoad() {
+      function restoreVariantSwatchesOnLoad(variantId) {
         console.log('[ProductCustomizer] Checking for saved variant swatches');
         
+        // Use passed variantId or try to get current from button
+        const currentVariantId = variantId || customizeBtn?.dataset.variantId || '{{ product.selected_or_first_available_variant.id }}';
+        
         // Get current variant info to determine the pattern
-        const currentVariantTitle = getVariantTitleForId(initialVariantId);
+        const currentVariantTitle = getVariantTitleForId(currentVariantId);
         if (!currentVariantTitle) {
           console.log('[ProductCustomizer] Could not determine variant title');
           return;
