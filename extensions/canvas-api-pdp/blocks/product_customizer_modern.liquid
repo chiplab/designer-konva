@@ -36,6 +36,29 @@
   <script>
     let variantChangeCount = 0;
     
+    // Helper function to ensure Konva and other resources are loaded
+    async function ensureResourcesLoaded() {
+      // Check if Konva is already loaded
+      if (typeof Konva !== 'undefined') {
+        return;
+      }
+      
+      // Load Konva if not already loaded
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/konva@9.3.3/konva.min.js';
+        script.onload = () => {
+          console.log('[ensureResourcesLoaded] Konva loaded successfully');
+          resolve();
+        };
+        script.onerror = () => {
+          console.error('[ensureResourcesLoaded] Failed to load Konva');
+          reject(new Error('Failed to load Konva'));
+        };
+        document.head.appendChild(script);
+      });
+    }
+    
     document.addEventListener('DOMContentLoaded', function() {
       // Create a map of variant data
       const variantData = {
@@ -438,6 +461,214 @@
         if (initialVariantId) {
           checkSavedCustomization(initialVariantId);
         }
+        
+        // Regenerate variant swatches if we have global canvas state
+        if (hasActiveCustomization) {
+          regenerateVariantSwatchesOnLoad();
+        }
+      }
+      
+      // Function to regenerate variant swatches on page load
+      async function regenerateVariantSwatchesOnLoad() {
+        console.log('[ProductCustomizer] Regenerating variant swatches on page load');
+        
+        // Get the global canvas state
+        const globalStateKey = 'customization_global_state';
+        const savedGlobalState = localStorage.getItem(globalStateKey);
+        
+        if (!savedGlobalState) {
+          console.log('[ProductCustomizer] No global canvas state found');
+          return;
+        }
+        
+        try {
+          const globalData = JSON.parse(savedGlobalState);
+          if (!globalData.canvasState || !globalData.timestamp || 
+              Date.now() - globalData.timestamp >= 30 * 24 * 60 * 60 * 1000) {
+            console.log('[ProductCustomizer] Global canvas state expired or invalid');
+            return;
+          }
+          
+          console.log('[ProductCustomizer] Valid global canvas state found, regenerating swatches...');
+          
+          // Wait for resources to load
+          await ensureResourcesLoaded();
+          
+          // Wait a bit more for DOM to be fully ready
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Check if batch renderer is available
+          if (typeof ProductCustomizerBatchRenderer === 'undefined') {
+            console.log('[ProductCustomizer] Waiting for batch renderer to load...');
+            // Try to wait for it
+            let attempts = 0;
+            while (typeof ProductCustomizerBatchRenderer === 'undefined' && attempts < 20) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              attempts++;
+            }
+            
+            if (typeof ProductCustomizerBatchRenderer === 'undefined') {
+              console.error('[ProductCustomizer] Batch renderer not available after waiting');
+              return;
+            }
+          }
+          
+          // Get current variant info
+          const currentVariantTitle = getVariantTitleForId(initialVariantId);
+          if (!currentVariantTitle) {
+            console.log('[ProductCustomizer] Could not determine variant title');
+            return;
+          }
+          
+          const parts = currentVariantTitle.split(' / ');
+          const edgePattern = parts.length > 1 ? parts[1].trim() : null;
+          const currentColor = getColorFromTitle(currentVariantTitle);
+          
+          if (!edgePattern || !currentColor) {
+            console.log('[ProductCustomizer] Could not determine pattern or color');
+            return;
+          }
+          
+          console.log(`[ProductCustomizer] Current variant: ${currentColor} / ${edgePattern}`);
+          
+          // Get all color variants for this pattern
+          const colorVariants = getColorVariantsForPatternOnLoad(edgePattern);
+          console.log(`[ProductCustomizer] Found ${colorVariants.length} color variants`);
+          
+          // Create batch renderer
+          const batchRenderer = new ProductCustomizerBatchRenderer();
+          
+          // Process each variant
+          let processedCount = 0;
+          for (const variant of colorVariants) {
+            try {
+              console.log(`[ProductCustomizer] Processing ${variant.color}`);
+              
+              // Get base image URL
+              const baseImageUrl = getBaseImageUrlForVariant(variant.color, edgePattern);
+              if (!baseImageUrl) {
+                console.log(`[ProductCustomizer] No base image for ${variant.color}`);
+                continue;
+              }
+              
+              // Render preview
+              const preview = await batchRenderer.renderVariantPreview(
+                globalData.canvasState,
+                baseImageUrl,
+                { width: 128, height: 128, pixelRatio: 0.5 }
+              );
+              
+              if (preview && variant.element) {
+                // Store original if not already stored
+                if (!variant.element.dataset.originalBackground) {
+                  variant.element.dataset.originalBackground = variant.element.getAttribute('style');
+                }
+                
+                variant.element.setAttribute('style', `--swatch-background: url(${preview});`);
+                variant.element.setAttribute('data-multi-preview', 'true');
+                
+                processedCount++;
+              }
+            } catch (error) {
+              console.error(`[ProductCustomizer] Failed to process ${variant.color}:`, error);
+            }
+          }
+          
+          // Cleanup
+          batchRenderer.destroy();
+          console.log(`[ProductCustomizer] Regenerated ${processedCount} variant swatches`);
+          
+        } catch (error) {
+          console.error('[ProductCustomizer] Error regenerating swatches:', error);
+        }
+      }
+      
+      // Helper function to get variant title by ID
+      function getVariantTitleForId(variantId) {
+        const variantInfo = variantData[variantId];
+        return variantInfo ? variantInfo.title : null;
+      }
+      
+      // Helper function to extract color from variant title
+      function getColorFromTitle(title) {
+        const parts = title.split(' / ');
+        return parts.length > 0 ? parts[0].trim() : null;
+      }
+      
+      // Helper function to get color variants for pattern on page load
+      function getColorVariantsForPatternOnLoad(pattern) {
+        const variants = [];
+        
+        // Find all color swatches
+        const swatches = document.querySelectorAll('.swatch.color');
+        
+        swatches.forEach(swatch => {
+          const colorName = swatch.getAttribute('data-swatch-value') || 
+                            swatch.getAttribute('data-value') ||
+                            swatch.querySelector('span')?.getAttribute('data-swatch-value');
+          
+          if (colorName) {
+            variants.push({
+              color: colorName,
+              element: swatch
+            });
+          }
+        });
+        
+        // If no swatches found, try radio inputs
+        if (variants.length === 0) {
+          const inputs = document.querySelectorAll('input[type="radio"][name*="Color"]');
+          inputs.forEach(input => {
+            const parentLabel = input.closest('label');
+            const swatch = parentLabel?.querySelector('.swatch') || 
+                          (input.nextElementSibling?.classList.contains('swatch') ? input.nextElementSibling : null);
+            
+            if (swatch) {
+              variants.push({
+                color: input.value,
+                element: swatch
+              });
+            }
+          });
+        }
+        
+        return variants;
+      }
+      
+      // Helper function to get base image URL for a variant
+      function getBaseImageUrlForVariant(color, pattern) {
+        // Try to find the swatch element for this color
+        const swatch = document.querySelector(`.swatch[data-swatch-value="${color}"]`) ||
+                      document.querySelector(`.swatch[data-value="${color}"]`);
+        
+        if (swatch) {
+          const style = swatch.getAttribute('style');
+          if (style) {
+            const match = style.match(/url\(([^)]+)\)/);
+            if (match && match[1]) {
+              return match[1].replace(/["']/g, '');
+            }
+          }
+        }
+        
+        // Try by input value
+        const inputs = document.querySelectorAll('input[type="radio"]');
+        for (const input of inputs) {
+          if (input.value === color) {
+            const nextSwatch = input.nextElementSibling;
+            if (nextSwatch?.classList.contains('swatch')) {
+              const style = nextSwatch.getAttribute('style');
+              if (style) {
+                const match = style.match(/url\(([^)]+)\)/);
+                if (match && match[1]) {
+                  return match[1].replace(/["']/g, '');
+                }
+              }
+            }
+          }
+        }
+        
+        return null;
       }
       
       initializeWhenReady();
