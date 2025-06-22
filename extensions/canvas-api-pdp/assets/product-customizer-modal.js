@@ -25,6 +25,15 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.currentPreviewUrl = null; // Store current preview URL
     this.savedTextUpdates = null; // Store saved text updates
     this.textSaveTimer = null; // Timer for auto-saving text state
+    
+    // Dual-sided support
+    this.isDualSided = false;
+    this.frontRenderer = null;
+    this.backRenderer = null;
+    this.frontPreviewUrl = null;
+    this.backPreviewUrl = null;
+    this.injectedThumbs = []; // Track injected thumbnails for cleanup
+    this.galleryStructure = null; // Store detected gallery structure
   }
 
   init() {
@@ -249,6 +258,23 @@ if (typeof ProductCustomizerModal === 'undefined') {
           outline: none;
           border-color: #000;
         }
+        
+        .pcm-text-section {
+          margin-bottom: 20px;
+        }
+        
+        .pcm-text-section:last-child {
+          margin-bottom: 0;
+        }
+        
+        .pcm-section-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: #333;
+          margin-bottom: 12px;
+          padding-bottom: 8px;
+          border-bottom: 1px solid #e5e5e5;
+        }
 
         .pcm-actions {
           display: flex;
@@ -429,6 +455,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
       await this.loadKonva();
     }
     
+    // Detect gallery structure early
+    this.galleryStructure = this.detectGalleryStructure();
+    
     // Initialize renderer
     const canvasContainer = document.getElementById('customizer-canvas');
     this.renderer = new CanvasTextRenderer(canvasContainer, {
@@ -443,6 +472,29 @@ if (typeof ProductCustomizerModal === 'undefined') {
     } else {
       // Load template
       await this.renderer.loadTemplate(this.options.templateId);
+    }
+    
+    // Check if this is a dual-sided template
+    if (this.renderer.isDualSided) {
+      this.isDualSided = true;
+      console.log('Dual-sided template detected');
+      
+      // Initialize second renderer for back side
+      const backCanvasContainer = document.createElement('div');
+      backCanvasContainer.id = 'customizer-canvas-back';
+      backCanvasContainer.style.display = 'none';
+      canvasContainer.parentNode.appendChild(backCanvasContainer);
+      
+      this.backRenderer = new CanvasTextRenderer(backCanvasContainer, {
+        apiUrl: this.options.apiUrl
+      });
+      
+      // Load the same template - it will use back data
+      await this.backRenderer.loadTemplate(this.options.templateId);
+      await this.backRenderer.switchToBack();
+      
+      // Keep front renderer as primary
+      this.frontRenderer = this.renderer;
     }
     
     // Apply global canvas state if available (from full designer)
@@ -537,6 +589,11 @@ if (typeof ProductCustomizerModal === 'undefined') {
     if (mainProductSection) {
       // Search for the active/featured image ONLY within the main product section
       mainProductImage = mainProductSection.querySelector(
+        // Horizon theme specific selectors
+        'media-gallery img:first-of-type, ' +
+        'media-gallery slideshow-component img:first-of-type, ' +
+        'slideshow-component img.selected, ' +
+        'slideshow-component img[aria-selected="true"], ' +
         // Modern theme selectors (Horizons 2025)
         '.media-gallery img:first-of-type, ' +
         '.product-media img:first-of-type, ' +
@@ -667,6 +724,12 @@ if (typeof ProductCustomizerModal === 'undefined') {
     } else {
       // No original images stored, find the main product image directly
       const mainProductImage = document.querySelector(
+        // Horizon theme specific selectors
+        'media-gallery img:first-of-type, ' +
+        'media-gallery slideshow-component img:first-of-type, ' +
+        'slideshow-component img.selected, ' +
+        'slideshow-component img[aria-selected="true"], ' +
+        // Standard selectors
         '.media-gallery img:first-of-type, ' +
         '.product-media img:first-of-type, ' +
         '.product__media--featured img, ' +
@@ -908,14 +971,32 @@ if (typeof ProductCustomizerModal === 'undefined') {
     const previewImage = document.getElementById('preview-image');
     if (!this.renderer || !previewImage) return;
     
-    // Generate preview at 50% resolution
-    const dataUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
-    previewImage.src = dataUrl;
-    previewImage.style.display = 'block';
+    if (this.isDualSided) {
+      // Generate previews for both sides
+      this.frontPreviewUrl = this.frontRenderer.getDataURL({ pixelRatio: 0.5 });
+      this.backPreviewUrl = this.backRenderer.getDataURL({ pixelRatio: 0.5 });
+      
+      // Update current preview to front by default
+      this.currentPreviewUrl = this.frontPreviewUrl;
+      previewImage.src = this.frontPreviewUrl;
+      previewImage.style.display = 'block';
+      
+      // Update main product image with front preview
+      this.updateMainProductImage(this.frontPreviewUrl);
+      
+      // Inject thumbnails into gallery
+      this.injectGalleryThumbs();
+    } else {
+      // Single-sided preview
+      const dataUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+      previewImage.src = dataUrl;
+      previewImage.style.display = 'block';
+      
+      // Update the current preview URL and main product image
+      this.currentPreviewUrl = dataUrl;
+      this.updateMainProductImage(dataUrl);
+    }
     
-    // Update the current preview URL and main product image
-    this.currentPreviewUrl = dataUrl;
-    this.updateMainProductImage();
     this.updateVariantSwatches();
   }
   
@@ -933,45 +1014,153 @@ if (typeof ProductCustomizerModal === 'undefined') {
 
   createTextInputs() {
     const textInputsContainer = this.modal.querySelector('.pcm-text-inputs');
-    const textElements = this.renderer.getAllTextElements();
+    textInputsContainer.innerHTML = '';
     
-    textInputsContainer.innerHTML = textElements.map((element, index) => {
-      // Use saved text if available, otherwise use the element's current text
-      const displayText = this.savedTextUpdates && this.savedTextUpdates[element.id] 
-        ? this.savedTextUpdates[element.id] 
-        : element.text;
+    if (this.isDualSided) {
+      // Get text elements from both sides
+      const bothSides = this.frontRenderer.getAllTextElementsFromBothSides();
+      
+      // Create front section
+      if (bothSides.front.length > 0) {
+        const frontSection = document.createElement('div');
+        frontSection.className = 'pcm-text-section';
         
-      return `
-        <div class="pcm-text-field">
-          <label for="text-${element.id}">
-            ${element.type === 'curved' ? 'Curved Text' : 
-              element.type === 'gradient' ? 'Gradient Text' : 
-              `Text ${index + 1}`}
-          </label>
-          <input 
-            type="text" 
-            id="text-${element.id}" 
-            data-element-id="${element.id}"
-            value="${displayText}"
-            placeholder="Enter your text here"
-          />
-        </div>
-      `;
-    }).join('');
-    
-    // Attach input listeners
-    textInputsContainer.querySelectorAll('input').forEach(input => {
-      input.addEventListener('input', (e) => {
-        this.renderer.updateText(e.target.dataset.elementId, e.target.value);
-        this.debouncedUpdatePreview();
+        const frontTitle = document.createElement('div');
+        frontTitle.className = 'pcm-section-title';
+        frontTitle.textContent = 'Front Side';
+        frontSection.appendChild(frontTitle);
         
-        // Auto-save text state on input change
-        clearTimeout(this.textSaveTimer);
-        this.textSaveTimer = setTimeout(() => {
-          this.saveTextState();
-        }, 1000); // Save after 1 second of no typing
+        bothSides.front.forEach((element, index) => {
+          const fieldDiv = document.createElement('div');
+          fieldDiv.className = 'pcm-text-field';
+          
+          const displayText = this.savedTextUpdates && this.savedTextUpdates[`front_${element.id}`] 
+            ? this.savedTextUpdates[`front_${element.id}`] 
+            : element.text;
+          
+          fieldDiv.innerHTML = `
+            <label for="text-front-${element.id}">
+              ${element.type === 'curved' ? 'Curved Text' : 
+                element.type === 'gradient' ? 'Gradient Text' : 
+                `Line ${index + 1}`}
+            </label>
+            <input 
+              type="text" 
+              id="text-front-${element.id}" 
+              data-element-id="${element.id}"
+              data-side="front"
+              value="${displayText}"
+              placeholder="Enter your text here"
+            />
+          `;
+          
+          frontSection.appendChild(fieldDiv);
+        });
+        
+        textInputsContainer.appendChild(frontSection);
+      }
+      
+      // Create back section
+      if (bothSides.back.length > 0) {
+        const backSection = document.createElement('div');
+        backSection.className = 'pcm-text-section';
+        
+        const backTitle = document.createElement('div');
+        backTitle.className = 'pcm-section-title';
+        backTitle.textContent = 'Back Side';
+        backSection.appendChild(backTitle);
+        
+        bothSides.back.forEach((element, index) => {
+          const fieldDiv = document.createElement('div');
+          fieldDiv.className = 'pcm-text-field';
+          
+          const displayText = this.savedTextUpdates && this.savedTextUpdates[`back_${element.id}`] 
+            ? this.savedTextUpdates[`back_${element.id}`] 
+            : element.text;
+          
+          fieldDiv.innerHTML = `
+            <label for="text-back-${element.id}">
+              ${element.type === 'curved' ? 'Curved Text' : 
+                element.type === 'gradient' ? 'Gradient Text' : 
+                `Line ${index + 1}`}
+            </label>
+            <input 
+              type="text" 
+              id="text-back-${element.id}" 
+              data-element-id="${element.id}"
+              data-side="back"
+              value="${displayText}"
+              placeholder="Enter your text here"
+            />
+          `;
+          
+          backSection.appendChild(fieldDiv);
+        });
+        
+        textInputsContainer.appendChild(backSection);
+      }
+      
+      // Attach input listeners for dual-sided
+      textInputsContainer.querySelectorAll('input').forEach(input => {
+        input.addEventListener('input', (e) => {
+          const side = e.target.dataset.side;
+          const elementId = e.target.dataset.elementId;
+          
+          if (side === 'front') {
+            this.frontRenderer.updateText(elementId, e.target.value);
+          } else {
+            this.backRenderer.updateText(elementId, e.target.value);
+          }
+          
+          this.debouncedUpdatePreview();
+          
+          // Auto-save text state
+          clearTimeout(this.textSaveTimer);
+          this.textSaveTimer = setTimeout(() => {
+            this.saveTextState();
+          }, 1000);
+        });
       });
-    });
+    } else {
+      // Single-sided template
+      const textElements = this.renderer.getAllTextElements();
+      
+      textInputsContainer.innerHTML = textElements.map((element, index) => {
+        const displayText = this.savedTextUpdates && this.savedTextUpdates[element.id] 
+          ? this.savedTextUpdates[element.id] 
+          : element.text;
+          
+        return `
+          <div class="pcm-text-field">
+            <label for="text-${element.id}">
+              ${element.type === 'curved' ? 'Curved Text' : 
+                element.type === 'gradient' ? 'Gradient Text' : 
+                `Text ${index + 1}`}
+            </label>
+            <input 
+              type="text" 
+              id="text-${element.id}" 
+              data-element-id="${element.id}"
+              value="${displayText}"
+              placeholder="Enter your text here"
+            />
+          </div>
+        `;
+      }).join('');
+      
+      // Attach input listeners for single-sided
+      textInputsContainer.querySelectorAll('input').forEach(input => {
+        input.addEventListener('input', (e) => {
+          this.renderer.updateText(e.target.dataset.elementId, e.target.value);
+          this.debouncedUpdatePreview();
+          
+          clearTimeout(this.textSaveTimer);
+          this.textSaveTimer = setTimeout(() => {
+            this.saveTextState();
+          }, 1000);
+        });
+      });
+    }
   }
 
   // Remove positionModal method as we're using CSS positioning within product-details
@@ -980,6 +1169,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.modal.classList.remove('open');
     this.isOpen = false;
     document.body.style.overflow = '';
+    
+    // Remove injected gallery thumbnails
+    this.removeInjectedThumbs();
     
     // Only restore original product images if we're not keeping a customization
     if (!keepCustomization) {
@@ -998,11 +1190,21 @@ if (typeof ProductCustomizerModal === 'undefined') {
       this.textSaveTimer = null;
     }
     
-    // Clean up renderer
+    // Clean up renderers
     if (this.renderer) {
       this.renderer.destroy();
       this.renderer = null;
     }
+    if (this.backRenderer) {
+      this.backRenderer.destroy();
+      this.backRenderer = null;
+    }
+    
+    // Reset dual-sided state
+    this.isDualSided = false;
+    this.frontRenderer = null;
+    this.frontPreviewUrl = null;
+    this.backPreviewUrl = null;
   }
 
   async openAdvancedEditor() {
@@ -1077,20 +1279,43 @@ if (typeof ProductCustomizerModal === 'undefined') {
   }
 
   async save() {
-    // Get all text updates
-    const textElements = this.renderer.getAllTextElements();
     const customization = {
       templateId: this.options.templateId,
       variantId: this.options.variantId,
       textUpdates: {},
-      preview: this.renderer.getDesignAreaPreview(0.5), // Just the design area at 50% resolution
-      fullPreview: this.renderer.getDataURL({ pixelRatio: 0.5 }), // Full preview at 50% resolution
-      designId: this.currentDesignId || null // Include design ID if available
+      isDualSided: this.isDualSided,
+      designId: this.currentDesignId || null
     };
     
-    textElements.forEach(el => {
-      customization.textUpdates[el.id] = el.text;
-    });
+    if (this.isDualSided) {
+      // Get text updates from both sides
+      const bothSides = this.frontRenderer.getAllTextElementsFromBothSides();
+      
+      // Store front text updates
+      bothSides.front.forEach(el => {
+        customization.textUpdates[`front_${el.id}`] = el.text;
+      });
+      
+      // Store back text updates
+      bothSides.back.forEach(el => {
+        customization.textUpdates[`back_${el.id}`] = el.text;
+      });
+      
+      // Use front preview as main preview
+      customization.preview = this.frontRenderer.getDesignAreaPreview(0.5);
+      customization.fullPreview = this.frontPreviewUrl;
+      customization.frontPreview = this.frontPreviewUrl;
+      customization.backPreview = this.backPreviewUrl;
+    } else {
+      // Single-sided template
+      const textElements = this.renderer.getAllTextElements();
+      textElements.forEach(el => {
+        customization.textUpdates[el.id] = el.text;
+      });
+      
+      customization.preview = this.renderer.getDesignAreaPreview(0.5);
+      customization.fullPreview = this.renderer.getDataURL({ pixelRatio: 0.5 });
+    }
     
     // Save to cart or handle as needed
     this.customizationData = customization;
@@ -1106,6 +1331,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
       thumbnail: customization.fullPreview,
       templateId: this.options.templateId,
       textUpdates: customization.textUpdates,
+      isDualSided: this.isDualSided,
+      frontPreview: customization.frontPreview,
+      backPreview: customization.backPreview,
       timestamp: Date.now()
     }));
     
@@ -1596,12 +1824,263 @@ if (typeof ProductCustomizerModal === 'undefined') {
     return null;
   }
   
+  detectGalleryStructure() {
+    // Common patterns in Shopify themes
+    const patterns = [
+      // Horizon theme pattern (based on provided XPath)
+      {
+        container: 'media-gallery slideshow-component scroll-hint > div',
+        item: 'button',
+        image: 'img',
+        wrapper: null,
+        isHorizon: true
+      },
+      // Alternative Horizon selectors
+      {
+        container: 'slideshow-controls scroll-hint > div',
+        item: 'button',
+        image: 'img',
+        wrapper: null,
+        isHorizon: true
+      },
+      { 
+        container: '.media-gallery__nav', 
+        item: '.media-gallery__item',
+        image: 'img',
+        wrapper: '.media-gallery__image-wrapper'
+      },
+      { 
+        container: '.product__thumbs', 
+        item: '.product__thumb-item',
+        image: 'img',
+        wrapper: '.product__thumb'
+      },
+      { 
+        container: '[data-product-thumbs]', 
+        item: '[data-thumbnail]',
+        image: 'img',
+        wrapper: null
+      },
+      {
+        container: '.product-single__thumbnails',
+        item: '.product-single__thumbnail',
+        image: 'img',
+        wrapper: null
+      },
+      {
+        container: '.product-media-nav',
+        item: '.product-media-nav__item',
+        image: 'img',
+        wrapper: null
+      }
+    ];
+    
+    for (const pattern of patterns) {
+      const container = document.querySelector(pattern.container);
+      if (container) {
+        console.log('Found gallery container:', pattern.container);
+        console.log('Theme type:', pattern.isHorizon ? 'Horizon' : 'Other');
+        
+        // For Horizon theme, check if we're on mobile (dots instead of thumbnails)
+        if (pattern.isHorizon) {
+          const hasDots = document.querySelector('slideshow-controls .dots');
+          if (hasDots) {
+            console.log('Horizon theme mobile view detected - dots instead of thumbnails');
+            // On mobile, we might not be able to inject thumbnails
+            return null;
+          }
+        }
+        
+        return { ...pattern, containerElement: container };
+      }
+    }
+    
+    console.warn('Could not detect gallery structure');
+    return null;
+  }
+  
+  createThemeCompatibleThumb(side, previewUrl) {
+    if (!this.galleryStructure) return null;
+    
+    // Find an existing thumb to clone
+    const existingThumb = this.galleryStructure.containerElement.querySelector(this.galleryStructure.item);
+    if (!existingThumb) return null;
+    
+    // Clone the structure
+    const newThumb = existingThumb.cloneNode(true);
+    
+    // Mark as customization thumb
+    newThumb.setAttribute('data-customization-thumb', side);
+    newThumb.setAttribute('data-media-position', side === 'front' ? '-2' : '-1'); // Negative positions for our thumbs
+    
+    // For Horizon theme, handle the button attributes
+    if (this.galleryStructure.isHorizon) {
+      // Remove any aria-controls that might interfere
+      newThumb.removeAttribute('aria-controls');
+      newThumb.removeAttribute('aria-label');
+      newThumb.setAttribute('aria-label', `View ${side} customization`);
+      
+      // Ensure button type
+      if (newThumb.tagName === 'BUTTON') {
+        newThumb.type = 'button';
+      }
+    }
+    
+    // Find and update the image
+    const img = newThumb.querySelector(this.galleryStructure.image);
+    if (img) {
+      img.src = previewUrl;
+      img.srcset = ''; // Clear srcset
+      img.alt = `${side} preview`;
+      img.setAttribute('data-customization-preview', side);
+      
+      // For Horizon theme, ensure the image is visible
+      if (this.galleryStructure.isHorizon) {
+        img.style.display = 'block';
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'cover';
+      }
+    }
+    
+    // Add click handler
+    newThumb.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.handleThumbClick(side);
+    });
+    
+    return newThumb;
+  }
+  
+  injectGalleryThumbs() {
+    if (!this.galleryStructure || !this.frontPreviewUrl || !this.backPreviewUrl) return;
+    
+    // Clean up any existing injected thumbs
+    this.removeInjectedThumbs();
+    
+    // Create new thumbs
+    const frontThumb = this.createThemeCompatibleThumb('front', this.frontPreviewUrl);
+    const backThumb = this.createThemeCompatibleThumb('back', this.backPreviewUrl);
+    
+    if (frontThumb && backThumb) {
+      // For Horizon theme, we need to handle the specific structure
+      if (this.galleryStructure.isHorizon) {
+        // Find the first button to insert before
+        const firstButton = this.galleryStructure.containerElement.querySelector(this.galleryStructure.item);
+        if (firstButton) {
+          // Insert our thumbs at the beginning
+          this.galleryStructure.containerElement.insertBefore(backThumb, firstButton);
+          this.galleryStructure.containerElement.insertBefore(frontThumb, firstButton);
+        } else {
+          // Fallback to append if no buttons found
+          this.galleryStructure.containerElement.appendChild(frontThumb);
+          this.galleryStructure.containerElement.appendChild(backThumb);
+        }
+      } else {
+        // Standard insertion for other themes
+        this.galleryStructure.containerElement.prepend(backThumb);
+        this.galleryStructure.containerElement.prepend(frontThumb);
+      }
+      
+      // Track for cleanup
+      this.injectedThumbs = [frontThumb, backThumb];
+      
+      // Make the front thumb active by default
+      this.setActiveThumb('front');
+    }
+  }
+  
+  removeInjectedThumbs() {
+    // Remove tracked thumbs
+    this.injectedThumbs.forEach(thumb => {
+      if (thumb && thumb.parentNode) {
+        thumb.remove();
+      }
+    });
+    
+    // Also remove any stragglers
+    document.querySelectorAll('[data-customization-thumb]').forEach(el => el.remove());
+    
+    this.injectedThumbs = [];
+  }
+  
+  handleThumbClick(side) {
+    // Update main product image
+    const previewUrl = side === 'front' ? this.frontPreviewUrl : this.backPreviewUrl;
+    if (previewUrl) {
+      this.updateMainProductImage(previewUrl);
+      this.setActiveThumb(side);
+    }
+  }
+  
+  setActiveThumb(side) {
+    // Remove active class from all thumbs
+    if (this.galleryStructure) {
+      this.galleryStructure.containerElement.querySelectorAll(this.galleryStructure.item).forEach(item => {
+        item.classList.remove('is-active', 'active', 'is-selected', 'selected');
+        
+        // For Horizon theme, handle aria-selected
+        if (this.galleryStructure.isHorizon) {
+          item.setAttribute('aria-selected', 'false');
+        }
+      });
+    }
+    
+    // Add active class to our thumb
+    const activeThumb = document.querySelector(`[data-customization-thumb="${side}"]`);
+    if (activeThumb) {
+      activeThumb.classList.add('is-active', 'active', 'is-selected');
+      
+      // For Horizon theme, add selected class and aria-selected
+      if (this.galleryStructure && this.galleryStructure.isHorizon) {
+        activeThumb.classList.add('selected');
+        activeThumb.setAttribute('aria-selected', 'true');
+      }
+    }
+  }
+  
+  updateMainProductImage(previewUrl) {
+    if (!previewUrl) return;
+    
+    // Update using the same logic as before
+    if (this.originalProductImages.length > 0) {
+      const mainImage = this.originalProductImages[0];
+      if (mainImage && mainImage.element) {
+        mainImage.element.src = previewUrl;
+        if (mainImage.element.srcset) {
+          mainImage.element.srcset = '';
+        }
+        mainImage.element.setAttribute('data-customization-preview', 'true');
+        if (!mainImage.element.dataset.originalSrc) {
+          mainImage.element.dataset.originalSrc = mainImage.originalSrc;
+        }
+      }
+    }
+  }
+  
   getCurrentTextUpdates() {
     const textUpdates = {};
-    const textElements = this.renderer ? this.renderer.getAllTextElements() : [];
-    textElements.forEach(el => {
-      textUpdates[el.id] = el.text;
-    });
+    
+    if (this.isDualSided && this.frontRenderer && this.backRenderer) {
+      const bothSides = this.frontRenderer.getAllTextElementsFromBothSides();
+      
+      // Store front text updates
+      bothSides.front.forEach(el => {
+        textUpdates[`front_${el.id}`] = el.text;
+      });
+      
+      // Store back text updates
+      bothSides.back.forEach(el => {
+        textUpdates[`back_${el.id}`] = el.text;
+      });
+    } else if (this.renderer) {
+      const textElements = this.renderer.getAllTextElements();
+      textElements.forEach(el => {
+        textUpdates[el.id] = el.text;
+      });
+    }
+    
     return textUpdates;
   }
   
