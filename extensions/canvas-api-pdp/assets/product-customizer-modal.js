@@ -458,6 +458,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Detect gallery structure early
     this.galleryStructure = this.detectGalleryStructure();
     
+    // Force native gallery to initialize
+    this.forceNativeGallery();
+    
     // Initialize renderer
     const canvasContainer = document.getElementById('customizer-canvas');
     this.renderer = new CanvasTextRenderer(canvasContainer, {
@@ -1899,6 +1902,261 @@ if (typeof ProductCustomizerModal === 'undefined') {
     return null;
   }
   
+  forceNativeGallery() {
+    console.log('[ProductCustomizer] Attempting to force native gallery initialization');
+    
+    // Horizon theme specific approach
+    const mediaGallery = document.querySelector('media-gallery');
+    const slideshowComponent = document.querySelector('slideshow-component');
+    const slideshowControls = document.querySelector('slideshow-controls');
+    
+    // Method 1: Check if there's only one image and try to force gallery initialization
+    if (mediaGallery || slideshowComponent) {
+      const galleryElement = mediaGallery || slideshowComponent;
+      const allImages = galleryElement.querySelectorAll('img');
+      console.log(`[ProductCustomizer] Found ${allImages.length} images in gallery`);
+      
+      // Method 1a: Try to trigger gallery by temporarily adding dummy images
+      if (allImages.length === 1) {
+        console.log('[ProductCustomizer] Only one image found, attempting to force gallery controls');
+        
+        // Check if the theme uses a data attribute to control gallery visibility
+        const possibleAttributes = [
+          'data-media-count',
+          'data-image-count',
+          'data-total-media',
+          'data-slides-count'
+        ];
+        
+        possibleAttributes.forEach(attr => {
+          if (galleryElement.hasAttribute(attr)) {
+            console.log(`[ProductCustomizer] Found attribute ${attr}, updating to 2`);
+            galleryElement.setAttribute(attr, '2');
+          }
+        });
+        
+        // Method 1b: Try to inject proper Horizon media structure
+        const firstMedia = galleryElement.querySelector('[data-media-type="image"]');
+        if (firstMedia) {
+          console.log('[ProductCustomizer] Found Horizon media structure, cloning for dummy');
+          
+          // Clone the entire media structure
+          const dummyMedia = firstMedia.cloneNode(true);
+          
+          // Update media ID and position
+          dummyMedia.setAttribute('data-media-id', 'customizer-dummy-media');
+          dummyMedia.setAttribute('data-media-position', '2');
+          dummyMedia.removeAttribute('id'); // Remove any ID to avoid conflicts
+          
+          // Find and update the image
+          const dummyImg = dummyMedia.querySelector('img');
+          if (dummyImg) {
+            // Use a transparent 1x1 pixel image
+            dummyImg.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+            dummyImg.style.opacity = '0';
+            dummyImg.style.pointerEvents = 'none';
+          }
+          
+          // Insert after the first media
+          firstMedia.parentElement.appendChild(dummyMedia);
+          
+          // Trigger gallery re-initialization
+          this.triggerGalleryReinit(galleryElement);
+          
+          // Also try to update slideshow if it exists
+          if (galleryElement.updateSlides && typeof galleryElement.updateSlides === 'function') {
+            galleryElement.updateSlides();
+          }
+          
+          // Remove dummy after a delay
+          setTimeout(() => {
+            const dummy = galleryElement.querySelector('[data-media-id="customizer-dummy-media"]');
+            if (dummy) {
+              dummy.remove();
+            }
+          }, 1000);
+        } else {
+          // Fallback to simpler approach
+          const firstImage = allImages[0];
+          if (firstImage && firstImage.parentElement) {
+            console.log('[ProductCustomizer] Injecting temporary dummy image (fallback)');
+            
+            // Clone the first image structure
+            const dummyWrapper = firstImage.parentElement.cloneNode(true);
+            const dummyImg = dummyWrapper.querySelector('img');
+            if (dummyImg) {
+              // Use a transparent 1x1 pixel image
+              dummyImg.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+              dummyImg.style.display = 'none';
+              dummyWrapper.setAttribute('data-customizer-dummy', 'true');
+            }
+            
+            // Insert the dummy
+            firstImage.parentElement.parentElement.appendChild(dummyWrapper);
+            
+            // Trigger gallery re-initialization
+            this.triggerGalleryReinit(galleryElement);
+            
+            // Remove dummy after a delay
+            setTimeout(() => {
+              const dummy = document.querySelector('[data-customizer-dummy]');
+              if (dummy) {
+                dummy.remove();
+              }
+            }, 500);
+          }
+        }
+      }
+      
+      // Method 2: Look for gallery initialization methods
+      if (galleryElement.init && typeof galleryElement.init === 'function') {
+        console.log('[ProductCustomizer] Calling gallery init method');
+        galleryElement.init();
+      }
+      
+      // Method 3: Dispatch custom events that might trigger gallery
+      ['media-gallery:init', 'slideshow:init', 'gallery:update'].forEach(eventName => {
+        console.log(`[ProductCustomizer] Dispatching ${eventName} event`);
+        galleryElement.dispatchEvent(new CustomEvent(eventName, { bubbles: true }));
+      });
+    }
+    
+    // Method 4: Check for Horizon theme-specific slideshow controls
+    if (slideshowControls) {
+      // Check if controls are hidden due to single image
+      const controls = slideshowControls.querySelector('.slideshow-controls__wrapper');
+      if (controls && controls.style.display === 'none') {
+        console.log('[ProductCustomizer] Forcing slideshow controls to be visible');
+        controls.style.display = '';
+      }
+      
+      // Check for dots container
+      const dots = slideshowControls.querySelector('.dots');
+      if (dots && dots.children.length === 0) {
+        console.log('[ProductCustomizer] No dots found, may need to add them');
+        // The theme should handle this automatically if we've added images
+      }
+    }
+    
+    // Method 5: Force visibility of gallery navigation
+    const galleryNavSelectors = [
+      '.media-gallery__nav',
+      '.product__thumbs',
+      '.product-media-nav',
+      'slideshow-controls .scroll-hint > div'
+    ];
+    
+    galleryNavSelectors.forEach(selector => {
+      const nav = document.querySelector(selector);
+      if (nav) {
+        console.log(`[ProductCustomizer] Found gallery nav: ${selector}`);
+        if (nav.style.display === 'none' || nav.classList.contains('hide')) {
+          console.log('[ProductCustomizer] Forcing nav to be visible');
+          nav.style.display = '';
+          nav.classList.remove('hide', 'hidden');
+        }
+      }
+    });
+    
+    // Method 6: Check for specific CSS classes that hide single-image galleries
+    const possibleHideClasses = [
+      'media-gallery--single-image',
+      'gallery--single-image',
+      'product-media--single',
+      'no-thumbnails'
+    ];
+    
+    if (mediaGallery || slideshowComponent) {
+      const galleryElement = mediaGallery || slideshowComponent;
+      possibleHideClasses.forEach(className => {
+        if (galleryElement.classList.contains(className)) {
+          console.log(`[ProductCustomizer] Removing class: ${className}`);
+          galleryElement.classList.remove(className);
+        }
+      });
+    }
+  }
+  
+  triggerGalleryReinit(galleryElement) {
+    // Try various methods to reinitialize the gallery
+    console.log('[ProductCustomizer] Triggering gallery re-initialization');
+    
+    // Method 1: Call connectedCallback if it's a custom element
+    if (galleryElement.connectedCallback && typeof galleryElement.connectedCallback === 'function') {
+      console.log('[ProductCustomizer] Calling connectedCallback');
+      galleryElement.connectedCallback();
+    }
+    
+    // Method 2: Trigger resize event (many galleries reinit on resize)
+    window.dispatchEvent(new Event('resize'));
+    
+    // Method 3: Mutation observer trigger
+    const tempAttr = 'data-reinit-trigger';
+    galleryElement.setAttribute(tempAttr, 'true');
+    setTimeout(() => galleryElement.removeAttribute(tempAttr), 10);
+    
+    // Method 4: For Horizon specifically, try to update the slideshow
+    if (galleryElement.tagName === 'SLIDESHOW-COMPONENT') {
+      // Try multiple slideshow update methods
+      const updateMethods = ['updateSlideshow', 'updateSlides', 'update', 'refresh'];
+      updateMethods.forEach(method => {
+        if (galleryElement[method] && typeof galleryElement[method] === 'function') {
+          console.log(`[ProductCustomizer] Calling ${method}`);
+          try {
+            galleryElement[method]();
+          } catch (e) {
+            console.warn(`[ProductCustomizer] Error calling ${method}:`, e);
+          }
+        }
+      });
+    }
+    
+    // Method 5: For media-gallery element
+    if (galleryElement.tagName === 'MEDIA-GALLERY') {
+      // Check for Horizon-specific media gallery methods
+      const mediaMethods = ['updateMedia', 'refreshGallery', 'init'];
+      mediaMethods.forEach(method => {
+        if (galleryElement[method] && typeof galleryElement[method] === 'function') {
+          console.log(`[ProductCustomizer] Calling ${method} on media-gallery`);
+          try {
+            galleryElement[method]();
+          } catch (e) {
+            console.warn(`[ProductCustomizer] Error calling ${method}:`, e);
+          }
+        }
+      });
+    }
+    
+    // Method 6: Dispatch media change events
+    const mediaEvents = [
+      'media:change',
+      'media:update', 
+      'slideshow:change',
+      'variant:change'
+    ];
+    
+    mediaEvents.forEach(eventName => {
+      console.log(`[ProductCustomizer] Dispatching ${eventName}`);
+      galleryElement.dispatchEvent(new CustomEvent(eventName, { 
+        bubbles: true,
+        detail: { mediaCount: 2 }
+      }));
+    });
+    
+    // Method 7: Force slideshow controls update
+    const slideshowControls = document.querySelector('slideshow-controls');
+    if (slideshowControls) {
+      // Update media count attribute
+      slideshowControls.setAttribute('data-media-count', '2');
+      
+      // Try to call update methods
+      if (slideshowControls.updateControls && typeof slideshowControls.updateControls === 'function') {
+        console.log('[ProductCustomizer] Calling updateControls on slideshow-controls');
+        slideshowControls.updateControls();
+      }
+    }
+  }
+  
   createThemeCompatibleThumb(side, previewUrl) {
     if (!this.galleryStructure) return null;
     
@@ -1954,37 +2212,178 @@ if (typeof ProductCustomizerModal === 'undefined') {
   }
   
   injectGalleryThumbs() {
-    if (!this.galleryStructure || !this.frontPreviewUrl || !this.backPreviewUrl) return;
+    if (!this.frontPreviewUrl || !this.backPreviewUrl) return;
     
     // Clean up any existing injected thumbs
     this.removeInjectedThumbs();
     
-    // Create new thumbs
-    const frontThumb = this.createThemeCompatibleThumb('front', this.frontPreviewUrl);
-    const backThumb = this.createThemeCompatibleThumb('back', this.backPreviewUrl);
+    // Try to force native gallery again now that we have dual-sided content
+    this.forceNativeGallery();
     
-    if (frontThumb && backThumb) {
-      // For Horizon theme, we need to handle the specific structure
-      if (this.galleryStructure.isHorizon) {
-        // Find the first button to insert before
-        const firstButton = this.galleryStructure.containerElement.querySelector(this.galleryStructure.item);
-        if (firstButton) {
-          // Insert our thumbs at the beginning
-          this.galleryStructure.containerElement.insertBefore(backThumb, firstButton);
-          this.galleryStructure.containerElement.insertBefore(frontThumb, firstButton);
+    // Re-detect gallery structure after forcing
+    this.galleryStructure = this.detectGalleryStructure();
+    
+    // If we have a gallery structure, use it
+    if (this.galleryStructure) {
+      // Create new thumbs
+      const frontThumb = this.createThemeCompatibleThumb('front', this.frontPreviewUrl);
+      const backThumb = this.createThemeCompatibleThumb('back', this.backPreviewUrl);
+      
+      if (frontThumb && backThumb) {
+        // For Horizon theme, we need to handle the specific structure
+        if (this.galleryStructure.isHorizon) {
+          // Find the first button to insert before
+          const firstButton = this.galleryStructure.containerElement.querySelector(this.galleryStructure.item);
+          if (firstButton) {
+            // Insert our thumbs at the beginning
+            this.galleryStructure.containerElement.insertBefore(backThumb, firstButton);
+            this.galleryStructure.containerElement.insertBefore(frontThumb, firstButton);
+          } else {
+            // Fallback to append if no buttons found
+            this.galleryStructure.containerElement.appendChild(frontThumb);
+            this.galleryStructure.containerElement.appendChild(backThumb);
+          }
+          
+          // After adding thumbs, try to reinitialize the gallery
+          const galleryElement = document.querySelector('media-gallery') || document.querySelector('slideshow-component');
+          if (galleryElement) {
+            this.triggerGalleryReinit(galleryElement);
+          }
         } else {
-          // Fallback to append if no buttons found
-          this.galleryStructure.containerElement.appendChild(frontThumb);
-          this.galleryStructure.containerElement.appendChild(backThumb);
+          // Standard insertion for other themes
+          this.galleryStructure.containerElement.prepend(backThumb);
+          this.galleryStructure.containerElement.prepend(frontThumb);
         }
-      } else {
-        // Standard insertion for other themes
-        this.galleryStructure.containerElement.prepend(backThumb);
-        this.galleryStructure.containerElement.prepend(frontThumb);
+        
+        // Track for cleanup
+        this.injectedThumbs = [frontThumb, backThumb];
+        
+        // Make the front thumb active by default
+        this.setActiveThumb('front');
       }
+    } else {
+      // No gallery found - create a minimal gallery structure
+      console.log('No gallery structure detected, creating minimal thumbnail controls');
+      
+      // Find the main product image
+      const mainProductImage = this.originalProductImages.length > 0 
+        ? this.originalProductImages[0].element 
+        : document.querySelector(
+            'media-gallery img:first-of-type, ' +
+            '.media-gallery img:first-of-type, ' +
+            '.product-media img:first-of-type, ' +
+            '.product__media--featured img, ' +
+            '[data-product-featured-image], ' +
+            '.product-gallery img:first-of-type'
+          );
+      
+      if (!mainProductImage) {
+        console.warn('Could not find main product image to inject gallery');
+        return;
+      }
+      
+      // Find the image container (parent of the image)
+      let imageContainer = mainProductImage.closest('media-gallery, .media-gallery, .product-media, .product__media');
+      if (!imageContainer) {
+        imageContainer = mainProductImage.parentElement;
+      }
+      
+      // Create a minimal gallery container
+      const galleryContainer = document.createElement('div');
+      galleryContainer.className = 'customizer-mini-gallery';
+      galleryContainer.style.cssText = `
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+        justify-content: center;
+        align-items: center;
+      `;
+      
+      // Create simple thumbnail buttons
+      const createSimpleThumb = (side, previewUrl) => {
+        const thumb = document.createElement('button');
+        thumb.type = 'button';
+        thumb.className = 'customizer-thumb';
+        thumb.setAttribute('data-customization-thumb', side);
+        thumb.setAttribute('aria-label', `View ${side} customization`);
+        thumb.style.cssText = `
+          width: 60px;
+          height: 60px;
+          padding: 0;
+          border: 2px solid #e0e0e0;
+          border-radius: 4px;
+          overflow: hidden;
+          cursor: pointer;
+          position: relative;
+          background: white;
+          transition: all 0.2s ease;
+        `;
+        
+        // Create the image
+        const img = document.createElement('img');
+        img.src = previewUrl;
+        img.alt = `${side} customization preview`;
+        img.style.cssText = `
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+        `;
+        
+        // Add side label
+        const label = document.createElement('span');
+        label.textContent = side.charAt(0).toUpperCase() + side.slice(1);
+        label.style.cssText = `
+          position: absolute;
+          bottom: 2px;
+          left: 50%;
+          transform: translateX(-50%);
+          font-size: 10px;
+          background: rgba(0,0,0,0.7);
+          color: white;
+          padding: 2px 6px;
+          border-radius: 2px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        `;
+        
+        thumb.appendChild(img);
+        thumb.appendChild(label);
+        
+        // Add click handler
+        thumb.addEventListener('click', () => {
+          this.handleThumbClick(side);
+        });
+        
+        // Add hover effect
+        thumb.addEventListener('mouseenter', () => {
+          thumb.style.borderColor = '#0066cc';
+          thumb.style.transform = 'scale(1.05)';
+        });
+        
+        thumb.addEventListener('mouseleave', () => {
+          if (!thumb.classList.contains('is-active')) {
+            thumb.style.borderColor = '#e0e0e0';
+            thumb.style.transform = 'scale(1)';
+          }
+        });
+        
+        return thumb;
+      };
+      
+      // Create front and back thumbs
+      const frontThumb = createSimpleThumb('front', this.frontPreviewUrl);
+      const backThumb = createSimpleThumb('back', this.backPreviewUrl);
+      
+      // Add thumbs to container
+      galleryContainer.appendChild(frontThumb);
+      galleryContainer.appendChild(backThumb);
+      
+      // Insert the gallery after the main image
+      imageContainer.insertAdjacentElement('afterend', galleryContainer);
       
       // Track for cleanup
       this.injectedThumbs = [frontThumb, backThumb];
+      this.injectedGalleryContainer = galleryContainer;
       
       // Make the front thumb active by default
       this.setActiveThumb('front');
@@ -2001,6 +2400,15 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Also remove any stragglers
     document.querySelectorAll('[data-customization-thumb]').forEach(el => el.remove());
+    
+    // Remove injected gallery container if it exists
+    if (this.injectedGalleryContainer && this.injectedGalleryContainer.parentNode) {
+      this.injectedGalleryContainer.remove();
+      this.injectedGalleryContainer = null;
+    }
+    
+    // Also remove any customizer mini galleries
+    document.querySelectorAll('.customizer-mini-gallery').forEach(el => el.remove());
     
     this.injectedThumbs = [];
   }
@@ -2027,6 +2435,16 @@ if (typeof ProductCustomizerModal === 'undefined') {
       });
     }
     
+    // Also handle our custom thumbs
+    document.querySelectorAll('[data-customization-thumb]').forEach(thumb => {
+      thumb.classList.remove('is-active', 'active', 'is-selected');
+      // Reset styles for custom thumbs
+      if (thumb.classList.contains('customizer-thumb')) {
+        thumb.style.borderColor = '#e0e0e0';
+        thumb.style.transform = 'scale(1)';
+      }
+    });
+    
     // Add active class to our thumb
     const activeThumb = document.querySelector(`[data-customization-thumb="${side}"]`);
     if (activeThumb) {
@@ -2036,6 +2454,12 @@ if (typeof ProductCustomizerModal === 'undefined') {
       if (this.galleryStructure && this.galleryStructure.isHorizon) {
         activeThumb.classList.add('selected');
         activeThumb.setAttribute('aria-selected', 'true');
+      }
+      
+      // For custom thumbs, apply active styles
+      if (activeThumb.classList.contains('customizer-thumb')) {
+        activeThumb.style.borderColor = '#0066cc';
+        activeThumb.style.transform = 'scale(1.05)';
       }
     }
   }

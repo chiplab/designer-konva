@@ -36,6 +36,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         id: true,
         name: true,
         canvasData: true,
+        frontCanvasData: true,
+        backCanvasData: true,
+        frontThumbnail: true,
+        backThumbnail: true,
         // Don't expose sensitive data like shop
       },
     });
@@ -49,6 +53,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       ...JSON.parse(template.canvasData),
       id: template.id,
       name: template.name,
+      // Include front/back data if available
+      frontCanvasData: template.frontCanvasData ? JSON.parse(template.frontCanvasData) : null,
+      backCanvasData: template.backCanvasData ? JSON.parse(template.backCanvasData) : null,
+      frontThumbnail: template.frontThumbnail,
+      backThumbnail: template.backThumbnail,
     };
 
     return json({ template: templateData }, {
