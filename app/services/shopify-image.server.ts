@@ -442,3 +442,268 @@ export async function updateVariantImage(
   
   return updatedVariant ? updatedVariant.node : { id: variantId, media: { edges: [] } };
 }
+
+/**
+ * Updates a product variant with multiple images
+ * This is used for dual-sided templates to show both front and back
+ * 
+ * NOTE: Shopify only supports ONE image per variant natively.
+ * This function will attach the FIRST image to the variant and add
+ * the remaining images to the product's general media collection.
+ */
+export async function updateVariantImages(
+  admin: any,
+  variantId: string,
+  imageUrls: string[]
+) {
+  if (!imageUrls || imageUrls.length === 0) {
+    throw new Error("No images provided");
+  }
+
+  // First get the product ID from the variant
+  const variantQuery = `#graphql
+    query getVariant($id: ID!) {
+      productVariant(id: $id) {
+        id
+        displayName
+        product {
+          id
+          title
+        }
+      }
+    }
+  `;
+  
+  const variantResponse = await admin.graphql(variantQuery, {
+    variables: { id: variantId }
+  });
+  
+  const { data: variantData } = await variantResponse.json();
+  const productId = variantData.productVariant.product.id;
+  const variantName = variantData.productVariant.displayName;
+  const productTitle = variantData.productVariant.product.title;
+  
+  console.log(`Updating images for variant: ${variantName} (${variantId})`);
+  
+  // Check and remove existing media from variant
+  const checkExistingMediaQuery = `#graphql
+    query checkVariantMedia($id: ID!) {
+      productVariant(id: $id) {
+        id
+        media(first: 10) {
+          edges {
+            node {
+              ... on MediaImage {
+                id
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  
+  const existingMediaResponse = await admin.graphql(checkExistingMediaQuery, {
+    variables: { id: variantId }
+  });
+  
+  const { data: existingMediaData } = await existingMediaResponse.json();
+  const existingMedia = existingMediaData?.productVariant?.media?.edges || [];
+  
+  if (existingMedia.length > 0) {
+    console.log(`Variant has ${existingMedia.length} existing media items. Removing them first...`);
+    
+    // Detach existing media
+    const detachMediaMutation = `#graphql
+      mutation productVariantDetachMedia($productId: ID!, $variantMedia: [ProductVariantDetachMediaInput!]!) {
+        productVariantDetachMedia(productId: $productId, variantMedia: $variantMedia) {
+          product {
+            id
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+    
+    const mediaToDetach = existingMedia.map((edge: any) => ({
+      variantId: variantId,
+      mediaIds: [edge.node.id]
+    }));
+    
+    const detachResponse = await admin.graphql(detachMediaMutation, {
+      variables: {
+        productId: productId,
+        variantMedia: mediaToDetach
+      }
+    });
+    
+    const { data: detachData } = await detachResponse.json();
+    
+    if (detachData?.productVariantDetachMedia?.userErrors?.length > 0) {
+      console.warn('Warning: Failed to detach some existing media:', detachData.productVariantDetachMedia.userErrors);
+    } else {
+      console.log('Successfully detached existing media from variant');
+    }
+  }
+  
+  // Create all images on the product
+  const createImageMutation = `#graphql
+    mutation productCreateMedia($media: [CreateMediaInput!]!, $productId: ID!) {
+      productCreateMedia(media: $media, productId: $productId) {
+        media {
+          ... on MediaImage {
+            id
+            image {
+              url
+              altText
+            }
+          }
+        }
+        mediaUserErrors {
+          field
+          message
+        }
+      }
+    }
+  `;
+  
+  // Prepare media input for all images with descriptive alt text
+  const mediaInput = imageUrls.map((url, index) => ({
+    originalSource: url,
+    mediaContentType: "IMAGE",
+    alt: index === 0 
+      ? `${productTitle} - ${variantName} - Front`
+      : `${productTitle} - ${variantName} - Back`
+  }));
+  
+  console.log(`Creating ${mediaInput.length} media items for product ${productId}`);
+  
+  const createImageResponse = await admin.graphql(createImageMutation, {
+    variables: {
+      productId: productId,
+      media: mediaInput
+    }
+  });
+  
+  const { data: imageData } = await createImageResponse.json();
+  
+  if (imageData.productCreateMedia.mediaUserErrors.length > 0) {
+    throw new Error(
+      `Failed to create product images: ${imageData.productCreateMedia.mediaUserErrors[0].message}`
+    );
+  }
+  
+  const createdMedia = imageData.productCreateMedia.media;
+  const firstMediaId = createdMedia[0].id;
+  console.log(`Created ${createdMedia.length} media items. Will attach first one (${firstMediaId}) to variant.`);
+  
+  // Wait for the first media to be ready
+  console.log('Waiting for first media to be ready...');
+  let mediaReady = false;
+  let attempts = 0;
+  const maxAttempts = 30; // 30 seconds max wait
+  
+  while (!mediaReady && attempts < maxAttempts) {
+    // Query to check media status
+    const mediaStatusQuery = `#graphql
+      query checkMediaStatus($mediaId: ID!) {
+        node(id: $mediaId) {
+          ... on MediaImage {
+            id
+            status
+          }
+        }
+      }
+    `;
+    
+    const statusResponse = await admin.graphql(mediaStatusQuery, {
+      variables: { mediaId: firstMediaId }
+    });
+    
+    const { data: statusData } = await statusResponse.json();
+    const mediaStatus = statusData?.node?.status;
+    
+    console.log(`Media status check ${attempts + 1}/${maxAttempts}: ${mediaStatus}`);
+    
+    if (mediaStatus === 'READY') {
+      mediaReady = true;
+    } else if (mediaStatus === 'FAILED') {
+      throw new Error('Media processing failed in Shopify');
+    } else {
+      // Wait 1 second before checking again
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      attempts++;
+    }
+  }
+  
+  if (!mediaReady) {
+    throw new Error('Media processing timed out after 30 seconds');
+  }
+  
+  console.log('Media is ready! Proceeding to append to variant...');
+  
+  // Now append ONLY the first media to the variant (Shopify limitation: 1 image per variant)
+  const appendMediaMutation = `#graphql
+    mutation productVariantAppendMedia($productId: ID!, $variantMedia: [ProductVariantAppendMediaInput!]!) {
+      productVariantAppendMedia(productId: $productId, variantMedia: $variantMedia) {
+        product {
+          id
+          variants(first: 100) {
+            edges {
+              node {
+                id
+                media(first: 10) {
+                  edges {
+                    node {
+                      ... on MediaImage {
+                        id
+                        image {
+                          url
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+  `;
+  
+  const appendResponse = await admin.graphql(appendMediaMutation, {
+    variables: {
+      productId: productId,
+      variantMedia: [{
+        variantId: variantId,
+        mediaIds: [firstMediaId]  // Only attach the first image to the variant
+      }]
+    }
+  });
+  
+  const { data: appendData } = await appendResponse.json();
+  
+  if (appendData.productVariantAppendMedia.userErrors && appendData.productVariantAppendMedia.userErrors.length > 0) {
+    throw new Error(
+      `Failed to append media to variant: ${appendData.productVariantAppendMedia.userErrors[0].message}`
+    );
+  }
+  
+  // Find and return the updated variant
+  const updatedVariant = appendData.productVariantAppendMedia.product.variants.edges.find(
+    (edge: any) => edge.node.id === variantId
+  );
+  
+  console.log(`✓ Successfully attached front image to variant ${variantId}`);
+  console.log(`✓ Back image added to product media collection with alt text for identification`);
+  
+  return updatedVariant ? updatedVariant.node : { id: variantId, media: { edges: [] } };
+}

@@ -22,6 +22,12 @@ if (typeof CanvasTextRenderer === 'undefined') {
     this.onReady = options.onReady || (() => {});
     this.loadedFonts = new Set(['Arial', 'Times New Roman', 'Georgia', 'Courier New']); // System fonts
     
+    // Dual-sided support
+    this.frontCanvasData = null;
+    this.backCanvasData = null;
+    this.currentSide = 'front'; // Track which side is currently displayed
+    this.isDualSided = false;
+    
     // Ensure Konva is loaded
     if (typeof Konva === 'undefined') {
       console.error('Konva is not loaded. Please include Konva before initializing CanvasTextRenderer.');
@@ -86,6 +92,15 @@ if (typeof CanvasTextRenderer === 'undefined') {
       const response = await fetch(`${this.apiUrl}/api/public/templates/${templateId}`);
       const data = await response.json();
       this.template = data.template;
+      
+      // Check if this is a dual-sided template
+      if (data.template.frontCanvasData && data.template.backCanvasData) {
+        this.isDualSided = true;
+        this.frontCanvasData = data.template.frontCanvasData;
+        this.backCanvasData = data.template.backCanvasData;
+        // Use front canvas data as the initial template
+        this.template = this.frontCanvasData;
+      }
       
       // Initialize Konva stage
       this.initializeStage();
@@ -647,6 +662,66 @@ if (typeof CanvasTextRenderer === 'undefined') {
     
     // Render with the new state
     this.render();
+  }
+
+  // Switch to front side
+  async switchToFront() {
+    if (!this.isDualSided || this.currentSide === 'front') return;
+    
+    this.currentSide = 'front';
+    this.template = this.frontCanvasData;
+    
+    // Load fonts for front side
+    await this.loadTemplateFonts();
+    
+    // Preload images
+    await this.preloadImages();
+    
+    // Re-render
+    this.render();
+  }
+  
+  // Switch to back side
+  async switchToBack() {
+    if (!this.isDualSided || this.currentSide === 'back') return;
+    
+    this.currentSide = 'back';
+    this.template = this.backCanvasData;
+    
+    // Load fonts for back side
+    await this.loadTemplateFonts();
+    
+    // Preload images
+    await this.preloadImages();
+    
+    // Re-render
+    this.render();
+  }
+  
+  // Get all text elements from both sides
+  getAllTextElementsFromBothSides() {
+    if (!this.isDualSided) {
+      return {
+        front: this.getAllTextElements(),
+        back: []
+      };
+    }
+    
+    const result = { front: [], back: [] };
+    
+    // Get front elements
+    const originalTemplate = this.template;
+    this.template = this.frontCanvasData;
+    result.front = this.getAllTextElements();
+    
+    // Get back elements
+    this.template = this.backCanvasData;
+    result.back = this.getAllTextElements();
+    
+    // Restore original template
+    this.template = originalTemplate;
+    
+    return result;
   }
 
   destroy() {

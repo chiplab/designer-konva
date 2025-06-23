@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import { uploadImageToShopify, updateVariantImage } from "./shopify-image.server";
+import { uploadImageToShopify, updateVariantImages } from "./shopify-image.server";
 import { renderCanvasToBuffer } from "./canvas-renderer.server";
 import db from "../db.server";
 
@@ -31,7 +31,8 @@ const PRODUCT_VARIANTS_QUERY = `#graphql
 export async function syncTemplateThumbnailToVariants(
   admin: any,
   templateId: string,
-  thumbnailDataUrl: string | null
+  thumbnailDataUrl: string | null,
+  backThumbnailDataUrl?: string | null
 ): Promise<{
   success: boolean;
   syncedCount: number;
@@ -91,18 +92,32 @@ export async function syncTemplateThumbnailToVariants(
     
     for (const variant of variantsToSync) {
       try {
-        // Upload image to Shopify
-        const filename = `template-${templateId}-${variant.id.split('/').pop()}.png`;
-        console.log(`Uploading thumbnail for variant ${variant.id} with filename: ${filename}`);
+        const variantIdShort = variant.id.split('/').pop();
+        const imageUrls: string[] = [];
         
-        const imageInfo = await uploadImageToShopify(admin, thumbnailDataUrl, filename);
-        console.log(`Thumbnail uploaded successfully: ${imageInfo.url}`);
+        // Upload front thumbnail
+        const frontFilename = `template-${templateId}-variant-${variantIdShort}-front.png`;
+        console.log(`Uploading front thumbnail for variant ${variant.id} with filename: ${frontFilename}`);
         
-        // Update variant image
-        await updateVariantImage(admin, variant.id, imageInfo.url);
+        const frontImageInfo = await uploadImageToShopify(admin, thumbnailDataUrl, frontFilename);
+        console.log(`Front thumbnail uploaded successfully: ${frontImageInfo.url}`);
+        imageUrls.push(frontImageInfo.url);
+        
+        // Upload back thumbnail if provided
+        if (backThumbnailDataUrl) {
+          const backFilename = `template-${templateId}-variant-${variantIdShort}-back.png`;
+          console.log(`Uploading back thumbnail for variant ${variant.id} with filename: ${backFilename}`);
+          
+          const backImageInfo = await uploadImageToShopify(admin, backThumbnailDataUrl, backFilename);
+          console.log(`Back thumbnail uploaded successfully: ${backImageInfo.url}`);
+          imageUrls.push(backImageInfo.url);
+        }
+        
+        // Update variant with both images (or just front if no back)
+        await updateVariantImages(admin, variant.id, imageUrls);
         successCount++;
         
-        console.log(`✓ Updated variant ${variant.id} with template thumbnail`);
+        console.log(`✓ Updated variant ${variant.id} with template thumbnail(s)`)
       } catch (error) {
         const errorMsg = `Failed to update variant ${variant.displayName}: ${error instanceof Error ? error.message : 'Unknown error'}`;
         errors.push(errorMsg);
@@ -196,7 +211,7 @@ export async function syncTemplateWithServerRender(
         console.log(`Server-rendered image uploaded successfully: ${imageInfo.url}`);
         
         // Update variant image
-        await updateVariantImage(admin, variant.id, imageInfo.url);
+        await updateVariantImages(admin, variant.id, [imageInfo.url]);
         successCount++;
         
         console.log(`✓ Updated variant ${variant.id} with server-rendered image`);

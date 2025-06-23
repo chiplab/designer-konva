@@ -1,0 +1,125 @@
+{% comment %}
+  Color Swatches for Product Variants
+  Shows variant images as clickable swatches
+{% endcomment %}
+
+<style>
+  .custom-color-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 10px 0;
+  }
+  
+  .color-swatch {
+    width: 40px;
+    height: 40px;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    overflow: hidden;
+    transition: all 0.2s ease;
+    position: relative;
+  }
+  
+  .color-swatch:hover {
+    transform: scale(1.1);
+    border-color: #333;
+  }
+  
+  .color-swatch.active {
+    border-color: #000;
+    box-shadow: 0 0 0 1px #fff, 0 0 0 3px #000;
+  }
+  
+  .color-swatch img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  
+  .color-swatch-label {
+    position: absolute;
+    bottom: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  
+  .color-swatch:hover .color-swatch-label {
+    opacity: 1;
+  }
+</style>
+
+<div class="custom-color-swatches" data-color-swatches>
+  {% assign color_option_index = null %}
+  {% for option in product.options_with_values %}
+    {% if option.name == 'Color' or option.name == 'Colour' or option.name == 'color' %}
+      {% assign color_option_index = forloop.index0 %}
+      {% break %}
+    {% endif %}
+  {% endfor %}
+  
+  {% if color_option_index != null %}
+    {% assign current_color = product.selected_or_first_available_variant.options[color_option_index] %}
+    
+    {% comment %} Group variants by color {% endcomment %}
+    {% assign colors_shown = '' %}
+    {% for variant in product.variants %}
+      {% assign variant_color = variant.options[color_option_index] %}
+      
+      {% unless colors_shown contains variant_color %}
+        {% if variant.featured_image %}
+          <div class="color-swatch {% if variant_color == current_color %}active{% endif %}" 
+               data-color="{{ variant_color }}"
+               data-variant-id="{{ variant.id }}"
+               title="{{ variant_color }}">
+            <img src="{{ variant.featured_image | image_url: width: 80 }}" alt="{{ variant_color }}">
+            <span class="color-swatch-label">{{ variant_color }}</span>
+          </div>
+        {% endif %}
+        
+        {% assign colors_shown = colors_shown | append: variant_color | append: ',' %}
+      {% endunless %}
+    {% endfor %}
+  {% endif %}
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const swatches = document.querySelectorAll('[data-color-swatches] .color-swatch');
+    
+    swatches.forEach(swatch => {
+      swatch.addEventListener('click', function() {
+        const color = this.dataset.color;
+        const variantId = this.dataset.variantId;
+        
+        // Update active swatch
+        swatches.forEach(s => s.classList.remove('active'));
+        this.classList.add('active');
+        
+        // Find and click the corresponding color option
+        const colorSelectors = document.querySelectorAll('input[name*="Color"], select[name*="Color"] option, [data-option-name="Color"] input');
+        colorSelectors.forEach(selector => {
+          if (selector.value === color || selector.textContent === color) {
+            if (selector.tagName === 'INPUT') {
+              selector.click();
+            } else if (selector.tagName === 'OPTION') {
+              selector.selected = true;
+              selector.parentElement.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          }
+        });
+        
+        // Trigger variant change
+        const event = new CustomEvent('variant:change', {
+          detail: { variant: { id: variantId } }
+        });
+        document.dispatchEvent(event);
+      });
+    });
+  });
+</script>
