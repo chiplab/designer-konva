@@ -31,6 +31,9 @@ export async function action({ request }: ActionFunctionArgs) {
     const variantId = formData.get("variantId") as string;
     const productId = formData.get("productId") as string;
     const canvasState = formData.get("canvasState") as string;
+    const frontCanvasData = formData.get("frontCanvasData") as string;
+    const backCanvasData = formData.get("backCanvasData") as string;
+    const isDualSided = formData.get("isDualSided") === "true";
     const thumbnail = formData.get("thumbnail") as string;
     const email = formData.get("email") as string | null;
     
@@ -42,8 +45,17 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: "Shop not found" }, { status: 400 });
     }
 
-    if (!templateId || !variantId || !productId || !canvasState) {
+    // Validate required fields based on template type
+    if (!templateId || !variantId || !productId) {
       return json({ error: "Missing required fields" }, { status: 400 });
+    }
+    
+    if (!isDualSided && !canvasState) {
+      return json({ error: "Missing canvas state for single-sided template" }, { status: 400 });
+    }
+    
+    if (isDualSided && (!frontCanvasData || !backCanvasData)) {
+      return json({ error: "Missing canvas data for dual-sided template" }, { status: 400 });
     }
 
     // Verify template exists and belongs to shop
@@ -62,6 +74,20 @@ export async function action({ request }: ActionFunctionArgs) {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30);
 
+    // Prepare canvas data based on template type
+    let finalCanvasState: string;
+    if (isDualSided) {
+      // For dual-sided templates, store both front and back data
+      finalCanvasState = JSON.stringify({
+        isDualSided: true,
+        frontCanvasData: frontCanvasData,
+        backCanvasData: backCanvasData
+      });
+    } else {
+      // For single-sided templates, use the canvas state as-is
+      finalCanvasState = canvasState;
+    }
+
     // Create the design record
     const design = await db.customerDesign.create({
       data: {
@@ -70,7 +96,7 @@ export async function action({ request }: ActionFunctionArgs) {
         templateId,
         productId,
         variantId,
-        canvasState,
+        canvasState: finalCanvasState,
         thumbnail: "", // Will update after upload
         status: "draft",
         expiresAt,
@@ -86,7 +112,7 @@ export async function action({ request }: ActionFunctionArgs) {
       'canvas'
     );
     
-    await uploadCustomerDesignAsset(canvasKey, canvasState, {
+    await uploadCustomerDesignAsset(canvasKey, finalCanvasState, {
       contentType: 'application/json',
       expiresInDays: 30,
     });

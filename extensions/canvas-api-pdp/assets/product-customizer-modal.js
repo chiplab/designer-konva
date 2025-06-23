@@ -480,25 +480,14 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Check if this is a dual-sided template
     if (this.renderer.isDualSided) {
       this.isDualSided = true;
-      console.log('Dual-sided template detected');
+      console.log('[ProductCustomizer] Dual-sided template detected');
       
-      // Initialize second renderer for back side
-      const backCanvasContainer = document.createElement('div');
-      backCanvasContainer.id = 'customizer-canvas-back';
-      backCanvasContainer.style.display = 'none';
-      canvasContainer.parentNode.appendChild(backCanvasContainer);
-      
-      this.backRenderer = new CanvasTextRenderer(backCanvasContainer, {
-        apiUrl: this.options.apiUrl
-      });
-      
-      // Load the same template - it will use back data
-      await this.backRenderer.loadTemplate(this.options.templateId);
-      await this.backRenderer.switchToBack();
-      
-      // Keep front renderer as primary
+      // Store the front renderer reference
       this.frontRenderer = this.renderer;
     }
+    
+    // Now create text inputs after we know if it's dual-sided
+    this.createTextInputs();
     
     // Apply global canvas state if available (from full designer)
     if (globalCanvasState) {
@@ -528,9 +517,35 @@ if (typeof ProductCustomizerModal === 'undefined') {
     else if (savedTextUpdates) {
       // Wait a moment for the template to fully load
       setTimeout(() => {
-        Object.keys(savedTextUpdates).forEach(elementId => {
-          this.renderer.updateText(elementId, savedTextUpdates[elementId]);
-        });
+        if (this.isDualSided) {
+          // For dual-sided templates, apply text to both sides
+          Object.keys(savedTextUpdates).forEach(key => {
+            const value = savedTextUpdates[key];
+            
+            if (key.startsWith('front_')) {
+              // Apply to front side
+              const elementId = key.replace('front_', '');
+              this.renderer.updateText(elementId, value);
+            } else if (key.startsWith('back_')) {
+              // Apply to back side
+              const elementId = key.replace('back_', '');
+              // Temporarily switch to back canvas
+              const originalTemplate = this.renderer.template;
+              this.renderer.template = this.renderer.backCanvasData;
+              this.renderer.updateText(elementId, value);
+              // Switch back to front
+              this.renderer.template = this.renderer.frontCanvasData;
+            } else {
+              // Legacy support: no prefix means front
+              this.renderer.updateText(key, value);
+            }
+          });
+        } else {
+          // For single-sided templates
+          Object.keys(savedTextUpdates).forEach(elementId => {
+            this.renderer.updateText(elementId, savedTextUpdates[elementId]);
+          });
+        }
         // Update the preview after applying text changes
         this.updatePreview();
         
@@ -697,8 +712,10 @@ if (typeof ProductCustomizerModal === 'undefined') {
     }
   }
   
-  updateMainProductImage() {
-    if (!this.currentPreviewUrl) {
+  updateMainProductImage(previewUrl) {
+    // Use passed URL or fall back to current preview URL
+    const urlToUse = previewUrl || this.currentPreviewUrl;
+    if (!urlToUse) {
       return;
     }
     
@@ -712,7 +729,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
           return;
         }
         
-        mainImage.element.src = this.currentPreviewUrl;
+        mainImage.element.src = urlToUse;
         if (mainImage.element.srcset) {
           mainImage.element.srcset = ''; // Clear srcset to prevent responsive image issues
         }
@@ -745,9 +762,89 @@ if (typeof ProductCustomizerModal === 'undefined') {
         if (!mainProductImage.dataset.originalSrc) {
           mainProductImage.dataset.originalSrc = mainProductImage.src;
         }
-        mainProductImage.src = this.currentPreviewUrl;
+        mainProductImage.src = urlToUse;
         mainProductImage.srcset = ''; // Clear srcset
         mainProductImage.setAttribute('data-customization-preview', 'true');
+      }
+    }
+    
+    // Also update the slideshow thumbnails
+    this.updateSlideshowThumbnails();
+  }
+  
+  updateSlideshowThumbnails() {
+    if (!this.currentPreviewUrl) {
+      return;
+    }
+    
+    console.log('[ProductCustomizer] Starting updateSlideshowThumbnails');
+    
+    // Find the active slideshow thumbnail button - be more specific
+    const activeThumbnail = document.querySelector(
+      'button.slideshow-control[aria-selected="true"], ' +
+      'button.slideshow-controls__thumbnail[aria-selected="true"], ' +
+      '.slideshow-nav__button.is-active, ' +
+      '.product__thumb.is-active'
+    );
+    
+    console.log('[ProductCustomizer] Active thumbnail found:', activeThumbnail);
+    
+    if (activeThumbnail) {
+      const thumbnailImg = activeThumbnail.querySelector('img');
+      console.log('[ProductCustomizer] Thumbnail img found:', thumbnailImg);
+      
+      if (thumbnailImg) {
+        // Store original source if not already stored
+        if (!thumbnailImg.dataset.originalSrc) {
+          thumbnailImg.dataset.originalSrc = thumbnailImg.src;
+          if (thumbnailImg.srcset) {
+            thumbnailImg.dataset.originalSrcset = thumbnailImg.srcset;
+          }
+          if (thumbnailImg.getAttribute('sizes')) {
+            thumbnailImg.dataset.originalSizes = thumbnailImg.getAttribute('sizes');
+          }
+        }
+        
+        // Update the thumbnail image
+        thumbnailImg.src = this.currentPreviewUrl;
+        thumbnailImg.srcset = this.currentPreviewUrl; // Set srcset to same URL
+        thumbnailImg.removeAttribute('sizes'); // Remove sizes to prevent responsive logic
+        thumbnailImg.setAttribute('data-customization-preview', 'true');
+        
+        console.log('[ProductCustomizer] Updated slideshow thumbnail with URL:', this.currentPreviewUrl);
+      }
+    } else {
+      // No active thumbnail found, try to find the first one
+      console.log('[ProductCustomizer] No active thumbnail found, looking for first thumbnail');
+      
+      const firstThumbnail = document.querySelector(
+        'button.slideshow-control img, ' +
+        'button.slideshow-controls__thumbnail img, ' +
+        '.slideshow-nav__button:first-child img, ' +
+        '.product__thumb:first-child img'
+      );
+      
+      console.log('[ProductCustomizer] First thumbnail found:', firstThumbnail);
+      
+      if (firstThumbnail) {
+        // Store original source if not already stored
+        if (!firstThumbnail.dataset.originalSrc) {
+          firstThumbnail.dataset.originalSrc = firstThumbnail.src;
+          if (firstThumbnail.srcset) {
+            firstThumbnail.dataset.originalSrcset = firstThumbnail.srcset;
+          }
+          if (firstThumbnail.getAttribute('sizes')) {
+            firstThumbnail.dataset.originalSizes = firstThumbnail.getAttribute('sizes');
+          }
+        }
+        
+        // Update the thumbnail image
+        firstThumbnail.src = this.currentPreviewUrl;
+        firstThumbnail.srcset = this.currentPreviewUrl; // Set srcset to same URL
+        firstThumbnail.removeAttribute('sizes'); // Remove sizes to prevent responsive logic
+        firstThumbnail.setAttribute('data-customization-preview', 'true');
+        
+        console.log('[ProductCustomizer] Updated first slideshow thumbnail with URL:', this.currentPreviewUrl);
       }
     }
   }
@@ -763,6 +860,30 @@ if (typeof ProductCustomizerModal === 'undefined') {
         }
         // Remove the customization preview marker
         element.removeAttribute('data-customization-preview');
+      }
+    });
+    
+    // Restore slideshow thumbnails
+    const customizedThumbnails = document.querySelectorAll(
+      'button.slideshow-control img[data-customization-preview="true"], ' +
+      'button.slideshow-controls__thumbnail img[data-customization-preview="true"], ' +
+      '.slideshow-nav__button img[data-customization-preview="true"], ' +
+      '.product__thumb img[data-customization-preview="true"]'
+    );
+    
+    customizedThumbnails.forEach(thumbnail => {
+      if (thumbnail.dataset.originalSrc) {
+        thumbnail.src = thumbnail.dataset.originalSrc;
+        if (thumbnail.dataset.originalSrcset) {
+          thumbnail.srcset = thumbnail.dataset.originalSrcset;
+        }
+        if (thumbnail.dataset.originalSizes) {
+          thumbnail.setAttribute('sizes', thumbnail.dataset.originalSizes);
+        }
+        thumbnail.removeAttribute('data-customization-preview');
+        delete thumbnail.dataset.originalSrc;
+        delete thumbnail.dataset.originalSrcset;
+        delete thumbnail.dataset.originalSizes;
       }
     });
     
@@ -961,8 +1082,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
   }
 
   onRendererReady() {
-    // Create text input fields
-    this.createTextInputs();
+    // Don't create text inputs here - we need to wait until after dual-sided check
     
     // If we don't have a product image and no saved preview, show the canvas preview
     if (!this.hasProductImage && !this.savedTextUpdates) {
@@ -974,30 +1094,19 @@ if (typeof ProductCustomizerModal === 'undefined') {
     const previewImage = document.getElementById('preview-image');
     if (!this.renderer || !previewImage) return;
     
+    // For both single-sided and dual-sided templates, generate preview from current renderer
+    // (which shows the front side for dual-sided templates)
+    const dataUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+    previewImage.src = dataUrl;
+    previewImage.style.display = 'block';
+    
+    // Update the current preview URL and main product image
+    this.currentPreviewUrl = dataUrl;
+    this.updateMainProductImage(dataUrl);
+    
+    // Store front preview URL for dual-sided templates
     if (this.isDualSided) {
-      // Generate previews for both sides
-      this.frontPreviewUrl = this.frontRenderer.getDataURL({ pixelRatio: 0.5 });
-      this.backPreviewUrl = this.backRenderer.getDataURL({ pixelRatio: 0.5 });
-      
-      // Update current preview to front by default
-      this.currentPreviewUrl = this.frontPreviewUrl;
-      previewImage.src = this.frontPreviewUrl;
-      previewImage.style.display = 'block';
-      
-      // Update main product image with front preview
-      this.updateMainProductImage(this.frontPreviewUrl);
-      
-      // Inject thumbnails into gallery
-      this.injectGalleryThumbs();
-    } else {
-      // Single-sided preview
-      const dataUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
-      previewImage.src = dataUrl;
-      previewImage.style.display = 'block';
-      
-      // Update the current preview URL and main product image
-      this.currentPreviewUrl = dataUrl;
-      this.updateMainProductImage(dataUrl);
+      this.frontPreviewUrl = dataUrl;
     }
     
     this.updateVariantSwatches();
@@ -1019,119 +1128,87 @@ if (typeof ProductCustomizerModal === 'undefined') {
     const textInputsContainer = this.modal.querySelector('.pcm-text-inputs');
     textInputsContainer.innerHTML = '';
     
+    console.log('[ProductCustomizer] createTextInputs called, isDualSided:', this.isDualSided);
+    
     if (this.isDualSided) {
-      // Get text elements from both sides
-      const bothSides = this.frontRenderer.getAllTextElementsFromBothSides();
+      // For dual-sided templates, get text from both sides
+      const bothSidesText = this.renderer.getAllTextElementsFromBothSides();
+      console.log('[ProductCustomizer] Got text from both sides:', bothSidesText);
       
-      // Create front section
-      if (bothSides.front.length > 0) {
-        const frontSection = document.createElement('div');
-        frontSection.className = 'pcm-text-section';
-        
-        const frontTitle = document.createElement('div');
-        frontTitle.className = 'pcm-section-title';
-        frontTitle.textContent = 'Front Side';
-        frontSection.appendChild(frontTitle);
-        
-        bothSides.front.forEach((element, index) => {
-          const fieldDiv = document.createElement('div');
-          fieldDiv.className = 'pcm-text-field';
-          
-          const displayText = this.savedTextUpdates && this.savedTextUpdates[`front_${element.id}`] 
-            ? this.savedTextUpdates[`front_${element.id}`] 
-            : element.text;
-          
-          fieldDiv.innerHTML = `
-            <label for="text-front-${element.id}">
-              ${element.type === 'curved' ? 'Curved Text' : 
-                element.type === 'gradient' ? 'Gradient Text' : 
-                `Line ${index + 1}`}
-            </label>
-            <input 
-              type="text" 
-              id="text-front-${element.id}" 
-              data-element-id="${element.id}"
-              data-side="front"
-              value="${displayText}"
-              placeholder="Enter your text here"
-            />
-          `;
-          
-          frontSection.appendChild(fieldDiv);
-        });
-        
-        textInputsContainer.appendChild(frontSection);
-      }
+      let html = '';
       
-      // Create back section
-      if (bothSides.back.length > 0) {
-        const backSection = document.createElement('div');
-        backSection.className = 'pcm-text-section';
-        
-        const backTitle = document.createElement('div');
-        backTitle.className = 'pcm-section-title';
-        backTitle.textContent = 'Back Side';
-        backSection.appendChild(backTitle);
-        
-        bothSides.back.forEach((element, index) => {
-          const fieldDiv = document.createElement('div');
-          fieldDiv.className = 'pcm-text-field';
-          
-          const displayText = this.savedTextUpdates && this.savedTextUpdates[`back_${element.id}`] 
-            ? this.savedTextUpdates[`back_${element.id}`] 
-            : element.text;
-          
-          fieldDiv.innerHTML = `
-            <label for="text-back-${element.id}">
-              ${element.type === 'curved' ? 'Curved Text' : 
-                element.type === 'gradient' ? 'Gradient Text' : 
-                `Line ${index + 1}`}
-            </label>
-            <input 
-              type="text" 
-              id="text-back-${element.id}" 
-              data-element-id="${element.id}"
-              data-side="back"
-              value="${displayText}"
-              placeholder="Enter your text here"
-            />
-          `;
-          
-          backSection.appendChild(fieldDiv);
-        });
-        
-        textInputsContainer.appendChild(backSection);
-      }
-      
-      // Attach input listeners for dual-sided
-      textInputsContainer.querySelectorAll('input').forEach(input => {
-        input.addEventListener('input', (e) => {
-          const side = e.target.dataset.side;
-          const elementId = e.target.dataset.elementId;
-          
-          if (side === 'front') {
-            this.frontRenderer.updateText(elementId, e.target.value);
-          } else {
-            this.backRenderer.updateText(elementId, e.target.value);
+      // Add front side text inputs
+      if (bothSidesText.front.length > 0) {
+        html += '<div class="pcm-side-section"><h4 style="margin: 0 0 10px 0; font-weight: 600;">Front Side</h4>';
+        html += bothSidesText.front.map((element, index) => {
+          // Check for saved text with front_ prefix
+          let displayText = element.text;
+          if (this.savedTextUpdates) {
+            displayText = this.savedTextUpdates[`front_${element.id}`] || this.savedTextUpdates[element.id] || element.text;
           }
           
-          this.debouncedUpdatePreview();
+          return `
+            <div class="pcm-text-field">
+              <label for="text-front-${element.id}">
+                ${element.type === 'curved' ? 'Curved Text' : 
+                  element.type === 'gradient' ? 'Gradient Text' : 
+                  `Text ${index + 1}`}
+              </label>
+              <input 
+                type="text" 
+                id="text-front-${element.id}" 
+                data-element-id="${element.id}"
+                data-side="front"
+                value="${displayText}"
+                placeholder="Enter your text here"
+              />
+            </div>
+          `;
+        }).join('');
+        html += '</div>';
+      }
+      
+      // Add back side text inputs
+      if (bothSidesText.back.length > 0) {
+        html += '<div class="pcm-side-section" style="margin-top: 20px;"><h4 style="margin: 0 0 10px 0; font-weight: 600;">Back Side</h4>';
+        html += bothSidesText.back.map((element, index) => {
+          // Check for saved text with back_ prefix
+          let displayText = element.text;
+          if (this.savedTextUpdates) {
+            displayText = this.savedTextUpdates[`back_${element.id}`] || element.text;
+          }
           
-          // Auto-save text state
-          clearTimeout(this.textSaveTimer);
-          this.textSaveTimer = setTimeout(() => {
-            this.saveTextState();
-          }, 1000);
-        });
-      });
+          return `
+            <div class="pcm-text-field">
+              <label for="text-back-${element.id}">
+                ${element.type === 'curved' ? 'Curved Text' : 
+                  element.type === 'gradient' ? 'Gradient Text' : 
+                  `Text ${index + 1}`}
+              </label>
+              <input 
+                type="text" 
+                id="text-back-${element.id}" 
+                data-element-id="${element.id}"
+                data-side="back"
+                value="${displayText}"
+                placeholder="Enter your text here"
+              />
+            </div>
+          `;
+        }).join('');
+        html += '</div>';
+      }
+      
+      textInputsContainer.innerHTML = html;
     } else {
-      // Single-sided template
+      // For single-sided templates, use the existing logic
       const textElements = this.renderer.getAllTextElements();
       
       textInputsContainer.innerHTML = textElements.map((element, index) => {
-        const displayText = this.savedTextUpdates && this.savedTextUpdates[element.id] 
-          ? this.savedTextUpdates[element.id] 
-          : element.text;
+        let displayText = element.text;
+        if (this.savedTextUpdates) {
+          displayText = this.savedTextUpdates[element.id] || element.text;
+        }
           
         return `
           <div class="pcm-text-field">
@@ -1150,20 +1227,41 @@ if (typeof ProductCustomizerModal === 'undefined') {
           </div>
         `;
       }).join('');
-      
-      // Attach input listeners for single-sided
-      textInputsContainer.querySelectorAll('input').forEach(input => {
-        input.addEventListener('input', (e) => {
-          this.renderer.updateText(e.target.dataset.elementId, e.target.value);
-          this.debouncedUpdatePreview();
-          
-          clearTimeout(this.textSaveTimer);
-          this.textSaveTimer = setTimeout(() => {
-            this.saveTextState();
-          }, 1000);
-        });
-      });
     }
+    
+    // Attach input listeners
+    textInputsContainer.querySelectorAll('input').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const elementId = e.target.dataset.elementId;
+        const side = e.target.dataset.side;
+        
+        if (this.isDualSided && side) {
+          // For dual-sided templates, we need to switch to the correct side before updating
+          const originalTemplate = this.renderer.template;
+          
+          if (side === 'back') {
+            // Switch to back canvas temporarily
+            this.renderer.template = this.renderer.backCanvasData;
+            this.renderer.updateText(elementId, e.target.value);
+            // Switch back to front for preview (we only show front preview for now)
+            this.renderer.template = this.renderer.frontCanvasData;
+          } else {
+            // Update front side
+            this.renderer.updateText(elementId, e.target.value);
+          }
+        } else {
+          // Single-sided template
+          this.renderer.updateText(elementId, e.target.value);
+        }
+        
+        this.debouncedUpdatePreview();
+        
+        clearTimeout(this.textSaveTimer);
+        this.textSaveTimer = setTimeout(() => {
+          this.saveTextState();
+        }, 1000);
+      });
+    });
   }
 
   // Remove positionModal method as we're using CSS positioning within product-details
@@ -1193,14 +1291,10 @@ if (typeof ProductCustomizerModal === 'undefined') {
       this.textSaveTimer = null;
     }
     
-    // Clean up renderers
+    // Clean up renderer
     if (this.renderer) {
       this.renderer.destroy();
       this.renderer = null;
-    }
-    if (this.backRenderer) {
-      this.backRenderer.destroy();
-      this.backRenderer = null;
     }
     
     // Reset dual-sided state
@@ -1216,8 +1310,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
       
       // If we don't have a design ID, create a new draft
       if (!designId) {
-        // Get canvas state
-        const canvasState = this.renderer.getCanvasState();
+        // Get canvas state - handle dual-sided templates
+        const stateData = this.renderer.getDualSidedCanvasState();
         const thumbnail = this.renderer.getDataURL({ pixelRatio: 0.3 });
         
         // Get product info from page
@@ -1231,7 +1325,16 @@ if (typeof ProductCustomizerModal === 'undefined') {
         formData.append('templateId', this.options.templateId);
         formData.append('variantId', this.options.variantId);
         formData.append('productId', productId);
-        formData.append('canvasState', JSON.stringify(canvasState));
+        
+        // Add canvas data based on template type
+        if (stateData.isDualSided) {
+          formData.append('frontCanvasData', stateData.frontCanvasData);
+          formData.append('backCanvasData', stateData.backCanvasData);
+          formData.append('isDualSided', 'true');
+        } else {
+          formData.append('canvasState', JSON.stringify(stateData.canvasData));
+        }
+        
         formData.append('thumbnail', thumbnail);
         
         const response = await fetch(`${this.options.apiUrl}/api/designs/draft`, {
@@ -1290,34 +1393,28 @@ if (typeof ProductCustomizerModal === 'undefined') {
       designId: this.currentDesignId || null
     };
     
+    // Get text updates from current renderer
+    const textElements = this.renderer.getAllTextElements();
+    
     if (this.isDualSided) {
-      // Get text updates from both sides
-      const bothSides = this.frontRenderer.getAllTextElementsFromBothSides();
-      
-      // Store front text updates
-      bothSides.front.forEach(el => {
+      // For dual-sided templates, save with front_ prefix
+      textElements.forEach(el => {
         customization.textUpdates[`front_${el.id}`] = el.text;
       });
-      
-      // Store back text updates
-      bothSides.back.forEach(el => {
-        customization.textUpdates[`back_${el.id}`] = el.text;
-      });
-      
-      // Use front preview as main preview
-      customization.preview = this.frontRenderer.getDesignAreaPreview(0.5);
-      customization.fullPreview = this.frontPreviewUrl;
-      customization.frontPreview = this.frontPreviewUrl;
-      customization.backPreview = this.backPreviewUrl;
     } else {
-      // Single-sided template
-      const textElements = this.renderer.getAllTextElements();
+      // For single-sided templates, save without prefix
       textElements.forEach(el => {
         customization.textUpdates[el.id] = el.text;
       });
-      
-      customization.preview = this.renderer.getDesignAreaPreview(0.5);
-      customization.fullPreview = this.renderer.getDataURL({ pixelRatio: 0.5 });
+    }
+    
+    // Generate previews
+    customization.preview = this.renderer.getDesignAreaPreview(0.5);
+    customization.fullPreview = this.renderer.getDataURL({ pixelRatio: 0.5 });
+    
+    if (this.isDualSided) {
+      customization.frontPreview = customization.fullPreview;
+      // Back preview will be added in Phase 2
     }
     
     // Save to cart or handle as needed
@@ -1336,7 +1433,6 @@ if (typeof ProductCustomizerModal === 'undefined') {
       textUpdates: customization.textUpdates,
       isDualSided: this.isDualSided,
       frontPreview: customization.frontPreview,
-      backPreview: customization.backPreview,
       timestamp: Date.now()
     }));
     
@@ -2464,45 +2560,31 @@ if (typeof ProductCustomizerModal === 'undefined') {
     }
   }
   
-  updateMainProductImage(previewUrl) {
-    if (!previewUrl) return;
-    
-    // Update using the same logic as before
-    if (this.originalProductImages.length > 0) {
-      const mainImage = this.originalProductImages[0];
-      if (mainImage && mainImage.element) {
-        mainImage.element.src = previewUrl;
-        if (mainImage.element.srcset) {
-          mainImage.element.srcset = '';
-        }
-        mainImage.element.setAttribute('data-customization-preview', 'true');
-        if (!mainImage.element.dataset.originalSrc) {
-          mainImage.element.dataset.originalSrc = mainImage.originalSrc;
-        }
-      }
-    }
-  }
   
   getCurrentTextUpdates() {
     const textUpdates = {};
     
-    if (this.isDualSided && this.frontRenderer && this.backRenderer) {
-      const bothSides = this.frontRenderer.getAllTextElementsFromBothSides();
-      
-      // Store front text updates
-      bothSides.front.forEach(el => {
-        textUpdates[`front_${el.id}`] = el.text;
-      });
-      
-      // Store back text updates
-      bothSides.back.forEach(el => {
-        textUpdates[`back_${el.id}`] = el.text;
-      });
-    } else if (this.renderer) {
-      const textElements = this.renderer.getAllTextElements();
-      textElements.forEach(el => {
-        textUpdates[el.id] = el.text;
-      });
+    if (this.renderer) {
+      if (this.isDualSided) {
+        // For dual-sided templates, get text from both sides
+        const bothSidesText = this.renderer.getAllTextElementsFromBothSides();
+        
+        // Save front side text with front_ prefix
+        bothSidesText.front.forEach(el => {
+          textUpdates[`front_${el.id}`] = el.text;
+        });
+        
+        // Save back side text with back_ prefix
+        bothSidesText.back.forEach(el => {
+          textUpdates[`back_${el.id}`] = el.text;
+        });
+      } else {
+        // For single-sided templates, save without prefix
+        const textElements = this.renderer.getAllTextElements();
+        textElements.forEach(el => {
+          textUpdates[el.id] = el.text;
+        });
+      }
     }
     
     return textUpdates;

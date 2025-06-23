@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://clarity-paintball-nb-vids.trycloudflare.com"
+application_url = "https://buried-loops-replace-viewers.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://clarity-paintball-nb-vids.trycloudflare.com/auth/callback",
-  "https://clarity-paintball-nb-vids.trycloudflare.com/auth/shopify/callback",
-  "https://clarity-paintball-nb-vids.trycloudflare.com/api/auth/callback"
+  "https://buried-loops-replace-viewers.trycloudflare.com/auth/callback",
+  "https://buried-loops-replace-viewers.trycloudflare.com/auth/shopify/callback",
+  "https://buried-loops-replace-viewers.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://clarity-paintball-nb-vids.trycloudflare.com"
+url = "https://buried-loops-replace-viewers.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 

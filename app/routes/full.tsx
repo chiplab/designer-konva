@@ -49,13 +49,30 @@ export async function loader({ request }: LoaderFunctionArgs) {
         productId: design.productId,
       };
       
+      // Parse canvas state to check if it's dual-sided
+      let canvasData = design.canvasState;
+      let frontCanvasData = design.template.frontCanvasData;
+      let backCanvasData = design.template.backCanvasData;
+      
+      try {
+        const parsed = JSON.parse(design.canvasState);
+        if (parsed.isDualSided) {
+          // Extract dual-sided data from the design
+          canvasData = null; // No single canvas data
+          frontCanvasData = parsed.frontCanvasData;
+          backCanvasData = parsed.backCanvasData;
+        }
+      } catch (e) {
+        // If parsing fails, assume it's single-sided canvas data
+      }
+      
       // Use canvas data from design
       templateData = {
         id: design.template.id,
         name: design.template.name,
-        canvasData: design.canvasState,
-        frontCanvasData: design.template.frontCanvasData,
-        backCanvasData: design.template.backCanvasData,
+        canvasData: canvasData,
+        frontCanvasData: frontCanvasData,
+        backCanvasData: backCanvasData,
       };
       
       // Get the color variant from the template

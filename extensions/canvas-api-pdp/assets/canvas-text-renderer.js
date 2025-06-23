@@ -91,15 +91,26 @@ if (typeof CanvasTextRenderer === 'undefined') {
     try {
       const response = await fetch(`${this.apiUrl}/api/public/templates/${templateId}`);
       const data = await response.json();
-      this.template = data.template;
       
       // Check if this is a dual-sided template
       if (data.template.frontCanvasData && data.template.backCanvasData) {
+        console.log('[CanvasTextRenderer] Dual-sided template detected');
         this.isDualSided = true;
-        this.frontCanvasData = data.template.frontCanvasData;
-        this.backCanvasData = data.template.backCanvasData;
+        
+        // Parse the JSON strings to objects
+        this.frontCanvasData = typeof data.template.frontCanvasData === 'string' 
+          ? JSON.parse(data.template.frontCanvasData) 
+          : data.template.frontCanvasData;
+        this.backCanvasData = typeof data.template.backCanvasData === 'string'
+          ? JSON.parse(data.template.backCanvasData)
+          : data.template.backCanvasData;
+          
         // Use front canvas data as the initial template
         this.template = this.frontCanvasData;
+        console.log('[CanvasTextRenderer] Using front canvas data for initial render');
+      } else {
+        // Legacy single-sided template
+        this.template = data.template;
       }
       
       // Initialize Konva stage
@@ -722,6 +733,34 @@ if (typeof CanvasTextRenderer === 'undefined') {
     this.template = originalTemplate;
     
     return result;
+  }
+  
+  // Get canvas state for dual-sided templates
+  getDualSidedCanvasState() {
+    if (!this.isDualSided) {
+      return {
+        canvasData: this.getCanvasState(),
+        isDualSided: false
+      };
+    }
+    
+    // Get front state with text updates
+    const originalTemplate = this.template;
+    this.template = this.frontCanvasData;
+    const frontState = this.getCanvasState();
+    
+    // Get back state with text updates  
+    this.template = this.backCanvasData;
+    const backState = this.getCanvasState();
+    
+    // Restore original template
+    this.template = originalTemplate;
+    
+    return {
+      frontCanvasData: JSON.stringify(frontState),
+      backCanvasData: JSON.stringify(backState),
+      isDualSided: true
+    };
   }
 
   destroy() {
