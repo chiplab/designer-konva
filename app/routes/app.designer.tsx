@@ -480,9 +480,18 @@ export default function Designer() {
               label="Template Name"
               value={templateName}
               onChange={setTemplateName}
-              placeholder="Enter a name for this template"
+              placeholder={
+                shopifyVariant 
+                  ? `${shopifyProduct?.title || 'Product'} - ${shopifyVariant.displayName}`
+                  : "Enter a name for this template"
+              }
               autoComplete="off"
               requiredIndicator
+              helpText={
+                !templateName && shopifyVariant 
+                  ? `Suggested: ${shopifyProduct?.title || 'Product'} - ${shopifyVariant.displayName}`
+                  : undefined
+              }
             />
             
             {/* Show product selection only for new templates without pre-selected variant */}

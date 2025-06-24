@@ -507,6 +507,7 @@ export async function processSyncProductThumbnailsJob(
         name: true,
         thumbnail: true,
         frontThumbnail: true,
+        backThumbnail: true,
         shopifyVariantId: true,
       },
       orderBy: [
@@ -588,7 +589,8 @@ export async function processSyncProductThumbnailsJob(
           const syncResult = await syncTemplateThumbnailToVariants(
             admin, 
             template.id, 
-            thumbnailToSync
+            thumbnailToSync,
+            template.backThumbnail // Pass back thumbnail for dual-sided templates
           );
           
           if (syncResult.syncedCount > 0) {

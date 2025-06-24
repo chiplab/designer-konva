@@ -14,7 +14,20 @@ export async function action({ request }: ActionFunctionArgs) {
 
   try {
     const formData = await request.formData();
-    const name = formData.get("name") as string;
+    let name = formData.get("name") as string;
+    
+    // Clean up duplicate product names in template name
+    if (name) {
+      const parts = name.split(' - ');
+      if (parts.length >= 3) {
+        // Check if the first two parts are the same (duplicate product name)
+        if (parts[0] === parts[1]) {
+          // Remove the duplicate by taking first part and everything after the second dash
+          name = `${parts[0]} - ${parts.slice(2).join(' - ')}`;
+        }
+      }
+    }
+    
     let canvasData = formData.get("canvasData") as string;
     const thumbnail = formData.get("thumbnail") as string | null;
     const frontThumbnail = formData.get("frontThumbnail") as string | null;

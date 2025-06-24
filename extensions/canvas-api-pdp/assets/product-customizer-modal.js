@@ -484,6 +484,14 @@ if (typeof ProductCustomizerModal === 'undefined') {
       
       // Store the front renderer reference
       this.frontRenderer = this.renderer;
+      
+      // Generate initial previews for both sides
+      this.updatePreview();
+      
+      // Inject gallery thumbs for dual-sided templates
+      setTimeout(() => {
+        this.injectGalleryThumbs();
+      }, 100);
     }
     
     // Now create text inputs after we know if it's dual-sided
@@ -773,78 +781,156 @@ if (typeof ProductCustomizerModal === 'undefined') {
   }
   
   updateSlideshowThumbnails() {
-    if (!this.currentPreviewUrl) {
-      return;
-    }
+    console.log('[ProductCustomizer] Starting updateSlideshowThumbnails, isDualSided:', this.isDualSided);
     
-    console.log('[ProductCustomizer] Starting updateSlideshowThumbnails');
-    
-    // Find the active slideshow thumbnail button - be more specific
-    const activeThumbnail = document.querySelector(
-      'button.slideshow-control[aria-selected="true"], ' +
-      'button.slideshow-controls__thumbnail[aria-selected="true"], ' +
-      '.slideshow-nav__button.is-active, ' +
-      '.product__thumb.is-active'
-    );
-    
-    console.log('[ProductCustomizer] Active thumbnail found:', activeThumbnail);
-    
-    if (activeThumbnail) {
-      const thumbnailImg = activeThumbnail.querySelector('img');
-      console.log('[ProductCustomizer] Thumbnail img found:', thumbnailImg);
+    if (this.isDualSided && this.frontPreviewUrl && this.backPreviewUrl) {
+      // For dual-sided templates, update both front and back thumbnails specifically
+      console.log('[ProductCustomizer] Updating thumbnails for dual-sided template');
       
-      if (thumbnailImg) {
-        // Store original source if not already stored
-        if (!thumbnailImg.dataset.originalSrc) {
-          thumbnailImg.dataset.originalSrc = thumbnailImg.src;
-          if (thumbnailImg.srcset) {
-            thumbnailImg.dataset.originalSrcset = thumbnailImg.srcset;
-          }
-          if (thumbnailImg.getAttribute('sizes')) {
-            thumbnailImg.dataset.originalSizes = thumbnailImg.getAttribute('sizes');
-          }
-        }
-        
-        // Update the thumbnail image
-        thumbnailImg.src = this.currentPreviewUrl;
-        thumbnailImg.srcset = this.currentPreviewUrl; // Set srcset to same URL
-        thumbnailImg.removeAttribute('sizes'); // Remove sizes to prevent responsive logic
-        thumbnailImg.setAttribute('data-customization-preview', 'true');
-        
-        console.log('[ProductCustomizer] Updated slideshow thumbnail with URL:', this.currentPreviewUrl);
-      }
-    } else {
-      // No active thumbnail found, try to find the first one
-      console.log('[ProductCustomizer] No active thumbnail found, looking for first thumbnail');
-      
-      const firstThumbnail = document.querySelector(
+      // Find all slideshow thumbnails
+      const allThumbnails = document.querySelectorAll(
         'button.slideshow-control img, ' +
         'button.slideshow-controls__thumbnail img, ' +
-        '.slideshow-nav__button:first-child img, ' +
-        '.product__thumb:first-child img'
+        '.slideshow-nav__button img, ' +
+        '.product__thumb img'
       );
       
-      console.log('[ProductCustomizer] First thumbnail found:', firstThumbnail);
+      let frontUpdated = false;
+      let backUpdated = false;
       
-      if (firstThumbnail) {
-        // Store original source if not already stored
-        if (!firstThumbnail.dataset.originalSrc) {
-          firstThumbnail.dataset.originalSrc = firstThumbnail.src;
-          if (firstThumbnail.srcset) {
-            firstThumbnail.dataset.originalSrcset = firstThumbnail.srcset;
+      // Look through all thumbnails and update based on alt text
+      for (const thumbnail of allThumbnails) {
+        const altText = thumbnail.getAttribute('alt') || '';
+        
+        // Check if this is a back thumbnail
+        if (altText.endsWith('- Back')) {
+          console.log('[ProductCustomizer] Found back thumbnail with alt:', altText);
+          
+          // Store original source if not already stored
+          if (!thumbnail.dataset.originalSrc) {
+            thumbnail.dataset.originalSrc = thumbnail.src;
+            if (thumbnail.srcset) {
+              thumbnail.dataset.originalSrcset = thumbnail.srcset;
+            }
+            if (thumbnail.getAttribute('sizes')) {
+              thumbnail.dataset.originalSizes = thumbnail.getAttribute('sizes');
+            }
           }
-          if (firstThumbnail.getAttribute('sizes')) {
-            firstThumbnail.dataset.originalSizes = firstThumbnail.getAttribute('sizes');
+          
+          // Update with back preview
+          thumbnail.src = this.backPreviewUrl;
+          thumbnail.srcset = this.backPreviewUrl;
+          thumbnail.removeAttribute('sizes');
+          thumbnail.setAttribute('data-customization-preview', 'true');
+          
+          console.log('[ProductCustomizer] Updated back thumbnail with URL:', this.backPreviewUrl);
+          backUpdated = true;
+        }
+        // Otherwise, if we haven't updated the front yet and this isn't a back thumbnail
+        else if (!frontUpdated && !altText.endsWith('- Back')) {
+          console.log('[ProductCustomizer] Found front thumbnail with alt:', altText);
+          
+          // Store original source if not already stored
+          if (!thumbnail.dataset.originalSrc) {
+            thumbnail.dataset.originalSrc = thumbnail.src;
+            if (thumbnail.srcset) {
+              thumbnail.dataset.originalSrcset = thumbnail.srcset;
+            }
+            if (thumbnail.getAttribute('sizes')) {
+              thumbnail.dataset.originalSizes = thumbnail.getAttribute('sizes');
+            }
           }
+          
+          // Update with front preview
+          thumbnail.src = this.frontPreviewUrl;
+          thumbnail.srcset = this.frontPreviewUrl;
+          thumbnail.removeAttribute('sizes');
+          thumbnail.setAttribute('data-customization-preview', 'true');
+          
+          console.log('[ProductCustomizer] Updated front thumbnail with URL:', this.frontPreviewUrl);
+          frontUpdated = true;
         }
         
-        // Update the thumbnail image
-        firstThumbnail.src = this.currentPreviewUrl;
-        firstThumbnail.srcset = this.currentPreviewUrl; // Set srcset to same URL
-        firstThumbnail.removeAttribute('sizes'); // Remove sizes to prevent responsive logic
-        firstThumbnail.setAttribute('data-customization-preview', 'true');
+        // Exit early if we've updated both
+        if (frontUpdated && backUpdated) {
+          break;
+        }
+      }
+    } else {
+      // For single-sided templates, use the original logic
+      if (!this.currentPreviewUrl) {
+        return;
+      }
+      
+      console.log('[ProductCustomizer] Updating thumbnails for single-sided template');
+      
+      // Find the active slideshow thumbnail button - be more specific
+      const activeThumbnail = document.querySelector(
+        'button.slideshow-control[aria-selected="true"], ' +
+        'button.slideshow-controls__thumbnail[aria-selected="true"], ' +
+        '.slideshow-nav__button.is-active, ' +
+        '.product__thumb.is-active'
+      );
+      
+      console.log('[ProductCustomizer] Active thumbnail found:', activeThumbnail);
+      
+      if (activeThumbnail) {
+        const thumbnailImg = activeThumbnail.querySelector('img');
+        console.log('[ProductCustomizer] Thumbnail img found:', thumbnailImg);
         
-        console.log('[ProductCustomizer] Updated first slideshow thumbnail with URL:', this.currentPreviewUrl);
+        if (thumbnailImg) {
+          // Store original source if not already stored
+          if (!thumbnailImg.dataset.originalSrc) {
+            thumbnailImg.dataset.originalSrc = thumbnailImg.src;
+            if (thumbnailImg.srcset) {
+              thumbnailImg.dataset.originalSrcset = thumbnailImg.srcset;
+            }
+            if (thumbnailImg.getAttribute('sizes')) {
+              thumbnailImg.dataset.originalSizes = thumbnailImg.getAttribute('sizes');
+            }
+          }
+          
+          // Update the thumbnail image
+          thumbnailImg.src = this.currentPreviewUrl;
+          thumbnailImg.srcset = this.currentPreviewUrl; // Set srcset to same URL
+          thumbnailImg.removeAttribute('sizes'); // Remove sizes to prevent responsive logic
+          thumbnailImg.setAttribute('data-customization-preview', 'true');
+          
+          console.log('[ProductCustomizer] Updated slideshow thumbnail with URL:', this.currentPreviewUrl);
+        }
+      } else {
+        // No active thumbnail found, try to find the first one
+        console.log('[ProductCustomizer] No active thumbnail found, looking for first thumbnail');
+        
+        const firstThumbnail = document.querySelector(
+          'button.slideshow-control img, ' +
+          'button.slideshow-controls__thumbnail img, ' +
+          '.slideshow-nav__button:first-child img, ' +
+          '.product__thumb:first-child img'
+        );
+        
+        console.log('[ProductCustomizer] First thumbnail found:', firstThumbnail);
+        
+        if (firstThumbnail) {
+          // Store original source if not already stored
+          if (!firstThumbnail.dataset.originalSrc) {
+            firstThumbnail.dataset.originalSrc = firstThumbnail.src;
+            if (firstThumbnail.srcset) {
+              firstThumbnail.dataset.originalSrcset = firstThumbnail.srcset;
+            }
+            if (firstThumbnail.getAttribute('sizes')) {
+              firstThumbnail.dataset.originalSizes = firstThumbnail.getAttribute('sizes');
+            }
+          }
+          
+          // Update the thumbnail image
+          firstThumbnail.src = this.currentPreviewUrl;
+          firstThumbnail.srcset = this.currentPreviewUrl; // Set srcset to same URL
+          firstThumbnail.removeAttribute('sizes'); // Remove sizes to prevent responsive logic
+          firstThumbnail.setAttribute('data-customization-preview', 'true');
+          
+          console.log('[ProductCustomizer] Updated first slideshow thumbnail with URL:', this.currentPreviewUrl);
+        }
       }
     }
   }
@@ -1107,6 +1193,22 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Store front preview URL for dual-sided templates
     if (this.isDualSided) {
       this.frontPreviewUrl = dataUrl;
+      
+      // Generate back preview
+      if (this.renderer.backCanvasData) {
+        // Temporarily switch to back canvas
+        const originalTemplate = this.renderer.template;
+        this.renderer.template = this.renderer.backCanvasData;
+        
+        // Generate back preview
+        const backDataUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+        this.backPreviewUrl = backDataUrl;
+        
+        // Switch back to front
+        this.renderer.template = this.renderer.frontCanvasData;
+        
+        console.log('[ProductCustomizer] Generated back preview URL');
+      }
     }
     
     this.updateVariantSwatches();
@@ -1424,6 +1526,30 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Update the current preview URL before closing
     this.currentPreviewUrl = customization.fullPreview;
     
+    // For dual-sided templates, ensure we have both previews
+    if (this.isDualSided) {
+      // Front preview is already generated above
+      this.frontPreviewUrl = customization.fullPreview;
+      
+      // Generate back preview
+      if (this.renderer.backCanvasData) {
+        // Temporarily switch to back canvas
+        const originalTemplate = this.renderer.template;
+        this.renderer.template = this.renderer.backCanvasData;
+        
+        // Generate back preview
+        const backDataUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+        this.backPreviewUrl = backDataUrl;
+        customization.backPreview = backDataUrl;
+        
+        // Switch back to front
+        this.renderer.template = this.renderer.frontCanvasData;
+      }
+      
+      // Update both thumbnails before closing
+      this.updateMainProductImage();
+    }
+    
     // Store the customization in localStorage for persistence
     const customizationKey = `customization_${this.options.variantId}`;
     localStorage.setItem(customizationKey, JSON.stringify({
@@ -1433,6 +1559,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
       textUpdates: customization.textUpdates,
       isDualSided: this.isDualSided,
       frontPreview: customization.frontPreview,
+      backPreview: customization.backPreview,
       timestamp: Date.now()
     }));
     

@@ -432,7 +432,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       
       // Use the original thumbnail sync (not server-side rendering for now)
       console.log(`Syncing template ${templateId} using ${template.frontThumbnail ? 'front thumbnail' : 'legacy thumbnail'}`);
-      const syncResult = await templateSyncModule.syncTemplateThumbnailToVariants(admin, templateId, thumbnailToSync);
+      const syncResult = await templateSyncModule.syncTemplateThumbnailToVariants(
+        admin, 
+        templateId, 
+        thumbnailToSync,
+        template.backThumbnail // Pass back thumbnail for dual-sided templates
+      );
       
       if (!syncResult.success && syncResult.errors.length > 0) {
         return json({ 
@@ -1110,6 +1115,19 @@ export default function Templates() {
     const { id, name, thumbnail, frontThumbnail, backThumbnail, colorVariant, shopifyVariantId, isColorVariant, frontCanvasData, backCanvasData } = template;
     const isDualSided = !!(frontCanvasData || backCanvasData);
     
+    // Helper function to clean up duplicate product names in alt text
+    const getCleanAltText = (fullName: string, suffix?: string) => {
+      // If name contains " - " twice, it likely has duplicate product name
+      const parts = fullName.split(' - ');
+      if (parts.length >= 3) {
+        // Take first part (product) and last part (variant), skip middle duplicate
+        const cleanName = `${parts[0]} - ${parts[parts.length - 1]}`;
+        return suffix ? `${cleanName} - ${suffix}` : cleanName;
+      }
+      // Otherwise use the full name
+      return suffix ? `${fullName} - ${suffix}` : fullName;
+    };
+    
     // For dual-sided templates, show both thumbnails
     const media = (frontThumbnail || backThumbnail) ? (
       <div style={{ display: 'flex', gap: '8px' }}>
@@ -1119,7 +1137,7 @@ export default function Templates() {
           </Text>
           <Thumbnail
             source={frontThumbnail || "https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"}
-            alt={`${name} - Front`}
+            alt={getCleanAltText(name, 'Front')}
             size="medium"
           />
         </div>
@@ -1129,7 +1147,7 @@ export default function Templates() {
           </Text>
           <Thumbnail
             source={backThumbnail || "https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"}
-            alt={`${name} - Back`}
+            alt={getCleanAltText(name, 'Back')}
             size="medium"
           />
         </div>
@@ -1137,7 +1155,7 @@ export default function Templates() {
     ) : thumbnail ? (
       <Thumbnail
         source={thumbnail}
-        alt={name}
+        alt={getCleanAltText(name)}
         size="medium"
       />
     ) : (

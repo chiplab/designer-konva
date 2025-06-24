@@ -571,12 +571,17 @@ export async function updateVariantImages(
   `;
   
   // Prepare media input for all images with descriptive alt text
+  // Check if variantName already includes the product title to avoid duplication
+  const cleanVariantName = variantName.startsWith(productTitle + ' - ') 
+    ? variantName.substring(productTitle.length + 3)
+    : variantName;
+    
   const mediaInput = imageUrls.map((url, index) => ({
     originalSource: url,
     mediaContentType: "IMAGE",
     alt: index === 0 
-      ? `${productTitle} - ${variantName} - Front`
-      : `${productTitle} - ${variantName} - Back`
+      ? `${productTitle} - ${cleanVariantName} - Front`
+      : `${productTitle} - ${cleanVariantName} - Back`
   }));
   
   console.log(`Creating ${mediaInput.length} media items for product ${productId}`);
