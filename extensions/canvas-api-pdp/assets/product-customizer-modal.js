@@ -32,8 +32,13 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.backRenderer = null;
     this.frontPreviewUrl = null;
     this.backPreviewUrl = null;
-    this.injectedThumbs = []; // Track injected thumbnails for cleanup
-    this.galleryStructure = null; // Store detected gallery structure
+    
+    // Cache for thumbnail queries
+    this.thumbnailCache = new Map();
+    this.lastVariantTitle = null;
+    
+    // Track which side was last edited
+    this.lastEditedSide = 'front';
   }
 
   init() {
@@ -363,6 +368,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.modal.classList.add('open');
     this.isOpen = true;
     
+    // Reset to front side when opening
+    this.lastEditedSide = 'front';
+    
     // Only prevent body scroll on mobile
     if (window.innerWidth <= 749) {
       document.body.style.overflow = 'hidden';
@@ -455,12 +463,6 @@ if (typeof ProductCustomizerModal === 'undefined') {
       await this.loadKonva();
     }
     
-    // Detect gallery structure early
-    this.galleryStructure = this.detectGalleryStructure();
-    
-    // Force native gallery to initialize
-    this.forceNativeGallery();
-    
     // Initialize renderer
     const canvasContainer = document.getElementById('customizer-canvas');
     this.renderer = new CanvasTextRenderer(canvasContainer, {
@@ -485,13 +487,13 @@ if (typeof ProductCustomizerModal === 'undefined') {
       // Store the front renderer reference
       this.frontRenderer = this.renderer;
       
+      // Ensure we're on the front canvas
+      if (this.renderer.template !== this.renderer.frontCanvasData) {
+        this.renderer.template = this.renderer.frontCanvasData;
+      }
+      
       // Generate initial previews for both sides
       this.updatePreview();
-      
-      // Inject gallery thumbs for dual-sided templates
-      setTimeout(() => {
-        this.injectGalleryThumbs();
-      }, 100);
     }
     
     // Now create text inputs after we know if it's dual-sided
@@ -781,158 +783,152 @@ if (typeof ProductCustomizerModal === 'undefined') {
   }
   
   updateSlideshowThumbnails() {
-    console.log('[ProductCustomizer] Starting updateSlideshowThumbnails, isDualSided:', this.isDualSided);
+    console.log('[ProductCustomizer] Starting alt-text based thumbnail update');
     
-    if (this.isDualSided && this.frontPreviewUrl && this.backPreviewUrl) {
-      // For dual-sided templates, update both front and back thumbnails specifically
-      console.log('[ProductCustomizer] Updating thumbnails for dual-sided template');
-      
-      // Find all slideshow thumbnails
-      const allThumbnails = document.querySelectorAll(
-        'button.slideshow-control img, ' +
-        'button.slideshow-controls__thumbnail img, ' +
-        '.slideshow-nav__button img, ' +
-        '.product__thumb img'
-      );
-      
-      let frontUpdated = false;
-      let backUpdated = false;
-      
-      // Look through all thumbnails and update based on alt text
-      for (const thumbnail of allThumbnails) {
-        const altText = thumbnail.getAttribute('alt') || '';
-        
-        // Check if this is a back thumbnail
-        if (altText.endsWith('- Back')) {
-          console.log('[ProductCustomizer] Found back thumbnail with alt:', altText);
-          
-          // Store original source if not already stored
-          if (!thumbnail.dataset.originalSrc) {
-            thumbnail.dataset.originalSrc = thumbnail.src;
-            if (thumbnail.srcset) {
-              thumbnail.dataset.originalSrcset = thumbnail.srcset;
-            }
-            if (thumbnail.getAttribute('sizes')) {
-              thumbnail.dataset.originalSizes = thumbnail.getAttribute('sizes');
-            }
-          }
-          
-          // Update with back preview
-          thumbnail.src = this.backPreviewUrl;
-          thumbnail.srcset = this.backPreviewUrl;
-          thumbnail.removeAttribute('sizes');
-          thumbnail.setAttribute('data-customization-preview', 'true');
-          
-          console.log('[ProductCustomizer] Updated back thumbnail with URL:', this.backPreviewUrl);
-          backUpdated = true;
+    // Get current variant title
+    const variantTitle = this.getVariantTitle();
+    if (!variantTitle) {
+      console.warn('[ProductCustomizer] Could not determine variant title');
+      return;
+    }
+    
+    console.log('[ProductCustomizer] Current variant:', variantTitle);
+    
+    // Clear cache if variant has changed
+    if (variantTitle !== this.lastVariantTitle) {
+      this.thumbnailCache.clear();
+      this.lastVariantTitle = variantTitle;
+    }
+    
+    // Find and update thumbnails
+    if (this.isDualSided) {
+      // Update front thumbnail
+      if (this.frontPreviewUrl) {
+        const frontThumbnail = this.findThumbnailByAltText(variantTitle, false);
+        if (frontThumbnail) {
+          this.updateThumbnailImage(frontThumbnail, this.frontPreviewUrl);
+          console.log('[ProductCustomizer] Updated front thumbnail');
+        } else {
+          console.warn('[ProductCustomizer] Could not find front thumbnail for:', variantTitle);
         }
-        // Otherwise, if we haven't updated the front yet and this isn't a back thumbnail
-        else if (!frontUpdated && !altText.endsWith('- Back')) {
-          console.log('[ProductCustomizer] Found front thumbnail with alt:', altText);
-          
-          // Store original source if not already stored
-          if (!thumbnail.dataset.originalSrc) {
-            thumbnail.dataset.originalSrc = thumbnail.src;
-            if (thumbnail.srcset) {
-              thumbnail.dataset.originalSrcset = thumbnail.srcset;
-            }
-            if (thumbnail.getAttribute('sizes')) {
-              thumbnail.dataset.originalSizes = thumbnail.getAttribute('sizes');
-            }
-          }
-          
-          // Update with front preview
-          thumbnail.src = this.frontPreviewUrl;
-          thumbnail.srcset = this.frontPreviewUrl;
-          thumbnail.removeAttribute('sizes');
-          thumbnail.setAttribute('data-customization-preview', 'true');
-          
-          console.log('[ProductCustomizer] Updated front thumbnail with URL:', this.frontPreviewUrl);
-          frontUpdated = true;
-        }
-        
-        // Exit early if we've updated both
-        if (frontUpdated && backUpdated) {
-          break;
+      }
+      
+      // Update back thumbnail
+      if (this.backPreviewUrl) {
+        const backThumbnail = this.findThumbnailByAltText(variantTitle, true);
+        if (backThumbnail) {
+          this.updateThumbnailImage(backThumbnail, this.backPreviewUrl);
+          console.log('[ProductCustomizer] Updated back thumbnail');
+        } else {
+          console.warn('[ProductCustomizer] Could not find back thumbnail for:', variantTitle);
         }
       }
     } else {
-      // For single-sided templates, use the original logic
-      if (!this.currentPreviewUrl) {
-        return;
-      }
-      
-      console.log('[ProductCustomizer] Updating thumbnails for single-sided template');
-      
-      // Find the active slideshow thumbnail button - be more specific
-      const activeThumbnail = document.querySelector(
-        'button.slideshow-control[aria-selected="true"], ' +
-        'button.slideshow-controls__thumbnail[aria-selected="true"], ' +
-        '.slideshow-nav__button.is-active, ' +
-        '.product__thumb.is-active'
-      );
-      
-      console.log('[ProductCustomizer] Active thumbnail found:', activeThumbnail);
-      
-      if (activeThumbnail) {
-        const thumbnailImg = activeThumbnail.querySelector('img');
-        console.log('[ProductCustomizer] Thumbnail img found:', thumbnailImg);
-        
-        if (thumbnailImg) {
-          // Store original source if not already stored
-          if (!thumbnailImg.dataset.originalSrc) {
-            thumbnailImg.dataset.originalSrc = thumbnailImg.src;
-            if (thumbnailImg.srcset) {
-              thumbnailImg.dataset.originalSrcset = thumbnailImg.srcset;
-            }
-            if (thumbnailImg.getAttribute('sizes')) {
-              thumbnailImg.dataset.originalSizes = thumbnailImg.getAttribute('sizes');
-            }
-          }
-          
-          // Update the thumbnail image
-          thumbnailImg.src = this.currentPreviewUrl;
-          thumbnailImg.srcset = this.currentPreviewUrl; // Set srcset to same URL
-          thumbnailImg.removeAttribute('sizes'); // Remove sizes to prevent responsive logic
-          thumbnailImg.setAttribute('data-customization-preview', 'true');
-          
-          console.log('[ProductCustomizer] Updated slideshow thumbnail with URL:', this.currentPreviewUrl);
-        }
-      } else {
-        // No active thumbnail found, try to find the first one
-        console.log('[ProductCustomizer] No active thumbnail found, looking for first thumbnail');
-        
-        const firstThumbnail = document.querySelector(
-          'button.slideshow-control img, ' +
-          'button.slideshow-controls__thumbnail img, ' +
-          '.slideshow-nav__button:first-child img, ' +
-          '.product__thumb:first-child img'
-        );
-        
-        console.log('[ProductCustomizer] First thumbnail found:', firstThumbnail);
-        
-        if (firstThumbnail) {
-          // Store original source if not already stored
-          if (!firstThumbnail.dataset.originalSrc) {
-            firstThumbnail.dataset.originalSrc = firstThumbnail.src;
-            if (firstThumbnail.srcset) {
-              firstThumbnail.dataset.originalSrcset = firstThumbnail.srcset;
-            }
-            if (firstThumbnail.getAttribute('sizes')) {
-              firstThumbnail.dataset.originalSizes = firstThumbnail.getAttribute('sizes');
-            }
-          }
-          
-          // Update the thumbnail image
-          firstThumbnail.src = this.currentPreviewUrl;
-          firstThumbnail.srcset = this.currentPreviewUrl; // Set srcset to same URL
-          firstThumbnail.removeAttribute('sizes'); // Remove sizes to prevent responsive logic
-          firstThumbnail.setAttribute('data-customization-preview', 'true');
-          
-          console.log('[ProductCustomizer] Updated first slideshow thumbnail with URL:', this.currentPreviewUrl);
+      // For single-sided templates, only update the front image
+      if (this.currentPreviewUrl) {
+        const frontThumbnail = this.findThumbnailByAltText(variantTitle, false);
+        if (frontThumbnail) {
+          this.updateThumbnailImage(frontThumbnail, this.currentPreviewUrl);
+          console.log('[ProductCustomizer] Updated single-sided thumbnail');
+        } else {
+          console.warn('[ProductCustomizer] Could not find thumbnail for:', variantTitle);
         }
       }
     }
+  }
+  
+  findThumbnailByAltText(variantTitle, isBack = false) {
+    // Create cache key
+    const cacheKey = `${variantTitle}-${isBack ? 'back' : 'front'}`;
+    
+    // Check cache first
+    if (this.thumbnailCache.has(cacheKey)) {
+      return this.thumbnailCache.get(cacheKey);
+    }
+    
+    // Query for all thumbnail images
+    const thumbnails = document.querySelectorAll(
+      'button.slideshow-control img, ' +
+      'button.slideshow-controls__thumbnail img'
+    );
+    
+    // First pass: exact match
+    for (const img of thumbnails) {
+      if (this.matchesVariant(img.alt, variantTitle, isBack)) {
+        this.thumbnailCache.set(cacheKey, img);
+        return img;
+      }
+    }
+    
+    // Second pass: fuzzy match (for edge cases)
+    for (const img of thumbnails) {
+      if (this.fuzzyMatchesVariant(img.alt, variantTitle, isBack)) {
+        console.log('[ProductCustomizer] Using fuzzy match for:', img.alt);
+        this.thumbnailCache.set(cacheKey, img);
+        return img;
+      }
+    }
+    
+    return null;
+  }
+  
+  matchesVariant(altText, variantTitle, isBack) {
+    if (!altText) return false;
+    
+    // Normalize text for comparison
+    const normalizedAlt = altText.toLowerCase().trim();
+    const normalizedVariant = variantTitle.toLowerCase().trim();
+    
+    // Check if alt text contains the variant title
+    if (!normalizedAlt.includes(normalizedVariant)) {
+      return false;
+    }
+    
+    // Check if it's the correct side (front/back)
+    const isBackImage = normalizedAlt.endsWith('- back');
+    return isBackImage === isBack;
+  }
+  
+  fuzzyMatchesVariant(altText, variantTitle, isBack) {
+    if (!altText) return false;
+    
+    const normalizedAlt = altText.toLowerCase().trim();
+    const isBackImage = normalizedAlt.endsWith('- back');
+    
+    // Check if side matches
+    if (isBackImage !== isBack) {
+      return false;
+    }
+    
+    // Extract color and pattern from variant title
+    const parts = variantTitle.split(' / ');
+    if (parts.length >= 2) {
+      const color = parts[0].toLowerCase().trim();
+      const pattern = parts[1].toLowerCase().trim();
+      
+      // Check if alt text contains both color and pattern
+      return normalizedAlt.includes(color) && normalizedAlt.includes(pattern);
+    }
+    
+    // Fallback: partial match
+    const variantWords = variantTitle.toLowerCase().split(/\s+/);
+    const matchedWords = variantWords.filter(word => normalizedAlt.includes(word));
+    return matchedWords.length >= variantWords.length * 0.7; // 70% match threshold
+  }
+  
+  updateThumbnailImage(img, previewUrl) {
+    // Store original state if not already stored
+    if (!img.dataset.originalSrc) {
+      img.dataset.originalSrc = img.src;
+      img.dataset.originalSrcset = img.srcset || '';
+      img.dataset.originalSizes = img.getAttribute('sizes') || '';
+    }
+    
+    // Update image
+    img.src = previewUrl;
+    img.srcset = previewUrl;
+    img.removeAttribute('sizes');
+    img.setAttribute('data-customization-preview', 'true');
   }
   
   restoreOriginalProductImages() {
@@ -1180,35 +1176,68 @@ if (typeof ProductCustomizerModal === 'undefined') {
     const previewImage = document.getElementById('preview-image');
     if (!this.renderer || !previewImage) return;
     
-    // For both single-sided and dual-sided templates, generate preview from current renderer
-    // (which shows the front side for dual-sided templates)
-    const dataUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
-    previewImage.src = dataUrl;
-    previewImage.style.display = 'block';
-    
-    // Update the current preview URL and main product image
-    this.currentPreviewUrl = dataUrl;
-    this.updateMainProductImage(dataUrl);
-    
-    // Store front preview URL for dual-sided templates
     if (this.isDualSided) {
-      this.frontPreviewUrl = dataUrl;
-      
-      // Generate back preview
-      if (this.renderer.backCanvasData) {
-        // Temporarily switch to back canvas
-        const originalTemplate = this.renderer.template;
-        this.renderer.template = this.renderer.backCanvasData;
+      // For dual-sided templates, handle based on which side was edited
+      if (this.lastEditedSide === 'back') {
+        // Ensure we're on the back canvas
+        if (this.renderer.template !== this.renderer.backCanvasData) {
+          this.renderer.template = this.renderer.backCanvasData;
+        }
         
         // Generate back preview
         const backDataUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
         this.backPreviewUrl = backDataUrl;
+        previewImage.src = backDataUrl;
+        previewImage.style.display = 'block';
         
-        // Switch back to front
-        this.renderer.template = this.renderer.frontCanvasData;
+        // For back edits, keep the current preview as back
+        this.currentPreviewUrl = backDataUrl;
         
-        console.log('[ProductCustomizer] Generated back preview URL');
+        // Also ensure we have a front preview
+        if (!this.frontPreviewUrl) {
+          this.renderer.template = this.renderer.frontCanvasData;
+          this.frontPreviewUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+          this.renderer.template = this.renderer.backCanvasData; // Switch back
+        }
+        
+        console.log('[ProductCustomizer] Generated back preview for back edit');
+        
+        // Update thumbnails for back edits
+        this.updateSlideshowThumbnails();
+      } else {
+        // Front side was edited
+        // Ensure we're on the front canvas
+        if (this.renderer.template !== this.renderer.frontCanvasData) {
+          this.renderer.template = this.renderer.frontCanvasData;
+        }
+        
+        // Generate front preview
+        const frontDataUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+        this.frontPreviewUrl = frontDataUrl;
+        previewImage.src = frontDataUrl;
+        previewImage.style.display = 'block';
+        
+        // Update the current preview URL and main product image
+        this.currentPreviewUrl = frontDataUrl;
+        this.updateMainProductImage(frontDataUrl);
+        
+        // Also ensure we have a back preview
+        if (this.renderer.backCanvasData && !this.backPreviewUrl) {
+          this.renderer.template = this.renderer.backCanvasData;
+          this.backPreviewUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+          this.renderer.template = this.renderer.frontCanvasData; // Switch back
+        }
+        
+        console.log('[ProductCustomizer] Generated front preview for front edit');
       }
+    } else {
+      // Single-sided template
+      const dataUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+      previewImage.src = dataUrl;
+      previewImage.style.display = 'block';
+      
+      this.currentPreviewUrl = dataUrl;
+      this.updateMainProductImage(dataUrl);
     }
     
     this.updateVariantSwatches();
@@ -1339,20 +1368,23 @@ if (typeof ProductCustomizerModal === 'undefined') {
         
         if (this.isDualSided && side) {
           // For dual-sided templates, we need to switch to the correct side before updating
-          const originalTemplate = this.renderer.template;
+          this.lastEditedSide = side; // Track which side was edited
           
           if (side === 'back') {
             // Switch to back canvas temporarily
             this.renderer.template = this.renderer.backCanvasData;
             this.renderer.updateText(elementId, e.target.value);
-            // Switch back to front for preview (we only show front preview for now)
-            this.renderer.template = this.renderer.frontCanvasData;
+            // Keep on back canvas - updatePreview will handle switching
           } else {
             // Update front side
+            if (this.renderer.template !== this.renderer.frontCanvasData) {
+              this.renderer.template = this.renderer.frontCanvasData;
+            }
             this.renderer.updateText(elementId, e.target.value);
           }
         } else {
           // Single-sided template
+          this.lastEditedSide = 'front';
           this.renderer.updateText(elementId, e.target.value);
         }
         
@@ -1372,9 +1404,6 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.modal.classList.remove('open');
     this.isOpen = false;
     document.body.style.overflow = '';
-    
-    // Remove injected gallery thumbnails
-    this.removeInjectedThumbs();
     
     // Only restore original product images if we're not keeping a customization
     if (!keepCustomization) {
@@ -2048,643 +2077,6 @@ if (typeof ProductCustomizerModal === 'undefined') {
     }
     
     return null;
-  }
-  
-  detectGalleryStructure() {
-    // Common patterns in Shopify themes
-    const patterns = [
-      // Horizon theme pattern (based on provided XPath)
-      {
-        container: 'media-gallery slideshow-component scroll-hint > div',
-        item: 'button',
-        image: 'img',
-        wrapper: null,
-        isHorizon: true
-      },
-      // Alternative Horizon selectors
-      {
-        container: 'slideshow-controls scroll-hint > div',
-        item: 'button',
-        image: 'img',
-        wrapper: null,
-        isHorizon: true
-      },
-      { 
-        container: '.media-gallery__nav', 
-        item: '.media-gallery__item',
-        image: 'img',
-        wrapper: '.media-gallery__image-wrapper'
-      },
-      { 
-        container: '.product__thumbs', 
-        item: '.product__thumb-item',
-        image: 'img',
-        wrapper: '.product__thumb'
-      },
-      { 
-        container: '[data-product-thumbs]', 
-        item: '[data-thumbnail]',
-        image: 'img',
-        wrapper: null
-      },
-      {
-        container: '.product-single__thumbnails',
-        item: '.product-single__thumbnail',
-        image: 'img',
-        wrapper: null
-      },
-      {
-        container: '.product-media-nav',
-        item: '.product-media-nav__item',
-        image: 'img',
-        wrapper: null
-      }
-    ];
-    
-    for (const pattern of patterns) {
-      const container = document.querySelector(pattern.container);
-      if (container) {
-        console.log('Found gallery container:', pattern.container);
-        console.log('Theme type:', pattern.isHorizon ? 'Horizon' : 'Other');
-        
-        // For Horizon theme, check if we're on mobile (dots instead of thumbnails)
-        if (pattern.isHorizon) {
-          const hasDots = document.querySelector('slideshow-controls .dots');
-          if (hasDots) {
-            console.log('Horizon theme mobile view detected - dots instead of thumbnails');
-            // On mobile, we might not be able to inject thumbnails
-            return null;
-          }
-        }
-        
-        return { ...pattern, containerElement: container };
-      }
-    }
-    
-    console.warn('Could not detect gallery structure');
-    return null;
-  }
-  
-  forceNativeGallery() {
-    console.log('[ProductCustomizer] Attempting to force native gallery initialization');
-    
-    // Horizon theme specific approach
-    const mediaGallery = document.querySelector('media-gallery');
-    const slideshowComponent = document.querySelector('slideshow-component');
-    const slideshowControls = document.querySelector('slideshow-controls');
-    
-    // Method 1: Check if there's only one image and try to force gallery initialization
-    if (mediaGallery || slideshowComponent) {
-      const galleryElement = mediaGallery || slideshowComponent;
-      const allImages = galleryElement.querySelectorAll('img');
-      console.log(`[ProductCustomizer] Found ${allImages.length} images in gallery`);
-      
-      // Method 1a: Try to trigger gallery by temporarily adding dummy images
-      if (allImages.length === 1) {
-        console.log('[ProductCustomizer] Only one image found, attempting to force gallery controls');
-        
-        // Check if the theme uses a data attribute to control gallery visibility
-        const possibleAttributes = [
-          'data-media-count',
-          'data-image-count',
-          'data-total-media',
-          'data-slides-count'
-        ];
-        
-        possibleAttributes.forEach(attr => {
-          if (galleryElement.hasAttribute(attr)) {
-            console.log(`[ProductCustomizer] Found attribute ${attr}, updating to 2`);
-            galleryElement.setAttribute(attr, '2');
-          }
-        });
-        
-        // Method 1b: Try to inject proper Horizon media structure
-        const firstMedia = galleryElement.querySelector('[data-media-type="image"]');
-        if (firstMedia) {
-          console.log('[ProductCustomizer] Found Horizon media structure, cloning for dummy');
-          
-          // Clone the entire media structure
-          const dummyMedia = firstMedia.cloneNode(true);
-          
-          // Update media ID and position
-          dummyMedia.setAttribute('data-media-id', 'customizer-dummy-media');
-          dummyMedia.setAttribute('data-media-position', '2');
-          dummyMedia.removeAttribute('id'); // Remove any ID to avoid conflicts
-          
-          // Find and update the image
-          const dummyImg = dummyMedia.querySelector('img');
-          if (dummyImg) {
-            // Use a transparent 1x1 pixel image
-            dummyImg.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-            dummyImg.style.opacity = '0';
-            dummyImg.style.pointerEvents = 'none';
-          }
-          
-          // Insert after the first media
-          firstMedia.parentElement.appendChild(dummyMedia);
-          
-          // Trigger gallery re-initialization
-          this.triggerGalleryReinit(galleryElement);
-          
-          // Also try to update slideshow if it exists
-          if (galleryElement.updateSlides && typeof galleryElement.updateSlides === 'function') {
-            galleryElement.updateSlides();
-          }
-          
-          // Remove dummy after a delay
-          setTimeout(() => {
-            const dummy = galleryElement.querySelector('[data-media-id="customizer-dummy-media"]');
-            if (dummy) {
-              dummy.remove();
-            }
-          }, 1000);
-        } else {
-          // Fallback to simpler approach
-          const firstImage = allImages[0];
-          if (firstImage && firstImage.parentElement) {
-            console.log('[ProductCustomizer] Injecting temporary dummy image (fallback)');
-            
-            // Clone the first image structure
-            const dummyWrapper = firstImage.parentElement.cloneNode(true);
-            const dummyImg = dummyWrapper.querySelector('img');
-            if (dummyImg) {
-              // Use a transparent 1x1 pixel image
-              dummyImg.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-              dummyImg.style.display = 'none';
-              dummyWrapper.setAttribute('data-customizer-dummy', 'true');
-            }
-            
-            // Insert the dummy
-            firstImage.parentElement.parentElement.appendChild(dummyWrapper);
-            
-            // Trigger gallery re-initialization
-            this.triggerGalleryReinit(galleryElement);
-            
-            // Remove dummy after a delay
-            setTimeout(() => {
-              const dummy = document.querySelector('[data-customizer-dummy]');
-              if (dummy) {
-                dummy.remove();
-              }
-            }, 500);
-          }
-        }
-      }
-      
-      // Method 2: Look for gallery initialization methods
-      if (galleryElement.init && typeof galleryElement.init === 'function') {
-        console.log('[ProductCustomizer] Calling gallery init method');
-        galleryElement.init();
-      }
-      
-      // Method 3: Dispatch custom events that might trigger gallery
-      ['media-gallery:init', 'slideshow:init', 'gallery:update'].forEach(eventName => {
-        console.log(`[ProductCustomizer] Dispatching ${eventName} event`);
-        galleryElement.dispatchEvent(new CustomEvent(eventName, { bubbles: true }));
-      });
-    }
-    
-    // Method 4: Check for Horizon theme-specific slideshow controls
-    if (slideshowControls) {
-      // Check if controls are hidden due to single image
-      const controls = slideshowControls.querySelector('.slideshow-controls__wrapper');
-      if (controls && controls.style.display === 'none') {
-        console.log('[ProductCustomizer] Forcing slideshow controls to be visible');
-        controls.style.display = '';
-      }
-      
-      // Check for dots container
-      const dots = slideshowControls.querySelector('.dots');
-      if (dots && dots.children.length === 0) {
-        console.log('[ProductCustomizer] No dots found, may need to add them');
-        // The theme should handle this automatically if we've added images
-      }
-    }
-    
-    // Method 5: Force visibility of gallery navigation
-    const galleryNavSelectors = [
-      '.media-gallery__nav',
-      '.product__thumbs',
-      '.product-media-nav',
-      'slideshow-controls .scroll-hint > div'
-    ];
-    
-    galleryNavSelectors.forEach(selector => {
-      const nav = document.querySelector(selector);
-      if (nav) {
-        console.log(`[ProductCustomizer] Found gallery nav: ${selector}`);
-        if (nav.style.display === 'none' || nav.classList.contains('hide')) {
-          console.log('[ProductCustomizer] Forcing nav to be visible');
-          nav.style.display = '';
-          nav.classList.remove('hide', 'hidden');
-        }
-      }
-    });
-    
-    // Method 6: Check for specific CSS classes that hide single-image galleries
-    const possibleHideClasses = [
-      'media-gallery--single-image',
-      'gallery--single-image',
-      'product-media--single',
-      'no-thumbnails'
-    ];
-    
-    if (mediaGallery || slideshowComponent) {
-      const galleryElement = mediaGallery || slideshowComponent;
-      possibleHideClasses.forEach(className => {
-        if (galleryElement.classList.contains(className)) {
-          console.log(`[ProductCustomizer] Removing class: ${className}`);
-          galleryElement.classList.remove(className);
-        }
-      });
-    }
-  }
-  
-  triggerGalleryReinit(galleryElement) {
-    // Try various methods to reinitialize the gallery
-    console.log('[ProductCustomizer] Triggering gallery re-initialization');
-    
-    // Method 1: Call connectedCallback if it's a custom element
-    if (galleryElement.connectedCallback && typeof galleryElement.connectedCallback === 'function') {
-      console.log('[ProductCustomizer] Calling connectedCallback');
-      galleryElement.connectedCallback();
-    }
-    
-    // Method 2: Trigger resize event (many galleries reinit on resize)
-    window.dispatchEvent(new Event('resize'));
-    
-    // Method 3: Mutation observer trigger
-    const tempAttr = 'data-reinit-trigger';
-    galleryElement.setAttribute(tempAttr, 'true');
-    setTimeout(() => galleryElement.removeAttribute(tempAttr), 10);
-    
-    // Method 4: For Horizon specifically, try to update the slideshow
-    if (galleryElement.tagName === 'SLIDESHOW-COMPONENT') {
-      // Try multiple slideshow update methods
-      const updateMethods = ['updateSlideshow', 'updateSlides', 'update', 'refresh'];
-      updateMethods.forEach(method => {
-        if (galleryElement[method] && typeof galleryElement[method] === 'function') {
-          console.log(`[ProductCustomizer] Calling ${method}`);
-          try {
-            galleryElement[method]();
-          } catch (e) {
-            console.warn(`[ProductCustomizer] Error calling ${method}:`, e);
-          }
-        }
-      });
-    }
-    
-    // Method 5: For media-gallery element
-    if (galleryElement.tagName === 'MEDIA-GALLERY') {
-      // Check for Horizon-specific media gallery methods
-      const mediaMethods = ['updateMedia', 'refreshGallery', 'init'];
-      mediaMethods.forEach(method => {
-        if (galleryElement[method] && typeof galleryElement[method] === 'function') {
-          console.log(`[ProductCustomizer] Calling ${method} on media-gallery`);
-          try {
-            galleryElement[method]();
-          } catch (e) {
-            console.warn(`[ProductCustomizer] Error calling ${method}:`, e);
-          }
-        }
-      });
-    }
-    
-    // Method 6: Dispatch media change events
-    const mediaEvents = [
-      'media:change',
-      'media:update', 
-      'slideshow:change',
-      'variant:change'
-    ];
-    
-    mediaEvents.forEach(eventName => {
-      console.log(`[ProductCustomizer] Dispatching ${eventName}`);
-      galleryElement.dispatchEvent(new CustomEvent(eventName, { 
-        bubbles: true,
-        detail: { mediaCount: 2 }
-      }));
-    });
-    
-    // Method 7: Force slideshow controls update
-    const slideshowControls = document.querySelector('slideshow-controls');
-    if (slideshowControls) {
-      // Update media count attribute
-      slideshowControls.setAttribute('data-media-count', '2');
-      
-      // Try to call update methods
-      if (slideshowControls.updateControls && typeof slideshowControls.updateControls === 'function') {
-        console.log('[ProductCustomizer] Calling updateControls on slideshow-controls');
-        slideshowControls.updateControls();
-      }
-    }
-  }
-  
-  createThemeCompatibleThumb(side, previewUrl) {
-    if (!this.galleryStructure) return null;
-    
-    // Find an existing thumb to clone
-    const existingThumb = this.galleryStructure.containerElement.querySelector(this.galleryStructure.item);
-    if (!existingThumb) return null;
-    
-    // Clone the structure
-    const newThumb = existingThumb.cloneNode(true);
-    
-    // Mark as customization thumb
-    newThumb.setAttribute('data-customization-thumb', side);
-    newThumb.setAttribute('data-media-position', side === 'front' ? '-2' : '-1'); // Negative positions for our thumbs
-    
-    // For Horizon theme, handle the button attributes
-    if (this.galleryStructure.isHorizon) {
-      // Remove any aria-controls that might interfere
-      newThumb.removeAttribute('aria-controls');
-      newThumb.removeAttribute('aria-label');
-      newThumb.setAttribute('aria-label', `View ${side} customization`);
-      
-      // Ensure button type
-      if (newThumb.tagName === 'BUTTON') {
-        newThumb.type = 'button';
-      }
-    }
-    
-    // Find and update the image
-    const img = newThumb.querySelector(this.galleryStructure.image);
-    if (img) {
-      img.src = previewUrl;
-      img.srcset = ''; // Clear srcset
-      img.alt = `${side} preview`;
-      img.setAttribute('data-customization-preview', side);
-      
-      // For Horizon theme, ensure the image is visible
-      if (this.galleryStructure.isHorizon) {
-        img.style.display = 'block';
-        img.style.width = '100%';
-        img.style.height = '100%';
-        img.style.objectFit = 'cover';
-      }
-    }
-    
-    // Add click handler
-    newThumb.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.handleThumbClick(side);
-    });
-    
-    return newThumb;
-  }
-  
-  injectGalleryThumbs() {
-    if (!this.frontPreviewUrl || !this.backPreviewUrl) return;
-    
-    // Clean up any existing injected thumbs
-    this.removeInjectedThumbs();
-    
-    // Try to force native gallery again now that we have dual-sided content
-    this.forceNativeGallery();
-    
-    // Re-detect gallery structure after forcing
-    this.galleryStructure = this.detectGalleryStructure();
-    
-    // If we have a gallery structure, use it
-    if (this.galleryStructure) {
-      // Create new thumbs
-      const frontThumb = this.createThemeCompatibleThumb('front', this.frontPreviewUrl);
-      const backThumb = this.createThemeCompatibleThumb('back', this.backPreviewUrl);
-      
-      if (frontThumb && backThumb) {
-        // For Horizon theme, we need to handle the specific structure
-        if (this.galleryStructure.isHorizon) {
-          // Find the first button to insert before
-          const firstButton = this.galleryStructure.containerElement.querySelector(this.galleryStructure.item);
-          if (firstButton) {
-            // Insert our thumbs at the beginning
-            this.galleryStructure.containerElement.insertBefore(backThumb, firstButton);
-            this.galleryStructure.containerElement.insertBefore(frontThumb, firstButton);
-          } else {
-            // Fallback to append if no buttons found
-            this.galleryStructure.containerElement.appendChild(frontThumb);
-            this.galleryStructure.containerElement.appendChild(backThumb);
-          }
-          
-          // After adding thumbs, try to reinitialize the gallery
-          const galleryElement = document.querySelector('media-gallery') || document.querySelector('slideshow-component');
-          if (galleryElement) {
-            this.triggerGalleryReinit(galleryElement);
-          }
-        } else {
-          // Standard insertion for other themes
-          this.galleryStructure.containerElement.prepend(backThumb);
-          this.galleryStructure.containerElement.prepend(frontThumb);
-        }
-        
-        // Track for cleanup
-        this.injectedThumbs = [frontThumb, backThumb];
-        
-        // Make the front thumb active by default
-        this.setActiveThumb('front');
-      }
-    } else {
-      // No gallery found - create a minimal gallery structure
-      console.log('No gallery structure detected, creating minimal thumbnail controls');
-      
-      // Find the main product image
-      const mainProductImage = this.originalProductImages.length > 0 
-        ? this.originalProductImages[0].element 
-        : document.querySelector(
-            'media-gallery img:first-of-type, ' +
-            '.media-gallery img:first-of-type, ' +
-            '.product-media img:first-of-type, ' +
-            '.product__media--featured img, ' +
-            '[data-product-featured-image], ' +
-            '.product-gallery img:first-of-type'
-          );
-      
-      if (!mainProductImage) {
-        console.warn('Could not find main product image to inject gallery');
-        return;
-      }
-      
-      // Find the image container (parent of the image)
-      let imageContainer = mainProductImage.closest('media-gallery, .media-gallery, .product-media, .product__media');
-      if (!imageContainer) {
-        imageContainer = mainProductImage.parentElement;
-      }
-      
-      // Create a minimal gallery container
-      const galleryContainer = document.createElement('div');
-      galleryContainer.className = 'customizer-mini-gallery';
-      galleryContainer.style.cssText = `
-        display: flex;
-        gap: 8px;
-        margin-top: 12px;
-        justify-content: center;
-        align-items: center;
-      `;
-      
-      // Create simple thumbnail buttons
-      const createSimpleThumb = (side, previewUrl) => {
-        const thumb = document.createElement('button');
-        thumb.type = 'button';
-        thumb.className = 'customizer-thumb';
-        thumb.setAttribute('data-customization-thumb', side);
-        thumb.setAttribute('aria-label', `View ${side} customization`);
-        thumb.style.cssText = `
-          width: 60px;
-          height: 60px;
-          padding: 0;
-          border: 2px solid #e0e0e0;
-          border-radius: 4px;
-          overflow: hidden;
-          cursor: pointer;
-          position: relative;
-          background: white;
-          transition: all 0.2s ease;
-        `;
-        
-        // Create the image
-        const img = document.createElement('img');
-        img.src = previewUrl;
-        img.alt = `${side} customization preview`;
-        img.style.cssText = `
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-        `;
-        
-        // Add side label
-        const label = document.createElement('span');
-        label.textContent = side.charAt(0).toUpperCase() + side.slice(1);
-        label.style.cssText = `
-          position: absolute;
-          bottom: 2px;
-          left: 50%;
-          transform: translateX(-50%);
-          font-size: 10px;
-          background: rgba(0,0,0,0.7);
-          color: white;
-          padding: 2px 6px;
-          border-radius: 2px;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        `;
-        
-        thumb.appendChild(img);
-        thumb.appendChild(label);
-        
-        // Add click handler
-        thumb.addEventListener('click', () => {
-          this.handleThumbClick(side);
-        });
-        
-        // Add hover effect
-        thumb.addEventListener('mouseenter', () => {
-          thumb.style.borderColor = '#0066cc';
-          thumb.style.transform = 'scale(1.05)';
-        });
-        
-        thumb.addEventListener('mouseleave', () => {
-          if (!thumb.classList.contains('is-active')) {
-            thumb.style.borderColor = '#e0e0e0';
-            thumb.style.transform = 'scale(1)';
-          }
-        });
-        
-        return thumb;
-      };
-      
-      // Create front and back thumbs
-      const frontThumb = createSimpleThumb('front', this.frontPreviewUrl);
-      const backThumb = createSimpleThumb('back', this.backPreviewUrl);
-      
-      // Add thumbs to container
-      galleryContainer.appendChild(frontThumb);
-      galleryContainer.appendChild(backThumb);
-      
-      // Insert the gallery after the main image
-      imageContainer.insertAdjacentElement('afterend', galleryContainer);
-      
-      // Track for cleanup
-      this.injectedThumbs = [frontThumb, backThumb];
-      this.injectedGalleryContainer = galleryContainer;
-      
-      // Make the front thumb active by default
-      this.setActiveThumb('front');
-    }
-  }
-  
-  removeInjectedThumbs() {
-    // Remove tracked thumbs
-    this.injectedThumbs.forEach(thumb => {
-      if (thumb && thumb.parentNode) {
-        thumb.remove();
-      }
-    });
-    
-    // Also remove any stragglers
-    document.querySelectorAll('[data-customization-thumb]').forEach(el => el.remove());
-    
-    // Remove injected gallery container if it exists
-    if (this.injectedGalleryContainer && this.injectedGalleryContainer.parentNode) {
-      this.injectedGalleryContainer.remove();
-      this.injectedGalleryContainer = null;
-    }
-    
-    // Also remove any customizer mini galleries
-    document.querySelectorAll('.customizer-mini-gallery').forEach(el => el.remove());
-    
-    this.injectedThumbs = [];
-  }
-  
-  handleThumbClick(side) {
-    // Update main product image
-    const previewUrl = side === 'front' ? this.frontPreviewUrl : this.backPreviewUrl;
-    if (previewUrl) {
-      this.updateMainProductImage(previewUrl);
-      this.setActiveThumb(side);
-    }
-  }
-  
-  setActiveThumb(side) {
-    // Remove active class from all thumbs
-    if (this.galleryStructure) {
-      this.galleryStructure.containerElement.querySelectorAll(this.galleryStructure.item).forEach(item => {
-        item.classList.remove('is-active', 'active', 'is-selected', 'selected');
-        
-        // For Horizon theme, handle aria-selected
-        if (this.galleryStructure.isHorizon) {
-          item.setAttribute('aria-selected', 'false');
-        }
-      });
-    }
-    
-    // Also handle our custom thumbs
-    document.querySelectorAll('[data-customization-thumb]').forEach(thumb => {
-      thumb.classList.remove('is-active', 'active', 'is-selected');
-      // Reset styles for custom thumbs
-      if (thumb.classList.contains('customizer-thumb')) {
-        thumb.style.borderColor = '#e0e0e0';
-        thumb.style.transform = 'scale(1)';
-      }
-    });
-    
-    // Add active class to our thumb
-    const activeThumb = document.querySelector(`[data-customization-thumb="${side}"]`);
-    if (activeThumb) {
-      activeThumb.classList.add('is-active', 'active', 'is-selected');
-      
-      // For Horizon theme, add selected class and aria-selected
-      if (this.galleryStructure && this.galleryStructure.isHorizon) {
-        activeThumb.classList.add('selected');
-        activeThumb.setAttribute('aria-selected', 'true');
-      }
-      
-      // For custom thumbs, apply active styles
-      if (activeThumb.classList.contains('customizer-thumb')) {
-        activeThumb.style.borderColor = '#0066cc';
-        activeThumb.style.transform = 'scale(1.05)';
-      }
-    }
   }
   
   
