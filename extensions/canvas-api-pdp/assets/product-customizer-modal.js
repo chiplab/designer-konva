@@ -612,6 +612,66 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.updateSlideshowThumbnails();
   }
   
+  updateSpecificMainImage(previewUrl, isBack = false) {
+    if (!previewUrl) {
+      return;
+    }
+    
+    // Get current variant title
+    const variantTitle = this.getVariantTitle();
+    if (!variantTitle) {
+      console.warn('[ProductCustomizer] Could not determine variant title for specific image update');
+      return;
+    }
+    
+    console.log('[ProductCustomizer] Updating specific main image:', isBack ? 'Back' : 'Front', 'for variant:', variantTitle);
+    
+    // Find all main slideshow images (not thumbnails)
+    const mainImages = document.querySelectorAll(
+      'slideshow-slide img:not([data-role="thumb"]):not(.thumbnail), ' +
+      '.product-media img:not([data-role="thumb"]):not(.thumbnail), ' +
+      'media-gallery slideshow-component img:not([data-role="thumb"]):not(.thumbnail)'
+    );
+    
+    // Find the specific image based on alt text
+    let targetImage = null;
+    for (const img of mainImages) {
+      if (this.matchesVariant(img.alt, variantTitle, isBack)) {
+        targetImage = img;
+        break;
+      }
+    }
+    
+    if (!targetImage) {
+      // Fallback: try fuzzy match
+      for (const img of mainImages) {
+        if (this.fuzzyMatchesVariant(img.alt, variantTitle, isBack)) {
+          targetImage = img;
+          break;
+        }
+      }
+    }
+    
+    if (targetImage) {
+      console.log('[ProductCustomizer] Found specific main image to update:', targetImage.alt);
+      
+      // Store original state if not already stored
+      if (!targetImage.dataset.originalSrc) {
+        targetImage.dataset.originalSrc = targetImage.src;
+        targetImage.dataset.originalSrcset = targetImage.srcset || '';
+      }
+      
+      // Update the image
+      targetImage.src = previewUrl;
+      targetImage.srcset = ''; // Clear srcset
+      targetImage.setAttribute('data-customization-preview', 'true');
+      
+      console.log('[ProductCustomizer] Updated specific main image');
+    } else {
+      console.warn('[ProductCustomizer] Could not find specific main image for:', variantTitle, isBack ? '- Back' : '');
+    }
+  }
+  
   getVariantTitle() {
     // Try to get variant title from multiple sources
     
@@ -1219,6 +1279,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
         
         // Update thumbnails for back edits
         this.updateSlideshowThumbnails();
+        
+        // Update the specific back main image (not the active one)
+        this.updateSpecificMainImage(backDataUrl, true);
       } else {
         // Front side was edited
         // Ensure we're on the front canvas
