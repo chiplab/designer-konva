@@ -36,6 +36,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.createModal();
     this.attachEventListeners();
     this.setupMessageListener();
+    
+    // Make debug method globally accessible
+    window._productCustomizerDebug = () => this.debugSlideshowComponent();
   }
 
   createModal() {
@@ -609,6 +612,43 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.updateSlideshowThumbnails();
   }
   
+  getVariantTitle() {
+    // Try to get variant title from multiple sources
+    
+    // 1. Check for selected variant option
+    const variantSelector = document.querySelector('[name="id"] option:checked, input[name="id"]:checked');
+    if (variantSelector && variantSelector.textContent) {
+      return variantSelector.textContent.trim();
+    }
+    
+    // 2. Check variant picker labels
+    const selectedOptions = [];
+    const colorInput = document.querySelector('input[type="radio"]:checked[name*="Color"], input[type="radio"]:checked[name*="color"]');
+    const patternInput = document.querySelector('input[type="radio"]:checked[name*="Pattern"], input[type="radio"]:checked[name*="Edge"]');
+    
+    if (colorInput) {
+      selectedOptions.push(colorInput.value);
+    }
+    if (patternInput) {
+      selectedOptions.push(patternInput.value);
+    }
+    
+    if (selectedOptions.length > 0) {
+      return selectedOptions.join(' / ');
+    }
+    
+    // 3. Try to get from product meta information
+    if (window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.product) {
+      const product = window.ShopifyAnalytics.meta.product;
+      const variant = product.variants.find(v => v.id == this.options.variantId);
+      if (variant) {
+        return variant.title || variant.name;
+      }
+    }
+    
+    return null;
+  }
+  
   updateSlideshowThumbnails() {
     console.log('[ProductCustomizer] Starting alt-text based thumbnail update');
     
@@ -621,11 +661,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     console.log('[ProductCustomizer] Current variant:', variantTitle);
     
-    // Clear cache if variant has changed
-    if (variantTitle !== this.lastVariantTitle) {
-      this.thumbnailCache.clear();
-      this.lastVariantTitle = variantTitle;
-    }
+    // TODO: Re-implement caching for performance optimization
     
     // Find and update thumbnails
     if (this.isDualSided) {
@@ -642,12 +678,29 @@ if (typeof ProductCustomizerModal === 'undefined') {
       
       // Update back thumbnail
       if (this.backPreviewUrl) {
+        console.log('[ProductCustomizer] LOOKING FOR BACK THUMBNAIL:', {
+          variantTitle: variantTitle,
+          expectedAltPattern: `${variantTitle} - Back`,
+          lastEditedSide: this.lastEditedSide
+        });
+        
         const backThumbnail = this.findThumbnailByAltText(variantTitle, true);
         if (backThumbnail) {
+          console.log('[ProductCustomizer] FOUND BACK THUMBNAIL TO UPDATE:', {
+            altText: backThumbnail.alt,
+            currentSrc: backThumbnail.src.substring(0, 100) + '...',
+            newPreviewLength: this.backPreviewUrl.length,
+            element: backThumbnail
+          });
           this.updateThumbnailImage(backThumbnail, this.backPreviewUrl);
           console.log('[ProductCustomizer] Updated back thumbnail');
         } else {
           console.warn('[ProductCustomizer] Could not find back thumbnail for:', variantTitle);
+          // Debug: show what thumbnails we did find
+          const allThumbnails = document.querySelectorAll('slideshow-controls button.slideshow-controls__thumbnail img');
+          console.log('[ProductCustomizer] Available thumbnails in controls:', allThumbnails.length);
+          const backThumbnails = Array.from(allThumbnails).filter(img => img.alt && img.alt.includes('- Back'));
+          console.log('[ProductCustomizer] Back thumbnails found:', backThumbnails.map(img => img.alt));
         }
       }
     } else {
@@ -665,24 +718,32 @@ if (typeof ProductCustomizerModal === 'undefined') {
   }
   
   findThumbnailByAltText(variantTitle, isBack = false) {
-    // Create cache key
-    const cacheKey = `${variantTitle}-${isBack ? 'back' : 'front'}`;
+    // TODO: Re-implement caching for performance optimization
     
-    // Check cache first
-    if (this.thumbnailCache.has(cacheKey)) {
-      return this.thumbnailCache.get(cacheKey);
-    }
-    
-    // Query for all thumbnail images
+    // Query for thumbnail images more specifically
+    // Focus on the slideshow controls thumbnails, not the main slides
     const thumbnails = document.querySelectorAll(
-      'button.slideshow-control img, ' +
-      'button.slideshow-controls__thumbnail img'
+      'slideshow-controls button.slideshow-controls__thumbnail img, ' +  // Thumbnail controls
+      'button.slideshow-control img'  // Fallback
     );
+    
+    if (isBack) {
+      console.log('[ProductCustomizer] SEARCHING FOR BACK THUMBNAIL:', {
+        lookingFor: `${variantTitle} - Back`,
+        totalThumbnailsFound: thumbnails.length
+      });
+    }
     
     // First pass: exact match
     for (const img of thumbnails) {
+      if (isBack && img.alt) {
+        console.log('[ProductCustomizer] Checking alt text:', img.alt);
+      }
+      
       if (this.matchesVariant(img.alt, variantTitle, isBack)) {
-        this.thumbnailCache.set(cacheKey, img);
+        if (isBack) {
+          console.log('[ProductCustomizer] EXACT MATCH FOUND:', img.alt);
+        }
         return img;
       }
     }
@@ -691,9 +752,12 @@ if (typeof ProductCustomizerModal === 'undefined') {
     for (const img of thumbnails) {
       if (this.fuzzyMatchesVariant(img.alt, variantTitle, isBack)) {
         console.log('[ProductCustomizer] Using fuzzy match for:', img.alt);
-        this.thumbnailCache.set(cacheKey, img);
         return img;
       }
+    }
+    
+    if (isBack) {
+      console.log('[ProductCustomizer] NO BACK THUMBNAIL FOUND');
     }
     
     return null;
@@ -751,11 +815,114 @@ if (typeof ProductCustomizerModal === 'undefined') {
       img.dataset.originalSizes = img.getAttribute('sizes') || '';
     }
     
-    // Update image
-    img.src = previewUrl;
-    img.srcset = previewUrl;
-    img.removeAttribute('sizes');
-    img.setAttribute('data-customization-preview', 'true');
+    // Clone the current src to detect if it's already base64
+    const isAlreadyBase64 = img.src.startsWith('data:');
+    
+    // If already base64, we need to force a visual update
+    if (isAlreadyBase64) {
+      console.log('[ProductCustomizer] Image already has base64, forcing cache bust');
+      // Temporarily set to a different image to force re-render
+      img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; // 1x1 transparent gif
+    }
+    
+    // Update the image with a small delay if it was already base64
+    setTimeout(() => {
+      img.src = previewUrl;
+      img.srcset = '';
+      img.removeAttribute('sizes');
+      img.removeAttribute('loading'); // Remove lazy loading
+      img.setAttribute('data-customization-preview', 'true');
+      
+      // Force the image to be considered "loaded" by the browser
+      if (img.complete) {
+        img.dispatchEvent(new Event('load', { bubbles: true }));
+      }
+    }, isAlreadyBase64 ? 50 : 0);
+    
+    // Find the media gallery component
+    const mediaGallery = img.closest('media-gallery');
+    if (mediaGallery && mediaGallery.slideshow) {
+      // The media-gallery has a slideshow property with methods
+      console.log('[ProductCustomizer] Found media-gallery with slideshow component');
+      
+      // Get current slide index
+      const slides = mediaGallery.querySelectorAll('slideshow-slide');
+      let currentIndex = -1;
+      slides.forEach((slide, idx) => {
+        if (slide.getAttribute('aria-hidden') === 'false') {
+          currentIndex = idx;
+        }
+      });
+      
+      // Instead of switching slides, try to trigger a visual update
+      if (typeof mediaGallery.slideshow.pause === 'function' && typeof mediaGallery.slideshow.resume === 'function') {
+        console.log('[ProductCustomizer] Pausing and resuming slideshow to force refresh');
+        mediaGallery.slideshow.pause();
+        setTimeout(() => {
+          mediaGallery.slideshow.resume();
+        }, 10);
+      }
+    } else {
+      // Fallback to generic slideshow search
+      const slideshow = img.closest('slideshow-component, media-gallery');
+      if (slideshow) {
+        console.log('[ProductCustomizer] Dispatching slideshow-update event');
+        slideshow.dispatchEvent(new CustomEvent('slideshow-update', { 
+          detail: { thumbnailUpdated: true },
+          bubbles: true 
+        }));
+      }
+    }
+    
+    // Also try the controls component
+    const controls = img.closest('slideshow-controls');
+    if (controls && controls !== mediaGallery) {
+      if (typeof controls.update === 'function') {
+        console.log('[ProductCustomizer] Calling controls.update()');
+        controls.update();
+      } else if (typeof controls.refresh === 'function') {
+        console.log('[ProductCustomizer] Calling controls.refresh()');
+        controls.refresh();
+      }
+    }
+    
+    // Try updating the parent slide element
+    const slide = img.closest('slideshow-slide');
+    if (slide) {
+      // Force a re-render by toggling visibility
+      const display = slide.style.display;
+      slide.style.display = 'none';
+      slide.offsetHeight; // Force reflow
+      slide.style.display = display || '';
+      console.log('[ProductCustomizer] Forced slide re-render');
+    }
+    
+    // If no component methods worked, try MutationObserver as fallback
+    if (!mediaGallery || !mediaGallery.slideshow) {
+      console.log('[ProductCustomizer] No slideshow API found, using MutationObserver fallback');
+      
+      // Set up observer to prevent reversion
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'attributes' && mutation.attributeName === 'src') {
+            if (img.src !== previewUrl && !img.src.startsWith('data:')) {
+              console.log('[ProductCustomizer] Slideshow tried to restore image, re-applying custom preview');
+              img.src = previewUrl;
+            }
+          }
+        });
+      });
+      
+      observer.observe(img, { attributes: true, attributeFilter: ['src'] });
+      
+      // Store observer to disconnect later
+      if (img._customizationObserver) {
+        img._customizationObserver.disconnect();
+      }
+      img._customizationObserver = observer;
+    }
+    
+    console.log('[ProductCustomizer] Thumbnail image updated');
   }
   
   restoreOriginalProductImages() {
@@ -774,6 +941,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Restore slideshow thumbnails
     const customizedThumbnails = document.querySelectorAll(
+      'slideshow-slide img[data-customization-preview="true"], ' +  // Horizon theme
       'button.slideshow-control img[data-customization-preview="true"], ' +
       'button.slideshow-controls__thumbnail img[data-customization-preview="true"], ' +
       '.slideshow-nav__button img[data-customization-preview="true"], ' +
@@ -793,6 +961,12 @@ if (typeof ProductCustomizerModal === 'undefined') {
         delete thumbnail.dataset.originalSrc;
         delete thumbnail.dataset.originalSrcset;
         delete thumbnail.dataset.originalSizes;
+        
+        // Disconnect any mutation observer
+        if (thumbnail._customizationObserver) {
+          thumbnail._customizationObserver.disconnect();
+          delete thumbnail._customizationObserver;
+        }
       }
     });
     
@@ -801,9 +975,17 @@ if (typeof ProductCustomizerModal === 'undefined') {
   }
   
   updateVariantSwatches() {
-    if (!this.currentPreviewUrl) return;
+    // For dual-sided templates, always use front preview for swatches
+    // For single-sided templates, use current preview
+    const previewUrlToUse = this.isDualSided ? this.frontPreviewUrl : this.currentPreviewUrl;
+    
+    if (!previewUrlToUse) {
+      console.log('[ProductCustomizer] No preview URL available for swatch update');
+      return;
+    }
     
     console.log('[ProductCustomizer] Updating variant swatches for variant:', this.options.variantId);
+    console.log('[ProductCustomizer] Using preview URL:', this.isDualSided ? 'front preview' : 'current preview');
     
     // First, find the currently selected color input
     const selectedInput = document.querySelector('input[type="radio"]:checked[name*="Color"]');
@@ -830,11 +1012,13 @@ if (typeof ProductCustomizerModal === 'undefined') {
       }
       
       // Update the swatch background with the customization preview
-      const newStyle = `--swatch-background: url(${this.currentPreviewUrl});`;
+      const newStyle = `--swatch-background: url(${previewUrlToUse});`;
       swatchSpan.setAttribute('style', newStyle);
       swatchSpan.setAttribute('data-customization-preview', 'true');
       
-      console.log('[ProductCustomizer] Updated swatch background to:', this.currentPreviewUrl);
+      // Truncate the data URL for logging
+      const truncatedUrl = previewUrlToUse.substring(0, 50) + '...';
+      console.log('[ProductCustomizer] Updated swatch background to:', truncatedUrl);
       
       // Mark the parent as having customization
       const swatchParent = swatchSpan.parentElement;
@@ -856,7 +1040,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
             nextSpan.dataset.originalBackground = currentStyle;
           }
           
-          const newStyle = `--swatch-background: url(${this.currentPreviewUrl});`;
+          const newStyle = `--swatch-background: url(${previewUrlToUse});`;
           nextSpan.setAttribute('style', newStyle);
           nextSpan.setAttribute('data-customization-preview', 'true');
           
@@ -1006,14 +1190,18 @@ if (typeof ProductCustomizerModal === 'undefined') {
     if (this.isDualSided) {
       // For dual-sided templates, handle based on which side was edited
       if (this.lastEditedSide === 'back') {
+        console.log('[ProductCustomizer] UPDATE PREVIEW - BACK SIDE EDITED');
+        
         // Ensure we're on the back canvas
         if (this.renderer.template !== this.renderer.backCanvasData) {
           this.renderer.template = this.renderer.backCanvasData;
         }
         
-        // Generate back preview
-        const backDataUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+        // Generate back preview with high quality for slideshow thumbnails
+        const backDataUrl = this.renderer.getDataURL({ pixelRatio: 1 });
         this.backPreviewUrl = backDataUrl;
+        
+        console.log('[ProductCustomizer] Generated back preview data URL, length:', backDataUrl.length);
         previewImage.src = backDataUrl;
         previewImage.style.display = 'block';
         
@@ -1023,7 +1211,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
         // Also ensure we have a front preview
         if (!this.frontPreviewUrl) {
           this.renderer.template = this.renderer.frontCanvasData;
-          this.frontPreviewUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+          this.frontPreviewUrl = this.renderer.getDataURL({ pixelRatio: 1 });
           this.renderer.template = this.renderer.backCanvasData; // Switch back
         }
         
@@ -1038,8 +1226,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
           this.renderer.template = this.renderer.frontCanvasData;
         }
         
-        // Generate front preview
-        const frontDataUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+        // Generate front preview with high quality for slideshow thumbnails
+        const frontDataUrl = this.renderer.getDataURL({ pixelRatio: 1 });
         this.frontPreviewUrl = frontDataUrl;
         previewImage.src = frontDataUrl;
         previewImage.style.display = 'block';
@@ -1051,15 +1239,15 @@ if (typeof ProductCustomizerModal === 'undefined') {
         // Also ensure we have a back preview
         if (this.renderer.backCanvasData && !this.backPreviewUrl) {
           this.renderer.template = this.renderer.backCanvasData;
-          this.backPreviewUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+          this.backPreviewUrl = this.renderer.getDataURL({ pixelRatio: 1 });
           this.renderer.template = this.renderer.frontCanvasData; // Switch back
         }
         
         console.log('[ProductCustomizer] Generated front preview for front edit');
       }
     } else {
-      // Single-sided template
-      const dataUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+      // Single-sided template with high quality for slideshow thumbnails
+      const dataUrl = this.renderer.getDataURL({ pixelRatio: 1 });
       previewImage.src = dataUrl;
       previewImage.style.display = 'block';
       
@@ -1198,6 +1386,15 @@ if (typeof ProductCustomizerModal === 'undefined') {
           this.lastEditedSide = side; // Track which side was edited
           
           if (side === 'back') {
+            // Log back side text change
+            const label = e.target.previousElementSibling?.textContent || 'Unknown';
+            console.log('[ProductCustomizer] BACK SIDE TEXT CHANGED:', {
+              label: label,
+              elementId: elementId,
+              newValue: e.target.value,
+              inputId: e.target.id
+            });
+            
             // Switch to back canvas temporarily
             this.renderer.template = this.renderer.backCanvasData;
             this.renderer.updateText(elementId, e.target.value);
@@ -1360,31 +1557,40 @@ if (typeof ProductCustomizerModal === 'undefined') {
       });
     }
     
-    // Generate previews
-    customization.preview = this.renderer.getDesignAreaPreview(0.5);
-    customization.fullPreview = this.renderer.getDataURL({ pixelRatio: 0.5 });
+    // Generate high quality previews for slideshow thumbnails
+    customization.preview = this.renderer.getDesignAreaPreview(1);
+    customization.fullPreview = this.renderer.getDataURL({ pixelRatio: 1 });
     
     if (this.isDualSided) {
-      // Front preview
-      customization.frontPreview = customization.fullPreview;
-      this.frontPreviewUrl = customization.fullPreview;
+      // Store which canvas is currently active
+      const currentTemplate = this.renderer.template;
+      
+      // Generate front preview (always switch to front first)
+      if (this.renderer.frontCanvasData) {
+        this.renderer.template = this.renderer.frontCanvasData;
+        this.renderer.render();
+        
+        const frontDataUrl = this.renderer.getDataURL({ pixelRatio: 1 });
+        this.frontPreviewUrl = frontDataUrl;
+        customization.frontPreview = frontDataUrl;
+        
+        // Update fullPreview to be the front preview
+        customization.fullPreview = frontDataUrl;
+      }
       
       // Generate back preview
       if (this.renderer.backCanvasData) {
-        // Temporarily switch to back canvas
-        const originalTemplate = this.renderer.template;
         this.renderer.template = this.renderer.backCanvasData;
         this.renderer.render();
         
-        // Generate back preview
-        const backDataUrl = this.renderer.getDataURL({ pixelRatio: 0.5 });
+        const backDataUrl = this.renderer.getDataURL({ pixelRatio: 1 });
         this.backPreviewUrl = backDataUrl;
         customization.backPreview = backDataUrl;
-        
-        // Switch back to front
-        this.renderer.template = this.renderer.frontCanvasData;
-        this.renderer.render();
       }
+      
+      // Restore the original template view
+      this.renderer.template = currentTemplate;
+      this.renderer.render();
     }
     
     // Update the current preview URL
@@ -1398,6 +1604,96 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.updateMainProductImage();
     
     this.close(true); // Keep customization visible after save
+  }
+  
+  debugSlideshowComponent() {
+    console.log('[ProductCustomizer] === SLIDESHOW DEBUG INFO ===');
+    
+    // Look for slideshow component
+    const slideshow = document.querySelector('slideshow-component, media-gallery');
+    if (slideshow) {
+      console.log('[ProductCustomizer] Slideshow element found:', slideshow);
+      console.log('[ProductCustomizer] Tag name:', slideshow.tagName);
+      
+      try {
+        // Get all methods and properties safely
+        const proto = Object.getPrototypeOf(slideshow);
+        const methods = [];
+        for (let prop in proto) {
+          try {
+            if (typeof proto[prop] === 'function' && prop !== 'constructor') {
+              methods.push(prop);
+            }
+          } catch (e) {
+            // Skip properties that throw errors
+          }
+        }
+        console.log('[ProductCustomizer] Available methods:', methods);
+        
+        // Check for specific update-related methods
+        const updateMethods = methods.filter(name => 
+          name.includes('update') || name.includes('refresh') || name.includes('render') || 
+          name.includes('load') || name.includes('sync') || name.includes('redraw')
+        );
+        console.log('[ProductCustomizer] Update-related methods:', updateMethods);
+        
+        // Check direct properties
+        const directProps = Object.getOwnPropertyNames(slideshow);
+        console.log('[ProductCustomizer] Direct properties:', directProps);
+        
+        // Check for slideshow reference
+        if (slideshow.slideshow) {
+          console.log('[ProductCustomizer] Has slideshow property:', slideshow.slideshow);
+          const slideshowMethods = Object.getOwnPropertyNames(Object.getPrototypeOf(slideshow.slideshow))
+            .filter(name => typeof slideshow.slideshow[name] === 'function');
+          console.log('[ProductCustomizer] Slideshow sub-component methods:', slideshowMethods);
+        }
+      } catch (e) {
+        console.error('[ProductCustomizer] Error examining component:', e);
+      }
+    } else {
+      console.log('[ProductCustomizer] No slideshow component found');
+    }
+    
+    // Look for slideshow controls
+    const controls = document.querySelector('slideshow-controls');
+    if (controls) {
+      console.log('[ProductCustomizer] Slideshow controls found:', controls);
+      try {
+        const proto = Object.getPrototypeOf(controls);
+        const methods = [];
+        for (let prop in proto) {
+          try {
+            if (typeof proto[prop] === 'function' && prop !== 'constructor') {
+              methods.push(prop);
+            }
+          } catch (e) {
+            // Skip properties that throw errors
+          }
+        }
+        console.log('[ProductCustomizer] Control methods:', methods);
+      } catch (e) {
+        console.error('[ProductCustomizer] Error examining controls:', e);
+      }
+    }
+    
+    // Debug specific thumbnail that was updated
+    const backThumbnails = document.querySelectorAll('slideshow-controls img[alt*="- Back"]');
+    console.log('[ProductCustomizer] Found back thumbnails in controls:', backThumbnails.length);
+    backThumbnails.forEach((thumb, idx) => {
+      if (thumb.src.startsWith('data:')) {
+        console.log(`[ProductCustomizer] Control thumbnail ${idx} has base64 src, visible:`, 
+          thumb.offsetWidth > 0 && thumb.offsetHeight > 0,
+          'dimensions:', thumb.offsetWidth, 'x', thumb.offsetHeight,
+          'alt:', thumb.alt);
+      }
+    });
+    
+    // Also check main slideshow images
+    const mainBackImages = document.querySelectorAll('slideshow-slide img[alt*="- Back"]');
+    console.log('[ProductCustomizer] Found back images in main slideshow:', mainBackImages.length);
+    
+    console.log('[ProductCustomizer] === END DEBUG INFO ===');
   }
   
   setupMessageListener() {
