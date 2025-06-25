@@ -31,6 +31,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Track which side was last edited
     this.lastEditedSide = 'front';
+    
+    // Auto-save timer
+    this.autoSaveTimer = null;
   }
 
   init() {
@@ -398,6 +401,39 @@ if (typeof ProductCustomizerModal === 'undefined') {
       // Ensure we're on the front canvas
       if (this.renderer.template !== this.renderer.frontCanvasData) {
         this.renderer.template = this.renderer.frontCanvasData;
+      }
+    }
+    
+    // Load saved state from localStorage
+    const savedState = this.loadStateFromLocalStorage();
+    if (savedState) {
+      this.savedTextUpdates = savedState.textUpdates;
+      
+      // Apply saved text updates to the renderer
+      if (this.isDualSided) {
+        // Apply text updates for both sides
+        Object.entries(savedState.textUpdates).forEach(([key, text]) => {
+          if (key.startsWith('front_')) {
+            const elementId = key.replace('front_', '');
+            // Switch to front canvas temporarily
+            const currentTemplate = this.renderer.template;
+            this.renderer.template = this.renderer.frontCanvasData;
+            this.renderer.updateText(elementId, text);
+            this.renderer.template = currentTemplate;
+          } else if (key.startsWith('back_')) {
+            const elementId = key.replace('back_', '');
+            // Switch to back canvas temporarily
+            const currentTemplate = this.renderer.template;
+            this.renderer.template = this.renderer.backCanvasData;
+            this.renderer.updateText(elementId, text);
+            this.renderer.template = currentTemplate;
+          }
+        });
+      } else {
+        // Apply text updates for single-sided template
+        Object.entries(savedState.textUpdates).forEach(([elementId, text]) => {
+          this.renderer.updateText(elementId, text);
+        });
       }
     }
     
@@ -1618,8 +1654,23 @@ if (typeof ProductCustomizerModal === 'undefined') {
         
         this.debouncedUpdatePreview();
         
+        // Auto-save state to localStorage
+        this.debouncedSaveState();
       });
     });
+  }
+  
+  // Debounced save state function
+  debouncedSaveState() {
+    // Clear existing timer
+    if (this.autoSaveTimer) {
+      clearTimeout(this.autoSaveTimer);
+    }
+    
+    // Set new timer
+    this.autoSaveTimer = setTimeout(() => {
+      this.saveStateToLocalStorage();
+    }, 1000); // Save after 1 second of inactivity
   }
 
   // Remove positionModal method as we're using CSS positioning within product-details
@@ -1648,6 +1699,15 @@ if (typeof ProductCustomizerModal === 'undefined') {
     if (this.swatchUpdateTimer) {
       clearTimeout(this.swatchUpdateTimer);
       this.swatchUpdateTimer = null;
+    }
+    if (this.autoSaveTimer) {
+      clearTimeout(this.autoSaveTimer);
+      this.autoSaveTimer = null;
+    }
+    
+    // Save current state before closing (unless we're keeping customization after save)
+    if (!keepCustomization && this.renderer) {
+      this.saveStateToLocalStorage();
     }
     
     // Clean up renderer
@@ -1811,6 +1871,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Update main product image
     this.updateMainProductImage();
     
+    // Clear saved state from localStorage since we're saving
+    this.clearStateFromLocalStorage();
+    
     this.close(true); // Keep customization visible after save
   }
   
@@ -1904,6 +1967,85 @@ if (typeof ProductCustomizerModal === 'undefined') {
     console.log('[ProductCustomizer] === END DEBUG INFO ===');
   }
   
+  // Save current state to localStorage
+  saveStateToLocalStorage() {
+    try {
+      const stateKey = 'pcm_global_state';
+      const state = {
+        textUpdates: {},
+        isDualSided: this.isDualSided,
+        lastEditedSide: this.lastEditedSide,
+        timestamp: Date.now(),
+        lastVariantId: this.options.variantId // Track which variant was last edited
+      };
+      
+      if (this.isDualSided) {
+        // For dual-sided templates, get text from both sides
+        const bothSidesText = this.renderer.getAllTextElementsFromBothSides();
+        
+        // Save front side text
+        bothSidesText.front.forEach(el => {
+          state.textUpdates[`front_${el.id}`] = el.text;
+        });
+        
+        // Save back side text
+        bothSidesText.back.forEach(el => {
+          state.textUpdates[`back_${el.id}`] = el.text;
+        });
+      } else {
+        // For single-sided templates
+        const textElements = this.renderer.getAllTextElements();
+        textElements.forEach(el => {
+          state.textUpdates[el.id] = el.text;
+        });
+      }
+      
+      localStorage.setItem(stateKey, JSON.stringify(state));
+      console.log('[ProductCustomizer] Global state saved to localStorage');
+    } catch (error) {
+      console.error('[ProductCustomizer] Error saving state to localStorage:', error);
+    }
+  }
+  
+  // Load saved state from localStorage
+  loadStateFromLocalStorage() {
+    try {
+      const stateKey = 'pcm_global_state';
+      const savedState = localStorage.getItem(stateKey);
+      
+      if (!savedState) {
+        console.log('[ProductCustomizer] No saved global state found');
+        return null;
+      }
+      
+      const state = JSON.parse(savedState);
+      
+      // Check if state is too old (more than 7 days)
+      if (state.timestamp && Date.now() - state.timestamp > 7 * 24 * 60 * 60 * 1000) {
+        console.log('[ProductCustomizer] Saved state is too old, ignoring');
+        localStorage.removeItem(stateKey);
+        return null;
+      }
+      
+      console.log('[ProductCustomizer] Loaded global state from localStorage:', state);
+      return state;
+    } catch (error) {
+      console.error('[ProductCustomizer] Error loading state from localStorage:', error);
+      return null;
+    }
+  }
+  
+  // Clear saved state from localStorage
+  clearStateFromLocalStorage() {
+    try {
+      const stateKey = 'pcm_global_state';
+      localStorage.removeItem(stateKey);
+      console.log('[ProductCustomizer] Cleared global saved state');
+    } catch (error) {
+      console.error('[ProductCustomizer] Error clearing state from localStorage:', error);
+    }
+  }
+  
   setupMessageListener() {
     // Listen for messages from the advanced editor
     window.addEventListener('message', (event) => {
@@ -1959,6 +2101,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
           window.__TEMPLATE_COLORS__ = event.data.templateColors;
         }
         
+        // Clear localStorage state since we have a saved design
+        this.clearStateFromLocalStorage();
         
         // Don't automatically add to cart - just close the modal
         // The user can click "Add to Cart" on the product page when ready
@@ -1992,6 +2136,41 @@ if (typeof ProductCustomizerModal === 'undefined') {
       }
     } else {
       this.isDualSided = false;
+    }
+    
+    // Apply the global saved state to the new variant
+    const savedState = this.loadStateFromLocalStorage();
+    if (savedState) {
+      this.savedTextUpdates = savedState.textUpdates;
+      
+      // Apply saved text updates to the renderer
+      if (this.isDualSided) {
+        // Apply text updates for both sides
+        Object.entries(savedState.textUpdates).forEach(([key, text]) => {
+          if (key.startsWith('front_')) {
+            const elementId = key.replace('front_', '');
+            // Switch to front canvas temporarily
+            const currentTemplate = this.renderer.template;
+            this.renderer.template = this.renderer.frontCanvasData;
+            this.renderer.updateText(elementId, text);
+            this.renderer.template = currentTemplate;
+          } else if (key.startsWith('back_')) {
+            const elementId = key.replace('back_', '');
+            // Switch to back canvas temporarily
+            const currentTemplate = this.renderer.template;
+            this.renderer.template = this.renderer.backCanvasData;
+            this.renderer.updateText(elementId, text);
+            this.renderer.template = currentTemplate;
+          }
+        });
+      } else {
+        // Apply text updates for single-sided template
+        Object.entries(savedState.textUpdates).forEach(([elementId, text]) => {
+          this.renderer.updateText(elementId, text);
+        });
+      }
+    } else {
+      this.savedTextUpdates = null;
     }
     
     // Recreate text inputs for the new template
