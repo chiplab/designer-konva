@@ -20,6 +20,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.isOpen = false;
     this.customizationData = null;
     this.updateTimer = null;
+    this.swatchUpdateTimer = null; // Timer for server-side swatch generation
     this.originalProductImages = []; // Store original images to restore later
     this.currentPreviewUrl = null; // Store current preview URL
     
@@ -1177,6 +1178,133 @@ if (typeof ProductCustomizerModal === 'undefined') {
     });
   }
   
+  async generateServerSideSwatches() {
+    console.log('[ProductCustomizer] Generating server-side swatches...');
+    
+    // Find all color variant radio inputs
+    const colorInputs = document.querySelectorAll('input[type="radio"][name*="Color"]');
+    const variants = [];
+    
+    // Collect variant IDs and colors (max 20 for safety)
+    colorInputs.forEach((input, index) => {
+      if (index < 20) { // Limit to 20 variants
+        const variantId = input.getAttribute('data-variant-id');
+        const color = input.value;
+        if (variantId) {
+          variants.push({ id: variantId, color });
+        }
+      }
+    });
+    
+    if (variants.length === 0) {
+      console.log('[ProductCustomizer] No color variants found');
+      return;
+    }
+    
+    console.log(`[ProductCustomizer] Found ${variants.length} color variants to generate swatches for`);
+    
+    // Prepare customization data
+    const customizationData = {
+      textUpdates: {},
+      canvasState: null
+    };
+    
+    // Check if we have saved canvas state from full designer
+    const savedState = localStorage.getItem('customization_global_state');
+    if (savedState) {
+      try {
+        customizationData.canvasState = JSON.parse(savedState);
+      } catch (e) {
+        console.error('[ProductCustomizer] Failed to parse saved canvas state');
+      }
+    }
+    
+    // Get current text updates
+    if (this.renderer) {
+      if (this.isDualSided) {
+        // For dual-sided templates, get text from front side only
+        if (this.renderer.frontCanvasData) {
+          const originalTemplate = this.renderer.template;
+          this.renderer.template = this.renderer.frontCanvasData;
+          const textElements = this.renderer.getAllTextElements();
+          textElements.forEach(el => {
+            customizationData.textUpdates[el.id] = el.text;
+          });
+          this.renderer.template = originalTemplate;
+        }
+      } else {
+        // Single-sided template
+        const textElements = this.renderer.getAllTextElements();
+        textElements.forEach(el => {
+          customizationData.textUpdates[el.id] = el.text;
+        });
+      }
+    }
+    
+    try {
+      // Call server API
+      const response = await fetch(`${this.options.apiUrl}/api/public/variant-swatches`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          templateId: this.options.templateId,
+          variants: variants,
+          customization: customizationData,
+          options: { 
+            size: 128, 
+            quality: 0.8, 
+            side: 'front' // Always use front for swatches
+          }
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      // Update radio button swatches
+      if (result.success && result.swatches) {
+        console.log(`[ProductCustomizer] Successfully generated ${result.generatedCount} of ${result.requestedCount} swatches`);
+        
+        Object.entries(result.swatches).forEach(([variantId, dataUrl]) => {
+          const input = document.querySelector(`input[data-variant-id="${variantId}"]`);
+          if (input) {
+            const swatchSpan = input.nextElementSibling;
+            if (swatchSpan && swatchSpan.classList.contains('swatch')) {
+              // Store original if not already stored
+              if (!swatchSpan.dataset.originalBackground) {
+                const currentStyle = swatchSpan.getAttribute('style');
+                swatchSpan.dataset.originalBackground = currentStyle;
+              }
+              
+              // Update with server-generated swatch
+              swatchSpan.style.cssText = `--swatch-background: url(${dataUrl});`;
+              swatchSpan.setAttribute('data-customization-preview', 'true');
+              swatchSpan.setAttribute('data-server-generated', 'true');
+              
+              // Mark parent as having customization
+              const swatchParent = swatchSpan.parentElement;
+              if (swatchParent) {
+                swatchParent.setAttribute('data-has-customization', 'true');
+              }
+            }
+          }
+        });
+        
+        if (result.errors && result.errors.length > 0) {
+          console.warn('[ProductCustomizer] Some swatches failed:', result.errors);
+        }
+      } else {
+        console.error('[ProductCustomizer] Server swatch generation failed:', result.error);
+      }
+    } catch (error) {
+      console.error('[ProductCustomizer] Error generating server-side swatches:', error);
+      // Fall back to client-side generation if needed
+    }
+  }
+  
   async loadVariantImage() {
     try {
       const previewImage = document.getElementById('preview-image');
@@ -1318,7 +1446,20 @@ if (typeof ProductCustomizerModal === 'undefined') {
       this.updateMainProductImage(dataUrl);
     }
     
-    this.updateVariantSwatches();
+    // Use server-side swatch generation instead of client-side
+    this.debouncedGenerateServerSwatches();
+  }
+  
+  debouncedGenerateServerSwatches() {
+    // Clear existing timer
+    if (this.swatchUpdateTimer) {
+      clearTimeout(this.swatchUpdateTimer);
+    }
+    
+    // Set new timer for server-side swatch generation
+    this.swatchUpdateTimer = setTimeout(() => {
+      this.generateServerSideSwatches();
+    }, 1000); // 1 second delay to avoid too many server calls
   }
   
   debouncedUpdatePreview() {
@@ -1503,6 +1644,10 @@ if (typeof ProductCustomizerModal === 'undefined') {
     if (this.textSaveTimer) {
       clearTimeout(this.textSaveTimer);
       this.textSaveTimer = null;
+    }
+    if (this.swatchUpdateTimer) {
+      clearTimeout(this.swatchUpdateTimer);
+      this.swatchUpdateTimer = null;
     }
     
     // Clean up renderer
