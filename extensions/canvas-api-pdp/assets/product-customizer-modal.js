@@ -2166,7 +2166,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
     };
     
     // Listen for variant change events and intercept swatch updates
-    document.addEventListener('variant:change', (event) => {
+    document.addEventListener('variant:change', () => {
       console.log('[ProductCustomizer] Variant change detected');
       
       if (hasCustomSwatches()) {
@@ -2251,7 +2251,6 @@ if (typeof ProductCustomizerModal === 'undefined') {
         if (container.dataset.swatchProtected === 'true') return;
         
         const originalInnerHTML = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
-        const originalOuterHTML = Object.getOwnPropertyDescriptor(Element.prototype, 'outerHTML');
         
         if (originalInnerHTML && originalInnerHTML.set) {
           Object.defineProperty(container, 'innerHTML', {
