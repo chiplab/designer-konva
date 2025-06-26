@@ -130,47 +130,6 @@
         setTimeout(() => {
           console.log('[SwatchProtection] Restoring swatches after morph');
           restoreSwatchesFromStorage();
-          
-          // Update main product image if customization exists
-          if (window.productCustomizer) {
-            // Check if we have global customization state
-            const globalState = localStorage.getItem('customization_global_state');
-            const globalText = localStorage.getItem('customization_global_text');
-            
-            if (globalState || globalText) {
-              console.log('[SwatchProtection] Detected customization after morph, generating preview');
-              
-              // Find the currently selected variant
-              const selectedInput = document.querySelector('input[type="radio"]:checked[data-variant-id]');
-              if (selectedInput) {
-                const variantId = selectedInput.dataset.variantId;
-                const templateId = window.productCustomizer.options.templateId;
-                
-                // Check if this variant has a template
-                let variantTemplateId = null;
-                if (window.productData && window.productData.variants) {
-                  const variant = window.productData.variants.find(v => v.id == variantId);
-                  if (variant && variant.metafields?.custom_designer?.template_id) {
-                    variantTemplateId = variant.metafields.custom_designer.template_id;
-                  }
-                }
-                
-                // Use variant-specific template if available, otherwise use current template
-                const effectiveTemplateId = variantTemplateId || templateId;
-                
-                if (effectiveTemplateId) {
-                  // Generate preview for this variant with saved customization
-                  if (globalState) {
-                    // Full canvas state from designer
-                    window.generateVariantPreviewWithCanvasState(variantId, effectiveTemplateId, JSON.parse(globalState));
-                  } else if (globalText) {
-                    // Text-only updates
-                    window.generateVariantPreviewWithText(variantId, effectiveTemplateId, JSON.parse(globalText));
-                  }
-                }
-              }
-            }
-          }
         }, 50);
         
         return result;
@@ -216,6 +175,94 @@
   };
   
   console.log('[SwatchProtection] Global protection ready');
+})();
+
+// Global handler for updating main product image on variant change
+(function() {
+  console.log('[ProductImageUpdater] Initializing global product image updater');
+  
+  // Handler for variant changes that updates main product image
+  const handleVariantChangeForMainImage = function(event) {
+    console.log('[ProductImageUpdater] Variant change detected:', event.type);
+    
+    // Check if we have saved customization state
+    const globalState = localStorage.getItem('customization_global_state');
+    const globalText = localStorage.getItem('customization_global_text');
+    
+    if (!globalState && !globalText) {
+      console.log('[ProductImageUpdater] No customization state found, skipping');
+      return;
+    }
+    
+    // Wait a bit for DOM to settle after variant change
+    setTimeout(() => {
+      // Find the currently selected variant
+      const selectedInput = document.querySelector('input[type="radio"]:checked[data-variant-id]');
+      if (!selectedInput) {
+        console.log('[ProductImageUpdater] No selected variant found');
+        return;
+      }
+      
+      const variantId = selectedInput.dataset.variantId;
+      console.log('[ProductImageUpdater] Selected variant ID:', variantId);
+      
+      // Try to find the template ID for this variant
+      let templateId = null;
+      
+      // Method 1: Check window.productData
+      if (window.productData && window.productData.variants) {
+        const variant = window.productData.variants.find(v => v.id == variantId);
+        if (variant && variant.metafields?.custom_designer?.template_id) {
+          templateId = variant.metafields.custom_designer.template_id;
+          console.log('[ProductImageUpdater] Found template ID from productData:', templateId);
+        }
+      }
+      
+      // Method 2: Check if productCustomizer exists and has a template
+      if (!templateId && window.productCustomizer) {
+        templateId = window.productCustomizer.options.templateId;
+        console.log('[ProductImageUpdater] Using template ID from customizer:', templateId);
+      }
+      
+      // Method 3: Try to get from the customize button
+      if (!templateId) {
+        const customizeBtn = document.getElementById('customize-product-btn');
+        if (customizeBtn) {
+          templateId = customizeBtn.dataset.templateId;
+          console.log('[ProductImageUpdater] Found template ID from button:', templateId);
+        }
+      }
+      
+      if (!templateId) {
+        console.log('[ProductImageUpdater] No template ID found for variant');
+        return;
+      }
+      
+      console.log('[ProductImageUpdater] Generating preview for variant:', variantId, 'with template:', templateId);
+      
+      // Generate preview based on saved state type
+      if (globalState) {
+        // Full canvas state from designer
+        console.log('[ProductImageUpdater] Using full canvas state');
+        if (window.generateVariantPreviewWithCanvasState) {
+          window.generateVariantPreviewWithCanvasState(variantId, templateId, JSON.parse(globalState));
+        }
+      } else if (globalText) {
+        // Text-only updates
+        console.log('[ProductImageUpdater] Using text-only state');
+        if (window.generateVariantPreviewWithText) {
+          window.generateVariantPreviewWithText(variantId, templateId, JSON.parse(globalText));
+        }
+      }
+    }, 300); // Wait 300ms for DOM to settle
+  };
+  
+  // Listen for both standard and Horizon theme events
+  document.addEventListener('variant:change', handleVariantChangeForMainImage, true);
+  document.addEventListener('VariantUpdateEvent', handleVariantChangeForMainImage, true);
+  document.addEventListener('VariantSelectedEvent', handleVariantChangeForMainImage, true);
+  
+  console.log('[ProductImageUpdater] Event listeners attached');
 })();
 
 if (typeof ProductCustomizerModal === 'undefined') {
