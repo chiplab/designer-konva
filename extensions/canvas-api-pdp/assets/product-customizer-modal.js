@@ -3,9 +3,90 @@
  * Provides a slide-out modal interface for simple text customization
  */
 
+// Global swatch protection system - runs immediately
+(function() {
+  console.log('[SwatchProtection] Initializing global swatch protection');
+  
+  // Check if we have custom swatches saved
+  const hasCustomSwatches = () => {
+    const customSwatches = document.querySelectorAll(
+      '.swatch[data-server-generated="true"], ' +
+      '.swatch[data-customization-preview="true"], ' +
+      '[data-has-custom-swatches="true"]'
+    );
+    return customSwatches.length > 0;
+  };
+  
+  // Listen for variant changes early
+  document.addEventListener('variant:change', function() {
+    console.log('[SwatchProtection] Variant change detected (global listener)');
+    
+    if (hasCustomSwatches()) {
+      console.log('[SwatchProtection] Custom swatches detected, will preserve them');
+      
+      // Store current custom swatches
+      const savedSwatches = new Map();
+      document.querySelectorAll('.swatch[data-server-generated="true"]').forEach(swatch => {
+        const input = swatch.previousElementSibling;
+        if (input && input.dataset.variantId) {
+          savedSwatches.set(input.dataset.variantId, {
+            style: swatch.getAttribute('style'),
+            attributes: Array.from(swatch.attributes).reduce((acc, attr) => {
+              acc[attr.name] = attr.value;
+              return acc;
+            }, {})
+          });
+        }
+      });
+      
+      // Restore after a short delay
+      setTimeout(() => {
+        console.log('[SwatchProtection] Restoring custom swatches');
+        savedSwatches.forEach((data, variantId) => {
+          const input = document.querySelector(`input[data-variant-id="${variantId}"]`);
+          if (input) {
+            const swatch = input.nextElementSibling;
+            if (swatch && swatch.classList.contains('swatch')) {
+              swatch.setAttribute('style', data.style);
+              Object.entries(data.attributes).forEach(([name, value]) => {
+                if (name !== 'style') {
+                  swatch.setAttribute(name, value);
+                }
+              });
+            }
+          }
+        });
+      }, 100);
+    }
+  }, true); // Use capture phase
+  
+  // Make functions globally available
+  window.SwatchProtection = {
+    hasCustomSwatches,
+    clearCustomSwatches: () => {
+      console.log('[SwatchProtection] Clearing all custom swatches');
+      document.querySelectorAll('.swatch[data-server-generated="true"]').forEach(swatch => {
+        swatch.removeAttribute('data-server-generated');
+        swatch.removeAttribute('data-customization-preview');
+        swatch.removeAttribute('data-custom-timestamp');
+        swatch.removeAttribute('style');
+      });
+      document.querySelectorAll('[data-has-custom-swatches]').forEach(el => {
+        el.removeAttribute('data-has-custom-swatches');
+      });
+    }
+  };
+  
+  console.log('[SwatchProtection] Global protection ready');
+})();
+
 if (typeof ProductCustomizerModal === 'undefined') {
+  console.log('[ProductCustomizer] Defining ProductCustomizerModal class');
+  
   class ProductCustomizerModal {
   constructor(options = {}) {
+    console.log('[ProductCustomizer] Constructor called with options:', options);
+    
     this.options = {
       variantId: options.variantId,
       templateId: options.templateId,
@@ -37,13 +118,21 @@ if (typeof ProductCustomizerModal === 'undefined') {
   }
 
   init() {
-    this.createModal();
-    this.attachEventListeners();
-    this.setupMessageListener();
-    this.interceptVariantChanges();
+    console.log('[ProductCustomizer] init() called');
     
-    // Make debug method globally accessible
-    window._productCustomizerDebug = () => this.debugSlideshowComponent();
+    try {
+      this.createModal();
+      this.attachEventListeners();
+      this.setupMessageListener();
+      this.interceptVariantChanges();
+      
+      // Make debug method globally accessible
+      window._productCustomizerDebug = () => this.debugSlideshowComponent();
+      
+      console.log('[ProductCustomizer] init() completed successfully');
+    } catch (error) {
+      console.error('[ProductCustomizer] Error during initialization:', error);
+    }
   }
 
   createModal() {
