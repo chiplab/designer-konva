@@ -31,6 +31,13 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Track which side was last edited
     this.lastEditedSide = 'front';
+    
+    // Track if any text has been modified from the original
+    this.hasTextChanges = false;
+    this.originalTextValues = {}; // Store original text values for comparison
+    
+    // Auto-save timer
+    this.autoSaveTimer = null;
   }
 
   init() {
@@ -386,9 +393,67 @@ if (typeof ProductCustomizerModal === 'undefined') {
       onReady: () => this.onRendererReady()
     });
     
-    // Load template directly from API
-    // The renderer will automatically handle frontCanvasData and backCanvasData
-    await this.renderer.loadTemplate(this.options.templateId);
+    // Check for saved canvas state in localStorage
+    const storageKey = `customization_${this.options.templateId}_${this.options.variantId}`;
+    const savedData = localStorage.getItem(storageKey);
+    
+    // Also check for global text updates
+    const globalTextKey = 'customization_global_text';
+    const globalTextData = localStorage.getItem(globalTextKey);
+    let globalTextUpdates = null;
+    
+    if (globalTextData) {
+      try {
+        const textData = JSON.parse(globalTextData);
+        if (textData.timestamp && Date.now() - textData.timestamp < 30 * 24 * 60 * 60 * 1000) {
+          globalTextUpdates = textData.textUpdates;
+          console.log('[ProductCustomizer] Found global text updates:', globalTextUpdates);
+        }
+      } catch (e) {
+        console.error('[ProductCustomizer] Error parsing global text data:', e);
+      }
+    }
+    
+    if (savedData) {
+      try {
+        const localStorageData = JSON.parse(savedData);
+        console.log('[ProductCustomizer] Found saved canvas state in localStorage:', storageKey);
+        
+        // Load from localStorage using the new method
+        await this.renderer.loadFromLocalStorage(localStorageData);
+        this.isDualSided = this.renderer.isDualSided;
+      } catch (error) {
+        console.error('[ProductCustomizer] Error loading from localStorage, falling back to API:', error);
+        // Fall back to loading from API
+        try {
+          await this.renderer.loadTemplate(this.options.templateId);
+        } catch (apiError) {
+          console.error('[ProductCustomizer] Failed to load template from API:', apiError);
+          alert('Failed to load template. Please try again later.');
+          this.close(false);
+          return;
+        }
+      }
+    } else {
+      // No saved state, load template directly from API
+      console.log('[ProductCustomizer] No saved state found, loading from API');
+      try {
+        await this.renderer.loadTemplate(this.options.templateId);
+      } catch (error) {
+        console.error('[ProductCustomizer] Failed to load template:', error);
+        alert('Failed to load template. Please try again later.');
+        this.close(false);
+        return;
+      }
+    }
+    
+    // Check if template loaded successfully
+    if (!this.renderer.template) {
+      console.error('[ProductCustomizer] No template loaded');
+      alert('Failed to load template. Please try again later.');
+      this.close(false);
+      return;
+    }
     
     // Check if this is a dual-sided template
     if (this.renderer.isDualSided) {
@@ -401,11 +466,52 @@ if (typeof ProductCustomizerModal === 'undefined') {
       }
     }
     
+    // Apply global text updates if we have them and no variant-specific save
+    if (globalTextUpdates && !savedData) {
+      console.log('[ProductCustomizer] Applying global text updates to template');
+      Object.entries(globalTextUpdates).forEach(([elementId, text]) => {
+        this.renderer.textUpdates[elementId] = text;
+      });
+      // Re-render with text updates
+      this.renderer.render();
+      // Mark that we have text changes
+      this.hasTextChanges = true;
+    }
+    
     // Create text inputs based on template
     this.createTextInputs();
     
+    // Check if loaded state has changes from original template
+    this.checkForExistingChanges();
+    
     // Generate initial preview
     this.updatePreview();
+  }
+  
+  checkForExistingChanges() {
+    // Check if any input values differ from the original template values
+    const textInputs = this.modal.querySelectorAll('.pcm-text-inputs input');
+    
+    textInputs.forEach(input => {
+      const elementId = input.dataset.elementId;
+      const side = input.dataset.side;
+      const currentValue = input.value;
+      const originalKey = side ? `${side}_${elementId}` : elementId;
+      const originalValue = this.originalTextValues[originalKey];
+      
+      if (currentValue !== originalValue) {
+        this.hasTextChanges = true;
+        console.log('[ProductCustomizer] Existing text changes detected on load:', {
+          elementId,
+          original: originalValue,
+          current: currentValue
+        });
+      }
+    });
+    
+    if (this.hasTextChanges) {
+      console.log('[ProductCustomizer] Text changes exist from saved state, swatch generation will be enabled');
+    }
   }
   
   storeOriginalProductImage() {
@@ -1181,6 +1287,12 @@ if (typeof ProductCustomizerModal === 'undefined') {
   async generateServerSideSwatches() {
     console.log('[ProductCustomizer] Generating server-side swatches...');
     
+    // Safety check - only proceed if there are text changes
+    if (!this.hasTextChanges) {
+      console.log('[ProductCustomizer] No text changes detected, skipping swatch generation');
+      return;
+    }
+    
     // Find all color variant radio inputs
     const colorInputs = document.querySelectorAll('input[type="radio"][name*="Color"]');
     const variants = [];
@@ -1292,6 +1404,46 @@ if (typeof ProductCustomizerModal === 'undefined') {
             }
           }
         });
+        
+        // Save swatches to localStorage
+        const currentVariantTitle = this.getVariantTitle();
+        if (currentVariantTitle) {
+          const parts = currentVariantTitle.split(' / ');
+          const edgePattern = parts.length > 1 ? parts[1].trim() : null;
+          
+          if (edgePattern) {
+            // Create preview data structure
+            const previewData = {
+              previews: {},
+              timestamp: Date.now()
+            };
+            
+            // Map color names to preview URLs
+            Object.entries(result.swatches).forEach(([variantId, dataUrl]) => {
+              const input = document.querySelector(`input[data-variant-id="${variantId}"]`);
+              if (input && input.value) {
+                const color = input.value;
+                previewData.previews[color] = dataUrl;
+              }
+            });
+            
+            // Save to localStorage
+            const variantPreviewsKey = `variant_previews_${edgePattern}`;
+            localStorage.setItem(variantPreviewsKey, JSON.stringify(previewData));
+            console.log(`[ProductCustomizer] Saved ${Object.keys(previewData.previews).length} swatch previews for pattern: ${edgePattern}`);
+            
+            // Also save text updates to ensure hasActiveCustomization is true
+            if (this.renderer && this.renderer.textUpdates && Object.keys(this.renderer.textUpdates).length > 0) {
+              const globalTextKey = 'customization_global_text';
+              const textData = {
+                textUpdates: this.renderer.textUpdates,
+                timestamp: Date.now()
+              };
+              localStorage.setItem(globalTextKey, JSON.stringify(textData));
+              console.log('[ProductCustomizer] Saved text updates to global storage to maintain active customization state');
+            }
+          }
+        }
         
         if (result.errors && result.errors.length > 0) {
           console.warn('[ProductCustomizer] Some swatches failed:', result.errors);
@@ -1446,8 +1598,12 @@ if (typeof ProductCustomizerModal === 'undefined') {
       this.updateMainProductImage(dataUrl);
     }
     
-    // Use server-side swatch generation instead of client-side
-    this.debouncedGenerateServerSwatches();
+    // Only generate swatches if text has been modified
+    if (this.hasTextChanges) {
+      this.debouncedGenerateServerSwatches();
+    } else {
+      console.log('[ProductCustomizer] Skipping swatch generation - no text changes detected');
+    }
   }
   
   debouncedGenerateServerSwatches() {
@@ -1480,6 +1636,10 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     console.log('[ProductCustomizer] createTextInputs called, isDualSided:', this.isDualSided);
     
+    // Reset text change tracking
+    this.hasTextChanges = false;
+    this.originalTextValues = {};
+    
     if (this.isDualSided) {
       // For dual-sided templates, get text from both sides
       const bothSidesText = this.renderer.getAllTextElementsFromBothSides();
@@ -1496,6 +1656,10 @@ if (typeof ProductCustomizerModal === 'undefined') {
           if (this.savedTextUpdates) {
             displayText = this.savedTextUpdates[`front_${element.id}`] || this.savedTextUpdates[element.id] || element.text;
           }
+          
+          // Store original value
+          const originalKey = `front_${element.id}`;
+          this.originalTextValues[originalKey] = element.text; // Always store the original template text
           
           return `
             <div class="pcm-text-field">
@@ -1528,6 +1692,10 @@ if (typeof ProductCustomizerModal === 'undefined') {
             displayText = this.savedTextUpdates[`back_${element.id}`] || element.text;
           }
           
+          // Store original value
+          const originalKey = `back_${element.id}`;
+          this.originalTextValues[originalKey] = element.text; // Always store the original template text
+          
           return `
             <div class="pcm-text-field">
               <label for="text-back-${element.id}">
@@ -1559,6 +1727,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
         if (this.savedTextUpdates) {
           displayText = this.savedTextUpdates[element.id] || element.text;
         }
+        
+        // Store original value
+        this.originalTextValues[element.id] = element.text; // Always store the original template text
           
         return `
           <div class="pcm-text-field">
@@ -1584,6 +1755,19 @@ if (typeof ProductCustomizerModal === 'undefined') {
       input.addEventListener('input', (e) => {
         const elementId = e.target.dataset.elementId;
         const side = e.target.dataset.side;
+        const newValue = e.target.value;
+        
+        // Check if text has changed from original
+        const originalKey = side ? `${side}_${elementId}` : elementId;
+        const originalValue = this.originalTextValues[originalKey];
+        
+        // Update hasTextChanges flag if any text differs from original
+        if (!this.hasTextChanges) {
+          this.hasTextChanges = newValue !== originalValue;
+          if (this.hasTextChanges) {
+            console.log('[ProductCustomizer] Text changes detected, enabling swatch generation');
+          }
+        }
         
         if (this.isDualSided && side) {
           // For dual-sided templates, we need to switch to the correct side before updating
@@ -1595,28 +1779,31 @@ if (typeof ProductCustomizerModal === 'undefined') {
             console.log('[ProductCustomizer] BACK SIDE TEXT CHANGED:', {
               label: label,
               elementId: elementId,
-              newValue: e.target.value,
+              newValue: newValue,
               inputId: e.target.id
             });
             
             // Switch to back canvas temporarily
             this.renderer.template = this.renderer.backCanvasData;
-            this.renderer.updateText(elementId, e.target.value);
+            this.renderer.updateText(elementId, newValue);
             // Keep on back canvas - updatePreview will handle switching
           } else {
             // Update front side
             if (this.renderer.template !== this.renderer.frontCanvasData) {
               this.renderer.template = this.renderer.frontCanvasData;
             }
-            this.renderer.updateText(elementId, e.target.value);
+            this.renderer.updateText(elementId, newValue);
           }
         } else {
           // Single-sided template
           this.lastEditedSide = 'front';
-          this.renderer.updateText(elementId, e.target.value);
+          this.renderer.updateText(elementId, newValue);
         }
         
         this.debouncedUpdatePreview();
+        
+        // Auto-save to localStorage
+        this.debouncedAutoSave();
         
       });
     });
@@ -1648,6 +1835,10 @@ if (typeof ProductCustomizerModal === 'undefined') {
     if (this.swatchUpdateTimer) {
       clearTimeout(this.swatchUpdateTimer);
       this.swatchUpdateTimer = null;
+    }
+    if (this.autoSaveTimer) {
+      clearTimeout(this.autoSaveTimer);
+      this.autoSaveTimer = null;
     }
     
     // Clean up renderer
@@ -1735,6 +1926,127 @@ if (typeof ProductCustomizerModal === 'undefined') {
     }
   }
 
+  saveToLocalStorage() {
+    // Save canvas states to localStorage
+    const localStorageData = {
+      templateId: this.options.templateId,
+      variantId: this.options.variantId,
+      timestamp: Date.now()
+    };
+    
+    if (this.isDualSided) {
+      // Save both front and back canvas data with current text updates
+      const currentTemplate = this.renderer.template;
+      const currentTextUpdates = {...this.renderer.textUpdates}; // Save current text updates
+      
+      // Get front canvas state with text updates
+      this.renderer.template = this.renderer.frontCanvasData;
+      this.renderer.textUpdates = {}; // Clear text updates
+      
+      // Re-apply only the text updates for front elements
+      const frontTextInputs = this.modal.querySelectorAll('input[data-side="front"]');
+      frontTextInputs.forEach(input => {
+        const elementId = input.dataset.elementId;
+        const value = input.value;
+        this.renderer.textUpdates[elementId] = value;
+      });
+      localStorageData.frontCanvasData = this.renderer.getCurrentCanvasState();
+      
+      // Get back canvas state with text updates
+      this.renderer.template = this.renderer.backCanvasData;
+      this.renderer.textUpdates = {}; // Clear text updates
+      
+      // Re-apply only the text updates for back elements
+      const backTextInputs = this.modal.querySelectorAll('input[data-side="back"]');
+      backTextInputs.forEach(input => {
+        const elementId = input.dataset.elementId;
+        const value = input.value;
+        this.renderer.textUpdates[elementId] = value;
+      });
+      localStorageData.backCanvasData = this.renderer.getCurrentCanvasState();
+      
+      // Restore original template and text updates
+      this.renderer.template = currentTemplate;
+      this.renderer.textUpdates = currentTextUpdates;
+      localStorageData.isDualSided = true;
+    } else {
+      // Save single canvas data with current text updates
+      localStorageData.canvasData = this.renderer.getCurrentCanvasState();
+      localStorageData.isDualSided = false;
+    }
+    
+    // Create a unique key for this template/variant combination
+    const storageKey = `customization_${this.options.templateId}_${this.options.variantId}`;
+    localStorage.setItem(storageKey, JSON.stringify(localStorageData));
+    console.log('[ProductCustomizer] Saved canvas state to localStorage:', storageKey);
+    
+    // Also save text updates globally for cross-variant persistence
+    if (this.hasTextChanges) {
+      const textUpdates = {};
+      
+      // Extract text from all inputs
+      const allTextInputs = this.modal.querySelectorAll('input[data-element-id]');
+      allTextInputs.forEach(input => {
+        const elementId = input.dataset.elementId;
+        const value = input.value;
+        if (value && value.trim()) {
+          textUpdates[elementId] = value;
+        }
+      });
+      
+      if (Object.keys(textUpdates).length > 0) {
+        const globalTextKey = 'customization_global_text';
+        localStorage.setItem(globalTextKey, JSON.stringify({
+          textUpdates: textUpdates,
+          timestamp: Date.now()
+        }));
+        console.log('[ProductCustomizer] Also saved text updates globally:', textUpdates);
+      }
+    }
+    
+    return storageKey;
+  }
+  
+  debouncedAutoSave() {
+    // Clear existing timer
+    if (this.autoSaveTimer) {
+      clearTimeout(this.autoSaveTimer);
+    }
+    
+    // Set new timer
+    this.autoSaveTimer = setTimeout(() => {
+      this.saveToLocalStorage();
+      console.log('[ProductCustomizer] Auto-saved to localStorage');
+    }, 1000); // 1 second delay
+  }
+  
+  async loadTemplateWithLocalStorage(templateId, variantId) {
+    // Check for saved canvas state in localStorage
+    const storageKey = `customization_${templateId}_${variantId}`;
+    const savedData = localStorage.getItem(storageKey);
+    
+    if (savedData) {
+      try {
+        const localStorageData = JSON.parse(savedData);
+        console.log('[ProductCustomizer] Found saved canvas state for variant change:', storageKey);
+        
+        // Load from localStorage
+        await this.renderer.loadFromLocalStorage(localStorageData);
+        return true;
+      } catch (error) {
+        console.error('[ProductCustomizer] Error loading from localStorage, falling back to API:', error);
+        // Fall back to loading from API
+        await this.renderer.loadTemplate(templateId);
+        return false;
+      }
+    } else {
+      // No saved state, load template directly from API
+      console.log('[ProductCustomizer] No saved state for new variant, loading from API');
+      await this.renderer.loadTemplate(templateId);
+      return false;
+    }
+  }
+
   async save() {
     const customization = {
       templateId: this.options.templateId,
@@ -1803,6 +2115,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Update the current preview URL
     this.currentPreviewUrl = customization.fullPreview;
+    
+    // Save to localStorage
+    this.saveToLocalStorage();
     
     // Save to cart or handle as needed
     this.customizationData = customization;
@@ -1969,6 +2284,12 @@ if (typeof ProductCustomizerModal === 'undefined') {
   
   
   async handleVariantChange(newVariantId, newTemplateId) {
+    // Save current state to localStorage before switching
+    if (this.hasTextChanges) {
+      console.log('[ProductCustomizer] Saving current state before variant change');
+      this.saveToLocalStorage();
+    }
+    
     // Update the options
     this.options.variantId = newVariantId;
     this.options.templateId = newTemplateId;
@@ -1978,8 +2299,51 @@ if (typeof ProductCustomizerModal === 'undefined') {
       return;
     }
     
-    // Load the new template
-    await this.renderer.loadTemplate(newTemplateId);
+    // Check if the new variant already has saved state
+    const newStorageKey = `customization_${newTemplateId}_${newVariantId}`;
+    const savedState = localStorage.getItem(newStorageKey);
+    
+    if (!savedState && this.hasTextChanges) {
+      // No saved state for new variant, copy current state
+      console.log('[ProductCustomizer] No saved state for new variant, copying current state');
+      
+      // Get current canvas state before loading new template
+      const currentCanvasState = this.renderer.getCurrentCanvasState();
+      
+      // Create localStorage data for new variant
+      const newVariantData = {
+        templateId: newTemplateId,
+        variantId: newVariantId,
+        timestamp: Date.now()
+      };
+      
+      if (this.isDualSided) {
+        // For dual-sided, we need to get both states
+        const currentTemplate = this.renderer.template;
+        
+        // Get front state
+        this.renderer.template = this.renderer.frontCanvasData;
+        newVariantData.frontCanvasData = this.renderer.getCurrentCanvasState();
+        
+        // Get back state
+        this.renderer.template = this.renderer.backCanvasData;
+        newVariantData.backCanvasData = this.renderer.getCurrentCanvasState();
+        
+        // Restore
+        this.renderer.template = currentTemplate;
+        newVariantData.isDualSided = true;
+      } else {
+        newVariantData.canvasData = currentCanvasState;
+        newVariantData.isDualSided = false;
+      }
+      
+      // Save to new variant's localStorage key
+      localStorage.setItem(newStorageKey, JSON.stringify(newVariantData));
+      console.log('[ProductCustomizer] Copied state to new variant:', newStorageKey);
+    }
+    
+    // Load the new template - check localStorage first
+    const loadedFromStorage = await this.loadTemplateWithLocalStorage(newTemplateId, newVariantId);
     
     // Check if this is a dual-sided template
     if (this.renderer.isDualSided) {
@@ -1996,6 +2360,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Recreate text inputs for the new template
     this.createTextInputs();
+    
+    // Check for existing changes after loading
+    this.checkForExistingChanges();
     
     // Update preview
     this.updatePreview();

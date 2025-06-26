@@ -90,7 +90,16 @@ if (typeof CanvasTextRenderer === 'undefined') {
   async loadTemplate(templateId) {
     try {
       const response = await fetch(`${this.apiUrl}/api/public/templates/${templateId}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
+      
+      if (!data || !data.template) {
+        throw new Error('Invalid template data received');
+      }
       
       // Check if this is a dual-sided template
       if (data.template.frontCanvasData && data.template.backCanvasData) {
@@ -127,6 +136,46 @@ if (typeof CanvasTextRenderer === 'undefined') {
       this.onReady();
     } catch (error) {
       console.error('Failed to load template:', error);
+      throw error; // Re-throw so caller can handle
+    }
+  }
+  
+  async loadFromLocalStorage(localStorageData) {
+    try {
+      if (!localStorageData) {
+        throw new Error('No localStorage data provided');
+      }
+      
+      if (localStorageData.isDualSided) {
+        console.log('[CanvasTextRenderer] Loading dual-sided template from localStorage');
+        this.isDualSided = true;
+        this.frontCanvasData = localStorageData.frontCanvasData;
+        this.backCanvasData = localStorageData.backCanvasData;
+        this.template = this.frontCanvasData;
+      } else {
+        console.log('[CanvasTextRenderer] Loading single-sided template from localStorage');
+        this.template = localStorageData.canvasData;
+      }
+      
+      if (!this.template) {
+        throw new Error('No template data found in localStorage');
+      }
+      
+      // Initialize Konva stage
+      this.initializeStage();
+      
+      // Load fonts used in the template
+      await this.loadTemplateFonts();
+      
+      // Preload images
+      await this.preloadImages();
+      
+      // Initial render
+      this.render();
+      this.onReady();
+    } catch (error) {
+      console.error('Failed to load from localStorage:', error);
+      throw error;
     }
   }
   
@@ -268,6 +317,43 @@ if (typeof CanvasTextRenderer === 'undefined') {
     // Instead of updating the existing element, we need to re-render
     // because curved text paths need to be recalculated based on text length
     this.render();
+  }
+  
+  getCurrentCanvasState() {
+    // Create a deep copy of the current template
+    const currentState = JSON.parse(JSON.stringify(this.template));
+    
+    // Apply all text updates to the state
+    if (currentState.elements) {
+      // Update regular text elements
+      if (currentState.elements.textElements) {
+        currentState.elements.textElements.forEach(el => {
+          if (this.textUpdates[el.id]) {
+            el.text = this.textUpdates[el.id];
+          }
+        });
+      }
+      
+      // Update curved text elements
+      if (currentState.elements.curvedTextElements) {
+        currentState.elements.curvedTextElements.forEach(el => {
+          if (this.textUpdates[el.id]) {
+            el.text = this.textUpdates[el.id];
+          }
+        });
+      }
+      
+      // Update gradient text elements
+      if (currentState.elements.gradientTextElements) {
+        currentState.elements.gradientTextElements.forEach(el => {
+          if (this.textUpdates[el.id]) {
+            el.text = this.textUpdates[el.id];
+          }
+        });
+      }
+    }
+    
+    return currentState;
   }
 
   render() {

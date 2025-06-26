@@ -188,6 +188,10 @@
           customizer.open();
         });
         
+        // Track the previous variant for copying customizations
+        let previousVariantId = '{{ product.selected_or_first_available_variant.id }}';
+        let previousTemplateId = customizeBtn.dataset.templateId;
+        
         // Function to handle variant changes
         async function handleVariantChange(variantId) {
           variantChangeCount++;
@@ -207,6 +211,60 @@
           {% endfor %}
           
           if (templateId) {
+            // Check if previous variant had saved customizations and save text-only state globally
+            if (previousVariantId && previousTemplateId && !customizer.isOpen) {
+              const oldStorageKey = `customization_${previousTemplateId}_${previousVariantId}`;
+              const savedState = localStorage.getItem(oldStorageKey);
+              
+              if (savedState) {
+                // Extract only text changes from the saved state
+                try {
+                  const customizationData = JSON.parse(savedState);
+                  const textUpdates = {};
+                  
+                  // Extract text from canvas data
+                  const extractTextFromCanvas = (canvasData) => {
+                    if (!canvasData || !canvasData.elements) return;
+                    
+                    // Extract text from all text element types
+                    ['textElements', 'curvedTextElements', 'gradientTextElements'].forEach(elementType => {
+                      if (canvasData.elements[elementType]) {
+                        canvasData.elements[elementType].forEach(el => {
+                          if (el.id && el.text) {
+                            textUpdates[el.id] = el.text;
+                          }
+                        });
+                      }
+                    });
+                  };
+                  
+                  // Extract from appropriate canvas data
+                  if (customizationData.isDualSided) {
+                    extractTextFromCanvas(customizationData.frontCanvasData);
+                    extractTextFromCanvas(customizationData.backCanvasData);
+                  } else if (customizationData.canvasData) {
+                    extractTextFromCanvas(customizationData.canvasData);
+                  }
+                  
+                  // Save text updates globally (not variant-specific)
+                  if (Object.keys(textUpdates).length > 0) {
+                    const globalTextKey = 'customization_global_text';
+                    localStorage.setItem(globalTextKey, JSON.stringify({
+                      textUpdates: textUpdates,
+                      timestamp: Date.now()
+                    }));
+                    console.log('[ProductCustomizer] Saved text updates globally:', textUpdates);
+                  }
+                } catch (e) {
+                  console.error('[ProductCustomizer] Error extracting text updates:', e);
+                }
+              }
+            }
+            
+            // Update previous variant tracking
+            previousVariantId = variantId;
+            previousTemplateId = templateId;
+            
             // Update button with new variant data
             customizeBtn.dataset.variantId = variantId;
             customizeBtn.dataset.templateId = templateId;
@@ -732,6 +790,130 @@
         return variantInfo ? variantInfo.title : null;
       }
       
+      
+      // Function to generate variant previews with text updates
+      async function generateVariantPreviewWithText(variantId, templateId, textUpdates) {
+        console.log('[ProductCustomizer] Generating previews for variant with text updates:', { variantId, templateId, textUpdates });
+        
+        // Load Konva if not already loaded
+        if (typeof Konva === 'undefined') {
+          const script = document.createElement('script');
+          script.src = '{{ 'konva.min.js' | asset_url }}';
+          await new Promise((resolve, reject) => {
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+        }
+        
+        // Create a temporary canvas renderer
+        const tempContainer = document.createElement('div');
+        tempContainer.style.display = 'none';
+        document.body.appendChild(tempContainer);
+        
+        try {
+          const renderer = new CanvasTextRenderer(tempContainer, {
+            apiUrl: '/apps/designer'
+          });
+          
+          // Load the template
+          await renderer.loadTemplate(templateId);
+          
+          // Apply text updates
+          if (textUpdates) {
+            Object.entries(textUpdates).forEach(([elementId, text]) => {
+              renderer.textUpdates[elementId] = text;
+            });
+          }
+          
+          // Generate previews for both sides if dual-sided
+          if (renderer.isDualSided) {
+            // Generate front preview
+            renderer.currentSide = 'front';
+            renderer.template = renderer.frontCanvasData;
+            renderer.render();
+            const frontPreview = renderer.getDataURL({ pixelRatio: 1 });
+            
+            // Generate back preview
+            renderer.currentSide = 'back';
+            renderer.template = renderer.backCanvasData;
+            renderer.render();
+            const backPreview = renderer.getDataURL({ pixelRatio: 1 });
+            
+            // Update all relevant images
+            updateVariantImages(variantId, frontPreview, backPreview);
+          } else {
+            // Single-sided template
+            renderer.render();
+            const preview = renderer.getDataURL({ pixelRatio: 1 });
+            updateVariantImages(variantId, preview, null);
+          }
+          
+          // Clean up
+          renderer.destroy();
+        } catch (error) {
+          console.error('[ProductCustomizer] Error generating variant preview:', error);
+        } finally {
+          document.body.removeChild(tempContainer);
+        }
+      }
+      
+      // Function to update variant images
+      function updateVariantImages(variantId, frontPreview, backPreview) {
+        const variantTitle = getVariantTitleForId(variantId);
+        if (!variantTitle) return;
+        
+        console.log('[ProductCustomizer] Updating images for variant:', variantTitle);
+        
+        // Update main product image (first/featured image)
+        const mainProductImage = document.querySelector(
+          '.media-gallery img:first-of-type, ' +
+          '.product-media img:first-of-type, ' +
+          '.product__media--featured img, ' +
+          '[data-product-featured-image]'
+        );
+        
+        if (mainProductImage && frontPreview) {
+          mainProductImage.src = frontPreview;
+          mainProductImage.srcset = ''; // Clear srcset
+          mainProductImage.style.opacity = '1';
+          mainProductImage.style.filter = 'none';
+        }
+        
+        // Update carousel thumbnails
+        const allThumbnails = document.querySelectorAll(
+          '.media-gallery img, ' +
+          '.product-media img, ' +
+          'slideshow-controls img, ' +
+          '.product__media img'
+        );
+        
+        allThumbnails.forEach(img => {
+          const altText = img.alt || '';
+          
+          // Check if this is a front image for our variant
+          if (altText.includes(variantTitle) && altText.includes('- Front') && frontPreview) {
+            console.log('[ProductCustomizer] Updating front thumbnail:', altText);
+            img.src = frontPreview;
+            img.srcset = ''; // Clear srcset
+          }
+          
+          // Check if this is a back image for our variant
+          if (altText.includes(variantTitle) && altText.includes('- Back') && backPreview) {
+            console.log('[ProductCustomizer] Updating back thumbnail:', altText);
+            img.src = backPreview;
+            img.srcset = ''; // Clear srcset
+          }
+        });
+        
+        // Force refresh of any slideshow components
+        const slideshowComponent = document.querySelector('media-gallery');
+        if (slideshowComponent && typeof slideshowComponent.updateComplete !== 'undefined') {
+          slideshowComponent.updateComplete.then(() => {
+            console.log('[ProductCustomizer] Slideshow component refreshed');
+          });
+        }
+      }
       
       initializeWhenReady();
     });

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Multiple Variant Images</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success {
+            color: green;
+        }
+        .error {
+            color: red;
+        }
+        .info {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        button {
+            padding: 10px 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>Multiple Variant Images Test</h1>
+    
+    <div class="test-section">
+        <h2>Test Overview</h2>
+        <p>This page tests the new multiple images per variant functionality.</p>
+        <div class="info">
+            <strong>What's Changed:</strong>
+            <ul>
+                <li>Templates now sync both front and back thumbnails to variants</li>
+                <li>Each variant can have multiple images (not just one)</li>
+                <li>The native theme gallery will show both images automatically</li>
+                <li>No gallery injection hacks needed!</li>
+            </ul>
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h2>How to Test</h2>
+        <ol>
+            <li><strong>Create/Edit a Dual-Sided Template:</strong>
+                <ul>
+                    <li>Go to your template admin page</li>
+                    <li>Create a new template or edit an existing one</li>
+                    <li>Make sure it has both front and back designs</li>
+                    <li>Save the template</li>
+                </ul>
+            </li>
+            <li><strong>Check the Sync Results:</strong>
+                <ul>
+                    <li>After saving, check the console logs</li>
+                    <li>You should see "Syncing dual-sided template with both front and back thumbnails"</li>
+                    <li>It should report syncing 2 images per variant</li>
+                </ul>
+            </li>
+            <li><strong>Verify in Shopify Admin:</strong>
+                <ul>
+                    <li>Go to the product in Shopify admin</li>
+                    <li>Look at the variant that has the template assigned</li>
+                    <li>You should see 2 images for that variant</li>
+                </ul>
+            </li>
+            <li><strong>Check the Storefront:</strong>
+                <ul>
+                    <li>View the product on your storefront</li>
+                    <li>The product gallery should show both front and back images</li>
+                    <li>You should be able to click between them</li>
+                </ul>
+            </li>
+        </ol>
+    </div>
+    
+    <div class="test-section">
+        <h2>Expected Results</h2>
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Feature</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Before</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">After</th>
+            </tr>
+            <tr>
+                <td style="border: 1px solid #ddd; padding: 8px;">Images per variant</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">1 (front only)</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">2 (front and back)</td>
+            </tr>
+            <tr>
+                <td style="border: 1px solid #ddd; padding: 8px;">Gallery behavior</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">Single image (no gallery)</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">Native gallery with thumbnails</td>
+            </tr>
+            <tr>
+                <td style="border: 1px solid #ddd; padding: 8px;">Gallery injection</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">Required (but buggy)</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">Not needed!</td>
+            </tr>
+            <tr>
+                <td style="border: 1px solid #ddd; padding: 8px;">Theme compatibility</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">Theme-specific hacks</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">Works with any theme</td>
+            </tr>
+        </table>
+    </div>
+    
+    <div class="test-section">
+        <h2>Troubleshooting</h2>
+        <p>If you don't see both images:</p>
+        <ul>
+            <li>Check the browser console for errors</li>
+            <li>Make sure the template has both frontThumbnail and backThumbnail saved</li>
+            <li>Try manually re-syncing from the templates page</li>
+            <li>Clear your browser cache and reload</li>
+            <li>Check that the variant doesn't already have existing images that need to be removed</li>
+        </ul>
+    </div>
+    
+    <div class="test-section">
+        <h2>Console Commands</h2>
+        <p>You can run these in the browser console on your product page:</p>
+        <pre>
+// Check if there are multiple images in the gallery
+document.querySelectorAll('media-gallery img').length
+
+// Check variant images (if using Horizon theme)
+document.querySelectorAll('slideshow-component img').length
+
+// See all image sources
+Array.from(document.querySelectorAll('.product img')).map(img => img.src)
+        </pre>
+    </div>
+</body>
+</html>
