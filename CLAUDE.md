@@ -419,6 +419,10 @@ The modal provides a streamlined customization experience:
 - **Gradient background support**: Renders template background gradients correctly
 - **Bold text rendering**: Properly handles bold fonts in canvas renderer
 
+### Product Customizer Modal State Management
+
+For detailed information about how state is managed within the Product Customizer Modal, including initial loading, text updates, canvas synchronization, and global state integration, see `PRODUCT_CUSTOMIZER_STATE.md`.
+
 ### State Management Between Full Designer and Product Customizer
 
 The system maintains two types of state for product customization:

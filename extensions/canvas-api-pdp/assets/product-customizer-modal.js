@@ -31,6 +31,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Track which side was last edited
     this.lastEditedSide = 'front';
+    
+    // Timer for debounced text state saving
+    this.textSaveTimer = null;
   }
 
   init() {
@@ -401,11 +404,76 @@ if (typeof ProductCustomizerModal === 'undefined') {
       }
     }
     
+    // Load any saved global text state
+    this.savedTextUpdates = this.loadGlobalTextState();
+    
     // Create text inputs based on template
     this.createTextInputs();
     
+    // Apply saved text if available
+    if (this.savedTextUpdates && this.renderer) {
+      this.applyGlobalTextState();
+    }
+    
     // Generate initial preview
     this.updatePreview();
+  }
+  
+  applyGlobalTextState() {
+    if (!this.savedTextUpdates || !this.renderer) return;
+    
+    console.log('[ProductCustomizer] Applying global text state to renderer');
+    
+    if (this.isDualSided) {
+      // Apply text directly to the canvas data without switching
+      
+      // Update front canvas data
+      if (this.renderer.frontCanvasData) {
+        Object.entries(this.savedTextUpdates).forEach(([key, value]) => {
+          if (key.startsWith('front_')) {
+            const elementId = key.replace('front_', '');
+            // Find and update the text element in frontCanvasData
+            const frontElements = this.renderer.frontCanvasData.elements;
+            ['textElements', 'curvedTextElements', 'gradientTextElements'].forEach(elementType => {
+              if (frontElements[elementType]) {
+                const element = frontElements[elementType].find(el => el.id === elementId);
+                if (element) {
+                  element.text = value;
+                }
+              }
+            });
+          }
+        });
+      }
+      
+      // Update back canvas data
+      if (this.renderer.backCanvasData) {
+        Object.entries(this.savedTextUpdates).forEach(([key, value]) => {
+          if (key.startsWith('back_')) {
+            const elementId = key.replace('back_', '');
+            // Find and update the text element in backCanvasData
+            const backElements = this.renderer.backCanvasData.elements;
+            ['textElements', 'curvedTextElements', 'gradientTextElements'].forEach(elementType => {
+              if (backElements[elementType]) {
+                const element = backElements[elementType].find(el => el.id === elementId);
+                if (element) {
+                  element.text = value;
+                }
+              }
+            });
+          }
+        });
+      }
+      
+      // Ensure we're displaying the front canvas
+      this.renderer.template = this.renderer.frontCanvasData;
+      this.renderer.render();
+    } else {
+      // Apply text to single-sided template
+      Object.entries(this.savedTextUpdates).forEach(([elementId, value]) => {
+        this.renderer.updateText(elementId, value);
+      });
+    }
   }
   
   storeOriginalProductImage() {
@@ -1474,6 +1542,62 @@ if (typeof ProductCustomizerModal === 'undefined') {
     }, 500); // 500ms delay for better performance
   }
 
+  saveTextState() {
+    // Collect current text state from all elements
+    const textState = {};
+    
+    if (this.isDualSided) {
+      // For dual-sided templates, get text from both sides
+      const bothSidesText = this.renderer.getAllTextElementsFromBothSides();
+      
+      // Save front side text
+      bothSidesText.front.forEach(el => {
+        textState[`front_${el.id}`] = el.text;
+      });
+      
+      // Save back side text
+      bothSidesText.back.forEach(el => {
+        textState[`back_${el.id}`] = el.text;
+      });
+    } else {
+      // For single-sided templates
+      const textElements = this.renderer.getAllTextElements();
+      textElements.forEach(el => {
+        textState[el.id] = el.text;
+      });
+    }
+    
+    // Save to localStorage with a global key (not variant-specific)
+    localStorage.setItem('customization_global_text', JSON.stringify(textState));
+    console.log('[ProductCustomizer] Saved global text state:', textState);
+  }
+  
+  debouncedSaveTextState() {
+    // Clear existing timer
+    if (this.textSaveTimer) {
+      clearTimeout(this.textSaveTimer);
+    }
+    
+    // Set new timer to save after 1 second of no typing
+    this.textSaveTimer = setTimeout(() => {
+      this.saveTextState();
+    }, 1000);
+  }
+  
+  loadGlobalTextState() {
+    try {
+      const savedState = localStorage.getItem('customization_global_text');
+      if (savedState) {
+        const textState = JSON.parse(savedState);
+        console.log('[ProductCustomizer] Loaded global text state:', textState);
+        return textState;
+      }
+    } catch (error) {
+      console.error('[ProductCustomizer] Error loading global text state:', error);
+    }
+    return null;
+  }
+
   createTextInputs() {
     const textInputsContainer = this.modal.querySelector('.pcm-text-inputs');
     textInputsContainer.innerHTML = '';
@@ -1618,6 +1742,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
         
         this.debouncedUpdatePreview();
         
+        // Save text state globally with debouncing
+        this.debouncedSaveTextState();
       });
     });
   }
