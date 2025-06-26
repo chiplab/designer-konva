@@ -3,9 +3,187 @@
  * Provides a slide-out modal interface for simple text customization
  */
 
+// Global swatch protection system - runs immediately
+(function() {
+  console.log('[SwatchProtection] Initializing global swatch protection');
+  
+  // Persistent storage for custom swatches - survives across variant changes and modal closes
+  const customSwatchStorage = new Map();
+  
+  // Check if we have custom swatches saved
+  const hasCustomSwatches = () => {
+    return customSwatchStorage.size > 0 || document.querySelectorAll(
+      '.swatch[data-server-generated="true"], ' +
+      '.swatch[data-customization-preview="true"], ' +
+      '[data-has-custom-swatches="true"]'
+    ).length > 0;
+  };
+  
+  // Save swatch data to persistent storage
+  const saveSwatchData = (variantId, style, attributes) => {
+    customSwatchStorage.set(variantId, {
+      style: style,
+      attributes: attributes,
+      timestamp: Date.now()
+    });
+    console.log('[SwatchProtection] Saved swatch data for variant:', variantId);
+  };
+  
+  // Get saved swatch data
+  const getSwatchData = (variantId) => {
+    return customSwatchStorage.get(variantId);
+  };
+  
+  // Restore swatches from persistent storage
+  const restoreSwatchesFromStorage = () => {
+    console.log('[SwatchProtection] Restoring swatches from storage, total saved:', customSwatchStorage.size);
+    
+    customSwatchStorage.forEach((data, variantId) => {
+      const input = document.querySelector(`input[data-variant-id="${variantId}"]`);
+      if (input) {
+        const swatch = input.nextElementSibling;
+        if (swatch && swatch.classList.contains('swatch')) {
+          swatch.setAttribute('style', data.style);
+          Object.entries(data.attributes).forEach(([name, value]) => {
+            if (name !== 'style') {
+              swatch.setAttribute(name, value);
+            }
+          });
+          console.log('[SwatchProtection] Restored swatch for variant:', variantId);
+        }
+      }
+    });
+  };
+  
+  // Listen for variant changes early - support both standard and Horizon theme events
+  const handleVariantChange = function(event) {
+    console.log('[SwatchProtection] Variant change detected:', event.type);
+    
+    // First, save any existing custom swatches to persistent storage
+    document.querySelectorAll('.swatch[data-server-generated="true"]').forEach(swatch => {
+      const input = swatch.previousElementSibling;
+      if (input && input.dataset.variantId) {
+        saveSwatchData(
+          input.dataset.variantId,
+          swatch.getAttribute('style'),
+          Array.from(swatch.attributes).reduce((acc, attr) => {
+            acc[attr.name] = attr.value;
+            return acc;
+          }, {})
+        );
+      }
+    });
+    
+    // For Horizon theme, we need to wait for the morph operation to complete
+    // The theme uses morph() which completely replaces the DOM
+    const waitForMorphComplete = () => {
+      // Check if variant picker exists and has swatches
+      const variantPicker = document.querySelector('variant-picker');
+      const swatches = variantPicker ? variantPicker.querySelectorAll('.swatch') : [];
+      
+      if (swatches.length > 0) {
+        console.log('[SwatchProtection] DOM morph complete, restoring swatches');
+        restoreSwatchesFromStorage();
+      } else {
+        // If swatches not ready yet, check again
+        setTimeout(waitForMorphComplete, 50);
+      }
+    };
+    
+    // Start checking after a short delay to allow morph to begin
+    setTimeout(waitForMorphComplete, 100);
+  };
+  
+  // Listen for both standard and Horizon theme events
+  document.addEventListener('variant:change', handleVariantChange, true);
+  document.addEventListener('VariantUpdateEvent', handleVariantChange, true);
+  document.addEventListener('VariantSelectedEvent', handleVariantChange, true);
+  
+  
+  // Intercept the Horizon theme's morph function if it exists
+  const interceptMorph = () => {
+    // Check if morph is available (from Horizon theme)
+    if (window.morph || (window.Theme && window.Theme.morph)) {
+      const originalMorph = window.morph || window.Theme.morph;
+      const morphWrapper = function(target, source, options) {
+        console.log('[SwatchProtection] Morph operation detected');
+        
+        // Save swatches before morph
+        document.querySelectorAll('.swatch[data-server-generated="true"]').forEach(swatch => {
+          const input = swatch.previousElementSibling;
+          if (input && input.dataset.variantId) {
+            saveSwatchData(
+              input.dataset.variantId,
+              swatch.getAttribute('style'),
+              Array.from(swatch.attributes).reduce((acc, attr) => {
+                acc[attr.name] = attr.value;
+                return acc;
+              }, {})
+            );
+          }
+        });
+        
+        // Call original morph
+        const result = originalMorph.call(this, target, source, options);
+        
+        // Restore swatches after morph
+        setTimeout(() => {
+          console.log('[SwatchProtection] Restoring swatches after morph');
+          restoreSwatchesFromStorage();
+        }, 50);
+        
+        return result;
+      };
+      
+      // Replace the morph function
+      if (window.morph) {
+        window.morph = morphWrapper;
+      }
+      if (window.Theme && window.Theme.morph) {
+        window.Theme.morph = morphWrapper;
+      }
+      
+      console.log('[SwatchProtection] Morph function intercepted');
+    } else {
+      // Retry after a delay if morph isn't available yet
+      setTimeout(interceptMorph, 500);
+    }
+  };
+  
+  // Start intercepting morph
+  interceptMorph();
+  
+  // Make functions globally available
+  window.SwatchProtection = {
+    hasCustomSwatches,
+    saveSwatchData,
+    getSwatchData,
+    restoreSwatchesFromStorage,
+    clearCustomSwatches: () => {
+      console.log('[SwatchProtection] Clearing all custom swatches');
+      customSwatchStorage.clear();
+      document.querySelectorAll('.swatch[data-server-generated="true"]').forEach(swatch => {
+        swatch.removeAttribute('data-server-generated');
+        swatch.removeAttribute('data-customization-preview');
+        swatch.removeAttribute('data-custom-timestamp');
+        swatch.removeAttribute('style');
+      });
+      document.querySelectorAll('[data-has-custom-swatches]').forEach(el => {
+        el.removeAttribute('data-has-custom-swatches');
+      });
+    }
+  };
+  
+  console.log('[SwatchProtection] Global protection ready');
+})();
+
 if (typeof ProductCustomizerModal === 'undefined') {
+  console.log('[ProductCustomizer] Defining ProductCustomizerModal class');
+  
   class ProductCustomizerModal {
   constructor(options = {}) {
+    console.log('[ProductCustomizer] Constructor called with options:', options);
+    
     this.options = {
       variantId: options.variantId,
       templateId: options.templateId,
@@ -31,15 +209,27 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Track which side was last edited
     this.lastEditedSide = 'front';
+    
+    // Timer for debounced text state saving
+    this.textSaveTimer = null;
   }
 
   init() {
-    this.createModal();
-    this.attachEventListeners();
-    this.setupMessageListener();
+    console.log('[ProductCustomizer] init() called');
     
-    // Make debug method globally accessible
-    window._productCustomizerDebug = () => this.debugSlideshowComponent();
+    try {
+      this.createModal();
+      this.attachEventListeners();
+      this.setupMessageListener();
+      this.interceptVariantChanges();
+      
+      // Make debug method globally accessible
+      window._productCustomizerDebug = () => this.debugSlideshowComponent();
+      
+      console.log('[ProductCustomizer] init() completed successfully');
+    } catch (error) {
+      console.error('[ProductCustomizer] Error during initialization:', error);
+    }
   }
 
   createModal() {
@@ -401,11 +591,76 @@ if (typeof ProductCustomizerModal === 'undefined') {
       }
     }
     
+    // Load any saved global text state
+    this.savedTextUpdates = this.loadGlobalTextState();
+    
     // Create text inputs based on template
     this.createTextInputs();
     
+    // Apply saved text if available
+    if (this.savedTextUpdates && this.renderer) {
+      this.applyGlobalTextState();
+    }
+    
     // Generate initial preview
     this.updatePreview();
+  }
+  
+  applyGlobalTextState() {
+    if (!this.savedTextUpdates || !this.renderer) return;
+    
+    console.log('[ProductCustomizer] Applying global text state to renderer');
+    
+    if (this.isDualSided) {
+      // Apply text directly to the canvas data without switching
+      
+      // Update front canvas data
+      if (this.renderer.frontCanvasData) {
+        Object.entries(this.savedTextUpdates).forEach(([key, value]) => {
+          if (key.startsWith('front_')) {
+            const elementId = key.replace('front_', '');
+            // Find and update the text element in frontCanvasData
+            const frontElements = this.renderer.frontCanvasData.elements;
+            ['textElements', 'curvedTextElements', 'gradientTextElements'].forEach(elementType => {
+              if (frontElements[elementType]) {
+                const element = frontElements[elementType].find(el => el.id === elementId);
+                if (element) {
+                  element.text = value;
+                }
+              }
+            });
+          }
+        });
+      }
+      
+      // Update back canvas data
+      if (this.renderer.backCanvasData) {
+        Object.entries(this.savedTextUpdates).forEach(([key, value]) => {
+          if (key.startsWith('back_')) {
+            const elementId = key.replace('back_', '');
+            // Find and update the text element in backCanvasData
+            const backElements = this.renderer.backCanvasData.elements;
+            ['textElements', 'curvedTextElements', 'gradientTextElements'].forEach(elementType => {
+              if (backElements[elementType]) {
+                const element = backElements[elementType].find(el => el.id === elementId);
+                if (element) {
+                  element.text = value;
+                }
+              }
+            });
+          }
+        });
+      }
+      
+      // Ensure we're displaying the front canvas
+      this.renderer.template = this.renderer.frontCanvasData;
+      this.renderer.render();
+    } else {
+      // Apply text to single-sided template
+      Object.entries(this.savedTextUpdates).forEach(([elementId, value]) => {
+        this.renderer.updateText(elementId, value);
+      });
+    }
   }
   
   storeOriginalProductImage() {
@@ -1276,18 +1531,37 @@ if (typeof ProductCustomizerModal === 'undefined') {
               // Store original if not already stored
               if (!swatchSpan.dataset.originalBackground) {
                 const currentStyle = swatchSpan.getAttribute('style');
-                swatchSpan.dataset.originalBackground = currentStyle;
+                swatchSpan.dataset.originalBackground = currentStyle || '';
               }
               
               // Update with server-generated swatch
-              swatchSpan.style.cssText = `--swatch-background: url(${dataUrl});`;
+              const newStyle = `--swatch-background: url(${dataUrl});`;
+              swatchSpan.style.cssText = newStyle;
               swatchSpan.setAttribute('data-customization-preview', 'true');
               swatchSpan.setAttribute('data-server-generated', 'true');
+              swatchSpan.setAttribute('data-custom-timestamp', Date.now().toString());
+              
+              // Save to global swatch protection storage
+              window.SwatchProtection.saveSwatchData(
+                variantId,
+                newStyle,
+                {
+                  'data-customization-preview': 'true',
+                  'data-server-generated': 'true',
+                  'data-custom-timestamp': Date.now().toString()
+                }
+              );
               
               // Mark parent as having customization
               const swatchParent = swatchSpan.parentElement;
               if (swatchParent) {
                 swatchParent.setAttribute('data-has-customization', 'true');
+              }
+              
+              // Also mark the container to help with detection
+              const container = swatchSpan.closest('.variant-option--swatches, [data-color-swatches]');
+              if (container) {
+                container.setAttribute('data-has-custom-swatches', 'true');
               }
             }
           }
@@ -1474,6 +1748,62 @@ if (typeof ProductCustomizerModal === 'undefined') {
     }, 500); // 500ms delay for better performance
   }
 
+  saveTextState() {
+    // Collect current text state from all elements
+    const textState = {};
+    
+    if (this.isDualSided) {
+      // For dual-sided templates, get text from both sides
+      const bothSidesText = this.renderer.getAllTextElementsFromBothSides();
+      
+      // Save front side text
+      bothSidesText.front.forEach(el => {
+        textState[`front_${el.id}`] = el.text;
+      });
+      
+      // Save back side text
+      bothSidesText.back.forEach(el => {
+        textState[`back_${el.id}`] = el.text;
+      });
+    } else {
+      // For single-sided templates
+      const textElements = this.renderer.getAllTextElements();
+      textElements.forEach(el => {
+        textState[el.id] = el.text;
+      });
+    }
+    
+    // Save to localStorage with a global key (not variant-specific)
+    localStorage.setItem('customization_global_text', JSON.stringify(textState));
+    console.log('[ProductCustomizer] Saved global text state:', textState);
+  }
+  
+  debouncedSaveTextState() {
+    // Clear existing timer
+    if (this.textSaveTimer) {
+      clearTimeout(this.textSaveTimer);
+    }
+    
+    // Set new timer to save after 1 second of no typing
+    this.textSaveTimer = setTimeout(() => {
+      this.saveTextState();
+    }, 1000);
+  }
+  
+  loadGlobalTextState() {
+    try {
+      const savedState = localStorage.getItem('customization_global_text');
+      if (savedState) {
+        const textState = JSON.parse(savedState);
+        console.log('[ProductCustomizer] Loaded global text state:', textState);
+        return textState;
+      }
+    } catch (error) {
+      console.error('[ProductCustomizer] Error loading global text state:', error);
+    }
+    return null;
+  }
+
   createTextInputs() {
     const textInputsContainer = this.modal.querySelector('.pcm-text-inputs');
     textInputsContainer.innerHTML = '';
@@ -1618,6 +1948,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
         
         this.debouncedUpdatePreview();
         
+        // Save text state globally with debouncing
+        this.debouncedSaveTextState();
       });
     });
   }
@@ -1634,6 +1966,11 @@ if (typeof ProductCustomizerModal === 'undefined') {
       this.restoreOriginalProductImages();
       // Clear saved text updates if not keeping customization
       this.savedTextUpdates = null;
+      
+      // Clear custom swatches if not keeping customization
+      if (this.clearCustomSwatches) {
+        this.clearCustomSwatches();
+      }
     }
     
     // Clear any pending timers
@@ -1965,6 +2302,17 @@ if (typeof ProductCustomizerModal === 'undefined') {
         this.close(true); // Pass true to keep the customization preview
       }
     });
+  }
+  
+  interceptVariantChanges() {
+    console.log('[ProductCustomizer] Setting up variant change interception');
+    
+    // Use the global SwatchProtection system
+    this.clearCustomSwatches = window.SwatchProtection.clearCustomSwatches;
+    
+    // The global system already handles variant changes for both standard and Horizon themes
+    // We just need to ensure swatches are saved when they're generated
+    console.log('[ProductCustomizer] Using global swatch protection system');
   }
   
   

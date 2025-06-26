@@ -57,6 +57,9 @@
   <script src="{{ 'product-customizer-modal.js' | asset_url }}?v={{ 'now' | date: '%s' }}" defer></script>
   
   <script>
+    // Store product data for variant lookups
+    window.productData = {{ product | json }};
+    
     // Wait for both DOM and scripts to load
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', initializeCustomizer);
@@ -146,7 +149,9 @@
         customizer.open();
       });
       
-      // Listen for variant changes
+      // Listen for variant changes - support both standard and Horizon theme events
+      
+      // Standard Shopify variant:change event
       document.addEventListener('variant:change', function(event) {
         const newVariant = event.detail.variant;
         if (newVariant && newVariant.metafields?.custom_designer?.template_id) {
@@ -167,6 +172,74 @@
           // If the customizer is open, update its variant context
           if (customizer.isOpen) {
             customizer.loadTemplate(); // Reload template for new variant
+          }
+        } else {
+          // Hide button if variant has no template
+          customizeBtn.style.display = 'none';
+        }
+      });
+      
+      // Horizon theme VariantUpdateEvent support
+      document.addEventListener('VariantUpdateEvent', function(event) {
+        
+        // In Horizon theme, the variant data is directly in event.detail
+        const newVariant = event.detail;
+        
+        // Try to find the template ID from the variant
+        let templateId = null;
+        
+        // Method 1: Check metafields structure
+        if (newVariant.metafields?.custom_designer?.template_id) {
+          templateId = newVariant.metafields.custom_designer.template_id;
+        }
+        // Method 2: Check if template_id is in a different structure
+        else if (newVariant.metafield?.custom_designer?.template_id) {
+          templateId = newVariant.metafield.custom_designer.template_id;
+        }
+        // Method 3: Query the variant picker for the template ID
+        else {
+          // Find the variant picker and get the template from the selected option
+          const variantPicker = document.querySelector('variant-picker');
+          if (variantPicker) {
+            const selectedInput = variantPicker.querySelector('input[type="radio"]:checked[data-variant-id="' + newVariant.id + '"]');
+            if (selectedInput) {
+              // Check if the parent form or variant picker has template data
+              const templateMeta = variantPicker.querySelector('[data-template-id-' + newVariant.id + ']');
+              if (templateMeta) {
+                templateId = templateMeta.dataset['templateId' + newVariant.id];
+              }
+            }
+          }
+        }
+        
+        // If we still don't have a template ID, check the product variants data
+        if (!templateId && window.productData && window.productData.variants) {
+          const productVariant = window.productData.variants.find(v => v.id == newVariant.id);
+          if (productVariant && productVariant.metafields?.custom_designer?.template_id) {
+            templateId = productVariant.metafields.custom_designer.template_id;
+          }
+        }
+        
+        if (newVariant && templateId) {
+          // Update button with new variant data
+          customizeBtn.dataset.variantId = newVariant.id;
+          customizeBtn.dataset.templateId = templateId;
+          customizeBtn.style.display = 'inline-flex';
+          
+          // Update customizer options
+          customizer.options.variantId = newVariant.id;
+          customizer.options.templateId = templateId;
+          
+          // Update product image URL if available
+          if (newVariant.featured_image) {
+            customizer.options.productImageUrl = newVariant.featured_image.src;
+          } else if (newVariant.image) {
+            customizer.options.productImageUrl = newVariant.image;
+          }
+          
+          // If the customizer is open, update its variant context
+          if (customizer.isOpen) {
+            customizer.handleVariantChange(newVariant.id, templateId);
           }
         } else {
           // Hide button if variant has no template
