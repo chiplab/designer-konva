@@ -130,6 +130,47 @@
         setTimeout(() => {
           console.log('[SwatchProtection] Restoring swatches after morph');
           restoreSwatchesFromStorage();
+          
+          // Update main product image if customization exists
+          if (window.productCustomizer) {
+            // Check if we have global customization state
+            const globalState = localStorage.getItem('customization_global_state');
+            const globalText = localStorage.getItem('customization_global_text');
+            
+            if (globalState || globalText) {
+              console.log('[SwatchProtection] Detected customization after morph, generating preview');
+              
+              // Find the currently selected variant
+              const selectedInput = document.querySelector('input[type="radio"]:checked[data-variant-id]');
+              if (selectedInput) {
+                const variantId = selectedInput.dataset.variantId;
+                const templateId = window.productCustomizer.options.templateId;
+                
+                // Check if this variant has a template
+                let variantTemplateId = null;
+                if (window.productData && window.productData.variants) {
+                  const variant = window.productData.variants.find(v => v.id == variantId);
+                  if (variant && variant.metafields?.custom_designer?.template_id) {
+                    variantTemplateId = variant.metafields.custom_designer.template_id;
+                  }
+                }
+                
+                // Use variant-specific template if available, otherwise use current template
+                const effectiveTemplateId = variantTemplateId || templateId;
+                
+                if (effectiveTemplateId) {
+                  // Generate preview for this variant with saved customization
+                  if (globalState) {
+                    // Full canvas state from designer
+                    window.generateVariantPreviewWithCanvasState(variantId, effectiveTemplateId, JSON.parse(globalState));
+                  } else if (globalText) {
+                    // Text-only updates
+                    window.generateVariantPreviewWithText(variantId, effectiveTemplateId, JSON.parse(globalText));
+                  }
+                }
+              }
+            }
+          }
         }, 50);
         
         return result;

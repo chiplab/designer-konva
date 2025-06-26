@@ -143,6 +143,9 @@
       
       customizer.init();
       
+      // Make customizer globally accessible for morph interceptor
+      window.productCustomizer = customizer;
+      
       // Open modal on button click
       customizeBtn.addEventListener('click', function(e) {
         e.preventDefault();
