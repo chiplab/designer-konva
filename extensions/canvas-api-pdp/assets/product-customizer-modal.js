@@ -7,64 +7,161 @@
 (function() {
   console.log('[SwatchProtection] Initializing global swatch protection');
   
+  // Persistent storage for custom swatches - survives across variant changes and modal closes
+  const customSwatchStorage = new Map();
+  
   // Check if we have custom swatches saved
   const hasCustomSwatches = () => {
-    const customSwatches = document.querySelectorAll(
+    return customSwatchStorage.size > 0 || document.querySelectorAll(
       '.swatch[data-server-generated="true"], ' +
       '.swatch[data-customization-preview="true"], ' +
       '[data-has-custom-swatches="true"]'
-    );
-    return customSwatches.length > 0;
+    ).length > 0;
   };
   
-  // Listen for variant changes early
-  document.addEventListener('variant:change', function() {
-    console.log('[SwatchProtection] Variant change detected (global listener)');
+  // Save swatch data to persistent storage
+  const saveSwatchData = (variantId, style, attributes) => {
+    customSwatchStorage.set(variantId, {
+      style: style,
+      attributes: attributes,
+      timestamp: Date.now()
+    });
+    console.log('[SwatchProtection] Saved swatch data for variant:', variantId);
+  };
+  
+  // Get saved swatch data
+  const getSwatchData = (variantId) => {
+    return customSwatchStorage.get(variantId);
+  };
+  
+  // Restore swatches from persistent storage
+  const restoreSwatchesFromStorage = () => {
+    console.log('[SwatchProtection] Restoring swatches from storage, total saved:', customSwatchStorage.size);
     
-    if (hasCustomSwatches()) {
-      console.log('[SwatchProtection] Custom swatches detected, will preserve them');
-      
-      // Store current custom swatches
-      const savedSwatches = new Map();
-      document.querySelectorAll('.swatch[data-server-generated="true"]').forEach(swatch => {
-        const input = swatch.previousElementSibling;
-        if (input && input.dataset.variantId) {
-          savedSwatches.set(input.dataset.variantId, {
-            style: swatch.getAttribute('style'),
-            attributes: Array.from(swatch.attributes).reduce((acc, attr) => {
-              acc[attr.name] = attr.value;
-              return acc;
-            }, {})
-          });
-        }
-      });
-      
-      // Restore after a short delay
-      setTimeout(() => {
-        console.log('[SwatchProtection] Restoring custom swatches');
-        savedSwatches.forEach((data, variantId) => {
-          const input = document.querySelector(`input[data-variant-id="${variantId}"]`);
-          if (input) {
-            const swatch = input.nextElementSibling;
-            if (swatch && swatch.classList.contains('swatch')) {
-              swatch.setAttribute('style', data.style);
-              Object.entries(data.attributes).forEach(([name, value]) => {
-                if (name !== 'style') {
-                  swatch.setAttribute(name, value);
-                }
-              });
+    customSwatchStorage.forEach((data, variantId) => {
+      const input = document.querySelector(`input[data-variant-id="${variantId}"]`);
+      if (input) {
+        const swatch = input.nextElementSibling;
+        if (swatch && swatch.classList.contains('swatch')) {
+          swatch.setAttribute('style', data.style);
+          Object.entries(data.attributes).forEach(([name, value]) => {
+            if (name !== 'style') {
+              swatch.setAttribute(name, value);
             }
+          });
+          console.log('[SwatchProtection] Restored swatch for variant:', variantId);
+        }
+      }
+    });
+  };
+  
+  // Listen for variant changes early - support both standard and Horizon theme events
+  const handleVariantChange = function(event) {
+    console.log('[SwatchProtection] Variant change detected:', event.type);
+    
+    // First, save any existing custom swatches to persistent storage
+    document.querySelectorAll('.swatch[data-server-generated="true"]').forEach(swatch => {
+      const input = swatch.previousElementSibling;
+      if (input && input.dataset.variantId) {
+        saveSwatchData(
+          input.dataset.variantId,
+          swatch.getAttribute('style'),
+          Array.from(swatch.attributes).reduce((acc, attr) => {
+            acc[attr.name] = attr.value;
+            return acc;
+          }, {})
+        );
+      }
+    });
+    
+    // For Horizon theme, we need to wait for the morph operation to complete
+    // The theme uses morph() which completely replaces the DOM
+    const waitForMorphComplete = () => {
+      // Check if variant picker exists and has swatches
+      const variantPicker = document.querySelector('variant-picker');
+      const swatches = variantPicker ? variantPicker.querySelectorAll('.swatch') : [];
+      
+      if (swatches.length > 0) {
+        console.log('[SwatchProtection] DOM morph complete, restoring swatches');
+        restoreSwatchesFromStorage();
+      } else {
+        // If swatches not ready yet, check again
+        setTimeout(waitForMorphComplete, 50);
+      }
+    };
+    
+    // Start checking after a short delay to allow morph to begin
+    setTimeout(waitForMorphComplete, 100);
+  };
+  
+  // Listen for both standard and Horizon theme events
+  document.addEventListener('variant:change', handleVariantChange, true);
+  document.addEventListener('VariantUpdateEvent', handleVariantChange, true);
+  document.addEventListener('VariantSelectedEvent', handleVariantChange, true);
+  
+  
+  // Intercept the Horizon theme's morph function if it exists
+  const interceptMorph = () => {
+    // Check if morph is available (from Horizon theme)
+    if (window.morph || (window.Theme && window.Theme.morph)) {
+      const originalMorph = window.morph || window.Theme.morph;
+      const morphWrapper = function(target, source, options) {
+        console.log('[SwatchProtection] Morph operation detected');
+        
+        // Save swatches before morph
+        document.querySelectorAll('.swatch[data-server-generated="true"]').forEach(swatch => {
+          const input = swatch.previousElementSibling;
+          if (input && input.dataset.variantId) {
+            saveSwatchData(
+              input.dataset.variantId,
+              swatch.getAttribute('style'),
+              Array.from(swatch.attributes).reduce((acc, attr) => {
+                acc[attr.name] = attr.value;
+                return acc;
+              }, {})
+            );
           }
         });
-      }, 100);
+        
+        // Call original morph
+        const result = originalMorph.call(this, target, source, options);
+        
+        // Restore swatches after morph
+        setTimeout(() => {
+          console.log('[SwatchProtection] Restoring swatches after morph');
+          restoreSwatchesFromStorage();
+        }, 50);
+        
+        return result;
+      };
+      
+      // Replace the morph function
+      if (window.morph) {
+        window.morph = morphWrapper;
+      }
+      if (window.Theme && window.Theme.morph) {
+        window.Theme.morph = morphWrapper;
+      }
+      
+      console.log('[SwatchProtection] Morph function intercepted');
+    } else {
+      // Retry after a delay if morph isn't available yet
+      setTimeout(interceptMorph, 500);
     }
-  }, true); // Use capture phase
+  };
+  
+  // Start intercepting morph
+  interceptMorph();
   
   // Make functions globally available
   window.SwatchProtection = {
     hasCustomSwatches,
+    saveSwatchData,
+    getSwatchData,
+    restoreSwatchesFromStorage,
     clearCustomSwatches: () => {
       console.log('[SwatchProtection] Clearing all custom swatches');
+      customSwatchStorage.clear();
       document.querySelectorAll('.swatch[data-server-generated="true"]').forEach(swatch => {
         swatch.removeAttribute('data-server-generated');
         swatch.removeAttribute('data-customization-preview');
@@ -1438,10 +1535,22 @@ if (typeof ProductCustomizerModal === 'undefined') {
               }
               
               // Update with server-generated swatch
-              swatchSpan.style.cssText = `--swatch-background: url(${dataUrl});`;
+              const newStyle = `--swatch-background: url(${dataUrl});`;
+              swatchSpan.style.cssText = newStyle;
               swatchSpan.setAttribute('data-customization-preview', 'true');
               swatchSpan.setAttribute('data-server-generated', 'true');
               swatchSpan.setAttribute('data-custom-timestamp', Date.now().toString());
+              
+              // Save to global swatch protection storage
+              window.SwatchProtection.saveSwatchData(
+                variantId,
+                newStyle,
+                {
+                  'data-customization-preview': 'true',
+                  'data-server-generated': 'true',
+                  'data-custom-timestamp': Date.now().toString()
+                }
+              );
               
               // Mark parent as having customization
               const swatchParent = swatchSpan.parentElement;
@@ -2198,179 +2307,12 @@ if (typeof ProductCustomizerModal === 'undefined') {
   interceptVariantChanges() {
     console.log('[ProductCustomizer] Setting up variant change interception');
     
-    // Store references to original functions we might need to override
-    this.originalHandlers = {
-      variantChange: null,
-      updateSwatches: null
-    };
+    // Use the global SwatchProtection system
+    this.clearCustomSwatches = window.SwatchProtection.clearCustomSwatches;
     
-    // Check if we have customized swatches
-    const hasCustomSwatches = () => {
-      // Check for our custom attributes on swatch elements or containers
-      const customSwatches = document.querySelectorAll(
-        '.swatch[data-server-generated="true"], ' +
-        '.swatch[data-customization-preview="true"], ' +
-        '[data-has-custom-swatches="true"]'
-      );
-      return customSwatches.length > 0;
-    };
-    
-    // Clear all custom swatches
-    this.clearCustomSwatches = () => {
-      console.log('[ProductCustomizer] Clearing all custom swatches');
-      
-      // Find all custom swatches
-      const customSwatches = document.querySelectorAll('.swatch[data-server-generated="true"]');
-      
-      customSwatches.forEach(swatch => {
-        // Restore original background if saved
-        if (swatch.dataset.originalBackground) {
-          swatch.setAttribute('style', swatch.dataset.originalBackground);
-        } else {
-          swatch.removeAttribute('style');
-        }
-        
-        // Remove custom attributes
-        swatch.removeAttribute('data-customization-preview');
-        swatch.removeAttribute('data-server-generated');
-        swatch.removeAttribute('data-custom-timestamp');
-        delete swatch.dataset.originalBackground;
-        
-        // Remove parent markers
-        const parent = swatch.parentElement;
-        if (parent) {
-          parent.removeAttribute('data-has-customization');
-        }
-      });
-      
-      // Remove container markers
-      document.querySelectorAll('[data-has-custom-swatches="true"]').forEach(container => {
-        container.removeAttribute('data-has-custom-swatches');
-      });
-      
-      // Clear protection on containers
-      document.querySelectorAll('[data-swatch-protected="true"]').forEach(container => {
-        container.removeAttribute('data-swatch-protected');
-      });
-    };
-    
-    // Listen for variant change events and intercept swatch updates
-    document.addEventListener('variant:change', () => {
-      console.log('[ProductCustomizer] Variant change detected');
-      
-      if (hasCustomSwatches()) {
-        console.log('[ProductCustomizer] Custom swatches detected, preventing theme swatch update');
-        
-        // Store current swatch HTML before any updates
-        const swatchContainers = document.querySelectorAll('.variant-option--swatches, [data-color-swatches]');
-        const savedSwatches = new Map();
-        
-        swatchContainers.forEach(container => {
-          const swatches = container.querySelectorAll('.swatch[data-server-generated="true"]');
-          swatches.forEach(swatch => {
-            const input = swatch.previousElementSibling;
-            if (input && input.dataset.variantId) {
-              savedSwatches.set(input.dataset.variantId, {
-                element: swatch,
-                style: swatch.getAttribute('style'),
-                attributes: {
-                  'data-server-generated': 'true',
-                  'data-customization-preview': 'true'
-                }
-              });
-            }
-          });
-        });
-        
-        // Use setTimeout to restore swatches after theme updates
-        setTimeout(() => {
-          savedSwatches.forEach((data, variantId) => {
-            const input = document.querySelector(`input[data-variant-id="${variantId}"]`);
-            if (input) {
-              const newSwatch = input.nextElementSibling;
-              if (newSwatch && newSwatch.classList.contains('swatch')) {
-                // Restore our custom style and attributes
-                newSwatch.setAttribute('style', data.style);
-                Object.entries(data.attributes).forEach(([key, value]) => {
-                  newSwatch.setAttribute(key, value);
-                });
-              }
-            }
-          });
-          console.log('[ProductCustomizer] Restored custom swatches after variant change');
-        }, 50);
-      }
-    }, true); // Use capture phase to intercept early
-    
-    // Also intercept any theme-specific update functions if they exist
-    if (window.theme && typeof window.theme.updateSwatches === 'function') {
-      this.originalHandlers.updateSwatches = window.theme.updateSwatches;
-      
-      window.theme.updateSwatches = (...args) => {
-        if (hasCustomSwatches()) {
-          console.log('[ProductCustomizer] Blocking theme.updateSwatches due to custom swatches');
-          return;
-        }
-        // Call original if no custom swatches
-        return this.originalHandlers.updateSwatches.apply(window.theme, args);
-      };
-    }
-    
-    // Intercept swatches-variant-picker-component if it exists
-    const swatchesComponent = document.querySelector('swatches-variant-picker-component');
-    if (swatchesComponent && swatchesComponent.updateOptions) {
-      const originalUpdateOptions = swatchesComponent.updateOptions.bind(swatchesComponent);
-      
-      swatchesComponent.updateOptions = function(...args) {
-        if (hasCustomSwatches()) {
-          console.log('[ProductCustomizer] Blocking swatches-variant-picker updateOptions');
-          // Still update other things but not the visual swatches
-          return;
-        }
-        return originalUpdateOptions(...args);
-      };
-    }
-    
-    // Also prevent re-rendering by overriding innerHTML/outerHTML setters on swatch containers
-    const protectSwatchContainers = () => {
-      const containers = document.querySelectorAll('.variant-option--swatches, [data-color-swatches]');
-      
-      containers.forEach(container => {
-        // Skip if already protected
-        if (container.dataset.swatchProtected === 'true') return;
-        
-        const originalInnerHTML = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
-        
-        if (originalInnerHTML && originalInnerHTML.set) {
-          Object.defineProperty(container, 'innerHTML', {
-            set: function(value) {
-              if (hasCustomSwatches()) {
-                console.log('[ProductCustomizer] Blocked innerHTML update on swatch container');
-                return;
-              }
-              originalInnerHTML.set.call(this, value);
-            },
-            get: originalInnerHTML.get,
-            configurable: true
-          });
-        }
-        
-        container.dataset.swatchProtected = 'true';
-      });
-    };
-    
-    // Protect containers on init and after DOM changes
-    protectSwatchContainers();
-    
-    // Re-protect if new containers are added
-    const observer = new MutationObserver(() => {
-      protectSwatchContainers();
-    });
-    
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
+    // The global system already handles variant changes for both standard and Horizon themes
+    // We just need to ensure swatches are saved when they're generated
+    console.log('[ProductCustomizer] Using global swatch protection system');
   }
   
   

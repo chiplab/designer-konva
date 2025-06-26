@@ -930,6 +930,40 @@ const COLORS = [
 - Maintain consistent patterns across similar components
 - Document complex logic with inline comments
 
+## Horizon Theme Compatibility
+
+### DOM Morphing and Custom Elements
+Modern Shopify themes like Horizon use advanced DOM manipulation techniques that can interfere with custom modifications:
+
+1. **The morph() Function**: Horizon theme uses a `morph()` function that completely replaces DOM elements while preserving state. This is different from traditional DOM updates and requires special handling.
+
+2. **Intercepting morph()**: When preserving custom DOM modifications (like customized variant swatches), you must intercept the theme's morph function:
+   ```javascript
+   const originalMorph = window.morph;
+   window.morph = function(target, source, options) {
+     // Save custom state before morph
+     saveCustomState();
+     // Call original morph
+     const result = originalMorph.call(this, target, source, options);
+     // Restore custom state after morph
+     restoreCustomState();
+     return result;
+   };
+   ```
+
+3. **Event System**: Horizon themes dispatch custom events (`VariantSelectedEvent`, `VariantUpdateEvent`) instead of standard Shopify events. Listen for both:
+   - Standard: `variant:change`
+   - Horizon: `VariantSelectedEvent`, `VariantUpdateEvent`
+
+4. **Persistent State Storage**: Since DOM is completely replaced, store custom modifications in JavaScript memory (Map/Object) rather than relying on DOM attributes alone.
+
+### Key Implementation Pattern
+The global swatch protection system in `product-customizer-modal.js` demonstrates this pattern:
+- Persistent Map storage for custom swatches
+- morph() function interception
+- Multiple event listener support
+- Post-morph restoration logic
+
 # important-instruction-reminders
 Do what has been asked; nothing more, nothing less.
 NEVER create files unless they're absolutely necessary for achieving your goal.
