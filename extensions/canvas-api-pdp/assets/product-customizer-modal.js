@@ -38,78 +38,356 @@
   const restoreSwatchesFromStorage = () => {
     console.log('[SwatchProtection] Restoring swatches from storage, total saved:', customSwatchStorage.size);
     
+    let restoredCount = 0;
+    let skippedCount = 0;
+    
     customSwatchStorage.forEach((data, variantId) => {
       const input = document.querySelector(`input[data-variant-id="${variantId}"]`);
       if (input) {
         const swatch = input.nextElementSibling;
         if (swatch && swatch.classList.contains('swatch')) {
-          swatch.setAttribute('style', data.style);
-          Object.entries(data.attributes).forEach(([name, value]) => {
-            if (name !== 'style') {
-              swatch.setAttribute(name, value);
+          const currentStyle = swatch.getAttribute('style');
+          
+          // Check if restoration is needed
+          const needsRestoration = () => {
+            // If styles are identical, no restoration needed
+            if (currentStyle === data.style) return false;
+            
+            // Extract URLs from both styles
+            const currentUrlMatch = currentStyle && currentStyle.match(/url\(([^)]+)\)/);
+            const savedUrlMatch = data.style && data.style.match(/url\(([^)]+)\)/);
+            
+            const currentUrl = currentUrlMatch ? currentUrlMatch[1] : null;
+            const savedUrl = savedUrlMatch ? savedUrlMatch[1] : null;
+            
+            // If saved has custom URL but current doesn't, needs restoration
+            if (savedUrl && savedUrl.includes('base64') && !currentUrl) {
+              return true;
             }
-          });
-          console.log('[SwatchProtection] Restored swatch for variant:', variantId);
+            
+            // If saved has custom URL but current has different URL (not base64), needs restoration
+            if (savedUrl && savedUrl.includes('base64') && currentUrl && !currentUrl.includes('base64')) {
+              return true;
+            }
+            
+            // If the saved style has data-server-generated attribute but current doesn't
+            if (data.attributes['data-server-generated'] === 'true' && 
+                swatch.getAttribute('data-server-generated') !== 'true') {
+              return true;
+            }
+            
+            return false;
+          };
+          
+          if (needsRestoration()) {
+            console.log(`[SwatchProtection] Restoring swatch for variant ${variantId}`, {
+              from: currentStyle ? currentStyle.substring(0, 100) + '...' : 'null',
+              to: data.style.substring(0, 100) + '...'
+            });
+            
+            swatch.setAttribute('style', data.style);
+            Object.entries(data.attributes).forEach(([name, value]) => {
+              if (name !== 'style') {
+                swatch.setAttribute(name, value);
+              }
+            });
+            
+            // Force a repaint to ensure the style is applied
+            swatch.offsetHeight;
+            restoredCount++;
+          } else {
+            skippedCount++;
+          }
         }
       }
     });
+    
+    if (restoredCount > 0 || skippedCount > 0) {
+      console.log(`[SwatchProtection] Restoration complete: ${restoredCount} restored, ${skippedCount} skipped (already correct)`);
+    }
   };
+  
+  // Detect if we're on a Horizon theme by checking for variant-picker or swatches-variant-picker custom elements
+  const isHorizonTheme = () => {
+    const variantPicker = document.querySelector('variant-picker');
+    const swatchesPicker = document.querySelector('swatches-variant-picker-component');
+    
+    // Check if either picker exists and is a custom element (not just a regular div)
+    const hasVariantPicker = variantPicker && variantPicker.constructor.name !== 'HTMLElement' && variantPicker.constructor.name !== 'HTMLDivElement';
+    const hasSwatchesPicker = swatchesPicker && swatchesPicker.constructor.name !== 'HTMLElement' && swatchesPicker.constructor.name !== 'HTMLDivElement';
+    
+    if (hasVariantPicker || hasSwatchesPicker) {
+      console.log('[SwatchProtection] Horizon theme detected');
+    }
+    
+    return hasVariantPicker || hasSwatchesPicker;
+  };
+  
+  // Debounce mechanism to prevent multiple rapid-fire events
+  let variantChangeTimeout = null;
+  let lastVariantChangeTime = 0;
   
   // Listen for variant changes early - support both standard and Horizon theme events
   const handleVariantChange = function(event) {
-    console.log('[SwatchProtection] Variant change detected:', event.type);
+    console.log('[SwatchProtection] Variant change:', event.type);
     
-    // First, save any existing custom swatches to persistent storage
-    document.querySelectorAll('.swatch[data-server-generated="true"]').forEach(swatch => {
+    // Debounce multiple events within 50ms
+    const now = Date.now();
+    if (now - lastVariantChangeTime < 50) {
+      console.log('[SwatchProtection] Debouncing rapid variant change event');
+      return;
+    }
+    lastVariantChangeTime = now;
+    
+    // Clear any pending restoration
+    if (variantChangeTimeout) {
+      clearTimeout(variantChangeTimeout);
+    }
+    
+    // Look for swatches in both variant-picker and swatches-variant-picker-component
+    const variantPicker = document.querySelector('variant-picker');
+    const swatchesPicker = document.querySelector('swatches-variant-picker-component');
+    
+    // Find all custom swatches regardless of which picker they're in
+    let customSwatchesSelector = '.swatch[data-server-generated="true"], ' +
+      '.swatch[data-customization-preview="true"], ' +
+      '.swatch[data-multi-preview="true"]';
+    
+    // Also check for swatches within the specific pickers
+    if (variantPicker) {
+      customSwatchesSelector += ', variant-picker .swatch[style*="url("]';
+    }
+    if (swatchesPicker) {
+      customSwatchesSelector += ', swatches-variant-picker-component .swatch[style*="url("]';
+    }
+    
+    const customSwatches = document.querySelectorAll(customSwatchesSelector);
+    
+    console.log(`[SwatchProtection] Saving ${customSwatches.length} custom swatches before variant change`);
+    
+    customSwatches.forEach(swatch => {
       const input = swatch.previousElementSibling;
       if (input && input.dataset.variantId) {
-        saveSwatchData(
-          input.dataset.variantId,
-          swatch.getAttribute('style'),
-          Array.from(swatch.attributes).reduce((acc, attr) => {
-            acc[attr.name] = attr.value;
-            return acc;
-          }, {})
-        );
+        const style = swatch.getAttribute('style');
+        
+        // Only save if it has a base64 image (custom swatch)
+        if (style && style.includes('base64')) {
+          saveSwatchData(
+            input.dataset.variantId,
+            style,
+            Array.from(swatch.attributes).reduce((acc, attr) => {
+              acc[attr.name] = attr.value;
+              return acc;
+            }, {})
+          );
+        }
       }
     });
     
-    // For Horizon theme, we need to wait for the morph operation to complete
-    // The theme uses morph() which completely replaces the DOM
-    const waitForMorphComplete = () => {
-      // Check if variant picker exists and has swatches
-      const variantPicker = document.querySelector('variant-picker');
-      const swatches = variantPicker ? variantPicker.querySelectorAll('.swatch') : [];
+    // For Horizon themes, implement smart restoration strategy
+    if (isHorizonTheme()) {
+      console.log('[SwatchProtection] Horizon theme detected, using smart restoration strategy');
       
-      if (swatches.length > 0) {
-        console.log('[SwatchProtection] DOM morph complete, restoring swatches');
+      // Set up a single debounced restoration
+      variantChangeTimeout = setTimeout(() => {
+        console.log('[SwatchProtection] Starting restoration sequence');
+        
+        // Strategy 1: Initial restoration
         restoreSwatchesFromStorage();
-      } else {
-        // If swatches not ready yet, check again
-        setTimeout(waitForMorphComplete, 50);
+        
+        // Strategy 2: DOM mutation observer for dynamic changes
+        const setupTemporaryObserver = () => {
+          let observerTimeout;
+          const tempObserver = new MutationObserver((mutations) => {
+            // Check if any swatches were reset
+            const needsRestoration = mutations.some(mutation => {
+              if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+                const element = mutation.target;
+                if (element.classList.contains('swatch')) {
+                  const input = element.previousElementSibling;
+                  if (input && input.dataset.variantId) {
+                    const savedData = getSwatchData(input.dataset.variantId);
+                    if (savedData && element.getAttribute('style') !== savedData.style) {
+                      return true;
+                    }
+                  }
+                }
+              }
+              return false;
+            });
+            
+            if (needsRestoration) {
+              console.log('[SwatchProtection] Swatch reset detected by observer, restoring...');
+              restoreSwatchesFromStorage();
+            }
+            
+            // Auto-disconnect after 2 seconds
+            clearTimeout(observerTimeout);
+            observerTimeout = setTimeout(() => {
+              tempObserver.disconnect();
+              console.log('[SwatchProtection] Temporary observer disconnected');
+            }, 2000);
+          });
+          
+          // Observe the variant picker area
+          const targetNode = variantPicker || document.querySelector('.product-form__variants');
+          if (targetNode) {
+            tempObserver.observe(targetNode, {
+              attributes: true,
+              attributeFilter: ['style'],
+              subtree: true
+            });
+            
+            // Auto-disconnect after 2 seconds
+            observerTimeout = setTimeout(() => {
+              tempObserver.disconnect();
+              console.log('[SwatchProtection] Temporary observer disconnected');
+            }, 2000);
+          }
+        };
+        
+        // Set up temporary observer after a short delay
+        setTimeout(setupTemporaryObserver, 100);
+        
+        // Final check after DOM should be stable
+        setTimeout(() => {
+          console.log('[SwatchProtection] Final restoration check');
+          restoreSwatchesFromStorage();
+        }, 500);
+        
+      }, 100); // Debounce for 100ms
+      
+    } else {
+      // Non-Horizon themes: simpler restoration
+      variantChangeTimeout = setTimeout(() => {
+        restoreSwatchesFromStorage();
+      }, 100);
+    }
+  };
+  
+  // Set up MutationObserver to watch for DOM morphing on variant pickers
+  const setupVariantPickerObserver = () => {
+    console.log('[SwatchProtection] Setting up variant picker observers');
+    
+    // Helper function to create observer for a specific picker element
+    const createPickerObserver = (picker, pickerType) => {
+      console.log(`[SwatchProtection] Creating observer for ${pickerType}`);
+      
+      let morphDetected = false;
+      const observer = new MutationObserver((mutations) => {
+        // Check if children were replaced (indicating morph operation)
+        const childListChanged = mutations.some(m => m.type === 'childList' && (m.addedNodes.length > 0 || m.removedNodes.length > 0));
+        
+        if (childListChanged && !morphDetected) {
+          morphDetected = true;
+          console.log(`[SwatchProtection] DOM morph detected on ${pickerType}`);
+          
+          // Immediately save any existing custom swatches before they're lost
+          const swatchesToSave = document.querySelectorAll(
+            '.swatch[data-server-generated="true"], ' +
+            '.swatch[data-customization-preview="true"], ' +
+            '.swatch[data-multi-preview="true"], ' +
+            '.swatch[style*="base64"]'
+          );
+          console.log(`[SwatchProtection] Saving ${swatchesToSave.length} custom swatches before morph`);
+          
+          swatchesToSave.forEach(swatch => {
+            const input = swatch.previousElementSibling;
+            if (input && input.dataset.variantId) {
+              // Only save if it has custom styling (base64)
+              const style = swatch.getAttribute('style');
+              if (style && style.includes('base64')) {
+                saveSwatchData(
+                  input.dataset.variantId,
+                  style,
+                  Array.from(swatch.attributes).reduce((acc, attr) => {
+                    acc[attr.name] = attr.value;
+                    return acc;
+                  }, {})
+                );
+              }
+            }
+          });
+          
+          // Restore swatches after a short delay to allow morph to complete
+          setTimeout(() => {
+            console.log('[SwatchProtection] Restoring swatches after morph');
+            restoreSwatchesFromStorage();
+            morphDetected = false; // Reset flag for next morph
+          }, 100);
+        }
+      });
+      
+      // Observe the variant picker for child list changes
+      observer.observe(picker, {
+        childList: true,
+        subtree: true
+      });
+      
+      console.log(`[SwatchProtection] MutationObserver attached to ${pickerType}`);
+    };
+    
+    // Set up observer for variant-picker (dropdowns)
+    const variantPicker = document.querySelector('variant-picker');
+    if (variantPicker) {
+      createPickerObserver(variantPicker, 'variant-picker');
+    }
+    
+    // Set up observer for swatches-variant-picker-component (color swatches)
+    const swatchesPicker = document.querySelector('swatches-variant-picker-component');
+    if (swatchesPicker) {
+      createPickerObserver(swatchesPicker, 'swatches-variant-picker-component');
+    }
+    
+    // If neither picker found, retry later
+    if (!variantPicker && !swatchesPicker) {
+      console.log('[SwatchProtection] No variant pickers found, retrying in 500ms...');
+      setTimeout(setupVariantPickerObserver, 500);
+    }
+  };
+  
+  // Monitor URL changes for variant parameter - this is the most reliable
+  const setupURLMonitoring = () => {
+    console.log('[SwatchProtection] Setting up URL monitoring for variant changes');
+    
+    let lastVariantId = new URLSearchParams(window.location.search).get('variant');
+    
+    const checkForVariantChange = () => {
+      const currentVariantId = new URLSearchParams(window.location.search).get('variant');
+      if (currentVariantId !== lastVariantId) {
+        console.log('[SwatchProtection] URL variant change detected:', lastVariantId, '->', currentVariantId);
+        lastVariantId = currentVariantId;
+        handleVariantChange({ type: 'url-change', variantId: currentVariantId });
       }
     };
     
-    // Start checking after a short delay to allow morph to begin
-    setTimeout(waitForMorphComplete, 100);
+    // Check for URL changes periodically
+    setInterval(checkForVariantChange, 100);
   };
   
-  // Listen for both standard and Horizon theme events
-  document.addEventListener('variant:change', handleVariantChange, true);
-  document.addEventListener('VariantUpdateEvent', handleVariantChange, true);
-  document.addEventListener('VariantSelectedEvent', handleVariantChange, true);
-  
-  
-  // Intercept the Horizon theme's morph function if it exists
-  const interceptMorph = () => {
-    // Check if morph is available (from Horizon theme)
-    if (window.morph || (window.Theme && window.Theme.morph)) {
-      const originalMorph = window.morph || window.Theme.morph;
-      const morphWrapper = function(target, source, options) {
-        console.log('[SwatchProtection] Morph operation detected');
+  // Initialize variant picker observer if on Horizon theme
+  if (isHorizonTheme()) {
+    console.log('[SwatchProtection] Horizon theme detected, setting up variant picker observer');
+    setupVariantPickerObserver();
+    
+    // Intercept the morph() function if it exists
+    if (window.morph && typeof window.morph === 'function') {
+      console.log('[SwatchProtection] Intercepting morph() function');
+      const originalMorph = window.morph;
+      
+      window.morph = function(target, source, options) {
+        console.log('[SwatchProtection] morph() called', { target, source, options });
         
-        // Save swatches before morph
-        document.querySelectorAll('.swatch[data-server-generated="true"]').forEach(swatch => {
+        // Before morph: Save all custom swatches
+        const customSwatches = document.querySelectorAll(
+          '.swatch[data-server-generated="true"], ' +
+          '.swatch[data-customization-preview="true"], ' +
+          '.swatch[style*="url("]'
+        );
+        
+        console.log(`[SwatchProtection] Pre-morph: saving ${customSwatches.length} custom swatches`);
+        
+        customSwatches.forEach(swatch => {
           const input = swatch.previousElementSibling;
           if (input && input.dataset.variantId) {
             saveSwatchData(
@@ -123,35 +401,49 @@
           }
         });
         
-        // Call original morph
+        // Call the original morph function
         const result = originalMorph.call(this, target, source, options);
         
-        // Restore swatches after morph
-        setTimeout(() => {
-          console.log('[SwatchProtection] Restoring swatches after morph');
+        // After morph: Restore custom swatches
+        console.log('[SwatchProtection] Post-morph: restoring swatches');
+        
+        // Use requestAnimationFrame to ensure DOM is ready
+        requestAnimationFrame(() => {
           restoreSwatchesFromStorage();
-        }, 50);
+          
+          // Double-check after a short delay
+          setTimeout(() => {
+            console.log('[SwatchProtection] Post-morph: final restoration check');
+            restoreSwatchesFromStorage();
+          }, 100);
+        });
         
         return result;
       };
       
-      // Replace the morph function
-      if (window.morph) {
-        window.morph = morphWrapper;
-      }
-      if (window.Theme && window.Theme.morph) {
-        window.Theme.morph = morphWrapper;
-      }
-      
-      console.log('[SwatchProtection] Morph function intercepted');
+      console.log('[SwatchProtection] morph() function successfully intercepted');
     } else {
-      // Retry after a delay if morph isn't available yet
-      setTimeout(interceptMorph, 500);
+      console.log('[SwatchProtection] morph() function not found, will rely on MutationObserver');
     }
-  };
+  }
   
-  // Start intercepting morph
-  interceptMorph();
+  // Set up immediate variant monitoring
+  console.log('[SwatchProtection] Setting up variant monitoring');
+  
+  // Monitor URL changes - most reliable method
+  setupURLMonitoring();
+  
+  // Single click listener for immediate feedback
+  document.addEventListener('click', (event) => {
+    // Only listen for color radio changes
+    const radio = event.target.matches('input[type="radio"][name*="Color"]') ? event.target : 
+                  event.target.closest('label')?.querySelector('input[type="radio"][name*="Color"]');
+    
+    if (radio) {
+      console.log('[SwatchProtection] Color variant clicked:', radio.value);
+      handleVariantChange({ type: 'color-click', target: radio });
+    }
+  }, true);
   
   // Make functions globally available
   window.SwatchProtection = {

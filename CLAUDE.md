@@ -932,37 +932,64 @@ const COLORS = [
 
 ## Horizon Theme Compatibility
 
-### DOM Morphing and Custom Elements
-Modern Shopify themes like Horizon use advanced DOM manipulation techniques that can interfere with custom modifications:
+### Swatch Protection System
+Modern Shopify themes like Horizon use DOM manipulation that can reset custom variant swatches. The swatch protection system in `product-customizer-modal.js` ensures customized swatches persist across variant changes.
 
-1. **The morph() Function**: Horizon theme uses a `morph()` function that completely replaces DOM elements while preserving state. This is different from traditional DOM updates and requires special handling.
+### How It Works
 
-2. **Intercepting morph()**: When preserving custom DOM modifications (like customized variant swatches), you must intercept the theme's morph function:
+1. **Persistent Storage**: Uses a JavaScript Map to store custom swatch data:
+   - Key: variant ID
+   - Value: style attributes, custom data attributes, and timestamp
+   - Only saves swatches with base64 images (custom previews)
+
+2. **Detection Methods**: The system uses multiple approaches to detect variant changes:
+   - **URL Monitoring**: Polls every 100ms for `?variant=` parameter changes (most reliable)
+   - **Click Event Capture**: Listens for clicks on color radio inputs
+   - **MutationObserver**: Watches variant picker elements for DOM changes
+
+3. **Smart Restoration Logic**:
    ```javascript
-   const originalMorph = window.morph;
-   window.morph = function(target, source, options) {
-     // Save custom state before morph
-     saveCustomState();
-     // Call original morph
-     const result = originalMorph.call(this, target, source, options);
-     // Restore custom state after morph
-     restoreCustomState();
-     return result;
-   };
+   // Only restores if:
+   - Saved swatch has base64 image but current doesn't
+   - Saved has base64 but current has different URL (not base64)
+   - Custom attributes are missing from current swatch
    ```
 
-3. **Event System**: Horizon themes dispatch custom events (`VariantSelectedEvent`, `VariantUpdateEvent`) instead of standard Shopify events. Listen for both:
-   - Standard: `variant:change`
-   - Horizon: `VariantSelectedEvent`, `VariantUpdateEvent`
+4. **Debouncing**: Prevents multiple rapid-fire events within 50ms from triggering redundant saves/restores
 
-4. **Persistent State Storage**: Since DOM is completely replaced, store custom modifications in JavaScript memory (Map/Object) rather than relying on DOM attributes alone.
+5. **Horizon Theme Support**:
+   - Detects Horizon themes by checking for `variant-picker` or `swatches-variant-picker-component` custom elements
+   - Sets up MutationObservers on these elements to detect DOM morphing
+   - Implements temporary observers that auto-disconnect after 2 seconds
 
-### Key Implementation Pattern
-The global swatch protection system in `product-customizer-modal.js` demonstrates this pattern:
-- Persistent Map storage for custom swatches
-- morph() function interception
-- Multiple event listener support
-- Post-morph restoration logic
+### Implementation Flow
+
+1. **On Variant Change**:
+   - Debounce multiple events
+   - Save all custom swatches (those with base64 images)
+   - Wait 100ms for DOM to stabilize
+   - Restore swatches from storage
+
+2. **Restoration Process**:
+   - Check each saved swatch against current DOM
+   - Only restore if changes are detected (not already correct)
+   - Force repaint after restoration
+   - Log results for debugging
+
+3. **Global API**: Exposes functions via `window.SwatchProtection`:
+   - `hasCustomSwatches()`: Check if any custom swatches exist
+   - `saveSwatchData()`: Manually save a swatch
+   - `getSwatchData()`: Retrieve saved swatch data
+   - `restoreSwatchesFromStorage()`: Force restoration
+   - `clearCustomSwatches()`: Remove all custom swatches
+
+### Why This Approach Works
+
+- **Multiple Detection Methods**: Ensures variant changes are caught regardless of theme implementation
+- **Smart Restoration**: Avoids unnecessary DOM updates by checking if restoration is needed
+- **Debouncing**: Prevents performance issues from rapid variant switching
+- **Base64 Detection**: Accurately identifies custom swatches vs theme defaults
+- **Temporary Observers**: Balance between protection and performance
 
 # important-instruction-reminders
 Do what has been asked; nothing more, nothing less.

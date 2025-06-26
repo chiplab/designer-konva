@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://fragrance-dc-ch-alive.trycloudflare.com"
+application_url = "https://tales-bedding-qualification-effective.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://fragrance-dc-ch-alive.trycloudflare.com/auth/callback",
-  "https://fragrance-dc-ch-alive.trycloudflare.com/auth/shopify/callback",
-  "https://fragrance-dc-ch-alive.trycloudflare.com/api/auth/callback"
+  "https://tales-bedding-qualification-effective.trycloudflare.com/auth/callback",
+  "https://tales-bedding-qualification-effective.trycloudflare.com/auth/shopify/callback",
+  "https://tales-bedding-qualification-effective.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://fragrance-dc-ch-alive.trycloudflare.com"
+url = "https://tales-bedding-qualification-effective.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 
