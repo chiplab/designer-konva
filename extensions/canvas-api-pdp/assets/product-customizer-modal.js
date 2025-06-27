@@ -253,6 +253,12 @@
         setTimeout(() => {
           console.log('[SwatchProtection] Final restoration check');
           restoreSwatchesFromStorage();
+          
+          // Check if we need to update product image with customizations
+          const currentVariantId = new URLSearchParams(window.location.search).get('variant');
+          if (currentVariantId) {
+            updateProductImageIfCustomized(currentVariantId);
+          }
         }, 500);
         
       }, 100); // Debounce for 100ms
@@ -261,8 +267,46 @@
       // Non-Horizon themes: simpler restoration
       variantChangeTimeout = setTimeout(() => {
         restoreSwatchesFromStorage();
+        
+        // Check if we need to update product image with customizations
+        const currentVariantId = new URLSearchParams(window.location.search).get('variant');
+        if (currentVariantId) {
+          updateProductImageIfCustomized(currentVariantId);
+        }
       }, 100);
     }
+  };
+  
+  // Function to update product image if customizations exist
+  const updateProductImageIfCustomized = (variantId) => {
+    console.log('[SwatchProtection] Checking if product image update needed for variant:', variantId);
+    
+    // Check if we have saved customizations
+    const savedTextState = localStorage.getItem('customization_global_text');
+    if (!savedTextState) {
+      console.log('[SwatchProtection] No saved customizations, skipping product image update');
+      return;
+    }
+    
+    // Check if modal has been opened at least once
+    if (!window.ProductCustomizerModal?.hasBeenOpened) {
+      console.log('[SwatchProtection] Modal has not been opened yet, skipping product image update');
+      return;
+    }
+    
+    // Check if we have an active modal instance
+    const modal = window.ProductCustomizerModal?.activeInstance;
+    if (!modal) {
+      console.log('[SwatchProtection] No active modal instance, skipping product image update');
+      return;
+    }
+    
+    // Debounce to prevent rapid updates
+    clearTimeout(window.productImageUpdateTimer);
+    window.productImageUpdateTimer = setTimeout(() => {
+      console.log('[SwatchProtection] Triggering product image update for variant:', variantId);
+      modal.updateProductImageForVariant(variantId);
+    }, 200);
   };
   
   // Set up MutationObserver to watch for DOM morphing on variant pickers
@@ -472,7 +516,40 @@
 if (typeof ProductCustomizerModal === 'undefined') {
   console.log('[ProductCustomizer] Defining ProductCustomizerModal class');
   
+  // Cache for generated previews to avoid regeneration
+  class PreviewCache {
+    static cache = new Map();
+    static maxSize = 10;
+    
+    static set(variantId, preview) {
+      // LRU cache implementation
+      if (this.cache.size >= this.maxSize) {
+        const firstKey = this.cache.keys().next().value;
+        this.cache.delete(firstKey);
+      }
+      this.cache.set(variantId, preview);
+    }
+    
+    static get(variantId) {
+      const preview = this.cache.get(variantId);
+      if (preview) {
+        // Move to end (most recently used)
+        this.cache.delete(variantId);
+        this.cache.set(variantId, preview);
+      }
+      return preview;
+    }
+    
+    static clear() {
+      this.cache.clear();
+    }
+  }
+  
   class ProductCustomizerModal {
+  static activeInstance = null;
+  static hasBeenOpened = false;
+  static isUpdatingProductImage = false;
+  
   constructor(options = {}) {
     console.log('[ProductCustomizer] Constructor called with options:', options);
     
@@ -504,6 +581,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Timer for debounced text state saving
     this.textSaveTimer = null;
+    
+    // Set this instance as the active one
+    ProductCustomizerModal.activeInstance = this;
   }
 
   init() {
@@ -844,6 +924,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
   async open() {
     this.modal.classList.add('open');
     this.isOpen = true;
+    ProductCustomizerModal.hasBeenOpened = true;
     
     // Reset to front side when opening
     this.lastEditedSide = 'front';
@@ -994,32 +1075,43 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     if (mainProductSection) {
       // Search for the active/featured image ONLY within the main product section
+      // First try Horizon theme selectors
       mainProductImage = mainProductSection.querySelector(
-        // Horizon theme specific selectors
+        // Horizon 2025 themes
         'media-gallery img:first-of-type, ' +
         'media-gallery slideshow-component img:first-of-type, ' +
         'slideshow-component img.selected, ' +
-        'slideshow-component img[aria-selected="true"], ' +
-        // Modern theme selectors (Horizons 2025)
-        '.media-gallery img:first-of-type, ' +
-        '.product-media img:first-of-type, ' +
-        '.media img:first-of-type, ' +
-        '[data-media-type] img:first-of-type, ' +
-        // Active/selected images
-        '[data-media-type="image"][data-media-active="true"] img, ' +
-        '[data-product-media].is-active img, ' +
-        '.product-media.is-active img, ' +
-        '.media-gallery__image.is-active img, ' +
-        '.media.is-active img, ' +
-        // Featured/main images
-        '.product__media--featured img, ' +
-        '.product__main-photos .slick-current img, ' +
-        '.product-single__photo--main img, ' +
-        '[data-product-featured-image], ' +
-        // Gallery patterns
-        '.product-gallery img:first-of-type, ' +
-        '.product-images img:first-of-type'
+        'slideshow-component img[aria-selected="true"]'
       );
+      
+      // If not found, try Dawn-based themes
+      if (!mainProductImage) {
+        mainProductImage = mainProductSection.querySelector(
+          // Dawn themes - active/selected images
+          '[data-media-type="image"][data-media-active="true"] img, ' +
+          '[data-product-media].is-active img, ' +
+          '.product-media.is-active img, ' +
+          '.media-gallery__image.is-active img, ' +
+          '.media.is-active img, ' +
+          // Dawn themes - featured/main images
+          '.product__media--featured img, ' +
+          '.product__main-photos .slick-current img, ' +
+          '.product-single__photo--main img, ' +
+          '[data-media-type] img:first-of-type'
+        );
+      }
+      
+      // If still not found, try legacy themes
+      if (!mainProductImage) {
+        mainProductImage = mainProductSection.querySelector(
+          '[data-product-featured-image], ' +
+          '.media-gallery img:first-of-type, ' +  // Class-based media gallery
+          '.product-media img:first-of-type, ' +
+          '.media img:first-of-type, ' +
+          '.product-gallery img:first-of-type, ' +
+          '.product-images img:first-of-type'
+        );
+      }
       
       // If no active image, get the first visible product image in the section
       if (!mainProductImage) {
@@ -1131,19 +1223,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
       }
     } else {
       // No original images stored, find the main product image directly
-      const mainProductImage = document.querySelector(
-        // Horizon theme specific selectors
-        'media-gallery img:first-of-type, ' +
-        'media-gallery slideshow-component img:first-of-type, ' +
-        'slideshow-component img.selected, ' +
-        'slideshow-component img[aria-selected="true"], ' +
-        // Standard selectors
-        '.media-gallery img:first-of-type, ' +
-        '.product-media img:first-of-type, ' +
-        '.product__media--featured img, ' +
-        '[data-product-featured-image], ' +
-        '.product-gallery img:first-of-type'
-      );
+      const mainProductImage = this.findMainProductImage();
       
       if (mainProductImage) {
         // Store original source if not already stored
@@ -2068,6 +2148,10 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Save to localStorage with a global key (not variant-specific)
     localStorage.setItem('customization_global_text', JSON.stringify(textState));
     console.log('[ProductCustomizer] Saved global text state:', textState);
+    
+    // Clear preview cache since customizations have changed
+    PreviewCache.clear();
+    console.log('[ProductCustomizer] Cleared preview cache due to text changes');
   }
   
   debouncedSaveTextState() {
@@ -2253,6 +2337,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.isOpen = false;
     document.body.style.overflow = '';
     
+    // Keep the instance reference but mark as closed
+    // This allows variant change detection to still work after modal is closed
+    
     // Only restore original product images if we're not keeping a customization
     if (!keepCustomization) {
       this.restoreOriginalProductImages();
@@ -2395,8 +2482,14 @@ if (typeof ProductCustomizerModal === 'undefined') {
     }
     
     // Generate high quality previews for slideshow thumbnails
+    console.log('[ProductCustomizer] Generating save() preview with PNG format');
     customization.preview = this.renderer.getDesignAreaPreview(1);
     customization.fullPreview = this.renderer.getDataURL({ pixelRatio: 1 });
+    console.log('[ProductCustomizer] Save preview generated:', {
+      mimeType: 'PNG (default)',
+      dataUrlLength: customization.fullPreview?.length,
+      dataUrlPrefix: customization.fullPreview?.substring(0, 50)
+    });
     
     if (this.isDualSided) {
       // Store which canvas is currently active
@@ -2407,7 +2500,13 @@ if (typeof ProductCustomizerModal === 'undefined') {
         this.renderer.template = this.renderer.frontCanvasData;
         this.renderer.render();
         
+        console.log('[ProductCustomizer] Generating front preview with PNG format');
         const frontDataUrl = this.renderer.getDataURL({ pixelRatio: 1 });
+        console.log('[ProductCustomizer] Front preview:', {
+          mimeType: 'PNG (default)',
+          dataUrlLength: frontDataUrl?.length,
+          dataUrlPrefix: frontDataUrl?.substring(0, 50)
+        });
         this.frontPreviewUrl = frontDataUrl;
         customization.frontPreview = frontDataUrl;
         
@@ -2420,7 +2519,13 @@ if (typeof ProductCustomizerModal === 'undefined') {
         this.renderer.template = this.renderer.backCanvasData;
         this.renderer.render();
         
+        console.log('[ProductCustomizer] Generating back preview with PNG format');
         const backDataUrl = this.renderer.getDataURL({ pixelRatio: 1 });
+        console.log('[ProductCustomizer] Back preview:', {
+          mimeType: 'PNG (default)',
+          dataUrlLength: backDataUrl?.length,
+          dataUrlPrefix: backDataUrl?.substring(0, 50)
+        });
         this.backPreviewUrl = backDataUrl;
         customization.backPreview = backDataUrl;
       }
@@ -2639,6 +2744,237 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Update preview
     this.updatePreview();
+  }
+  
+  async updateProductImageForVariant(variantId) {
+    console.log('[ProductCustomizer] Updating product image for variant:', variantId);
+    
+    // Prevent multiple simultaneous updates
+    if (ProductCustomizerModal.isUpdatingProductImage) {
+      console.log('[ProductCustomizer] Already updating product image, skipping');
+      return;
+    }
+    
+    // Check cache first
+    const cachedPreview = PreviewCache.get(variantId);
+    if (cachedPreview) {
+      console.log('[ProductCustomizer] Using cached preview for variant:', variantId);
+      this.updateMainProductImageDirectly(cachedPreview);
+      return;
+    }
+    
+    ProductCustomizerModal.isUpdatingProductImage = true;
+    
+    // Get the template for this variant
+    const templateId = this.getTemplateIdForVariant(variantId);
+    if (!templateId) {
+      console.log('[ProductCustomizer] No template found for variant:', variantId);
+      ProductCustomizerModal.isUpdatingProductImage = false;
+      return;
+    }
+    
+    // Create a smaller temporary container for faster rendering
+    const tempContainer = document.createElement('div');
+    tempContainer.style.position = 'absolute';
+    tempContainer.style.left = '-9999px';
+    tempContainer.style.width = '300px';  // Smaller size for faster generation
+    tempContainer.style.height = '300px';
+    document.body.appendChild(tempContainer);
+    
+    // Create a temporary renderer to generate preview
+    const tempRenderer = new CanvasTextRenderer();
+    tempRenderer.container = tempContainer;
+    
+    try {
+      await tempRenderer.loadTemplate(templateId);
+      
+      // Apply saved text customizations
+      const savedTextState = this.loadGlobalTextState();
+      if (savedTextState) {
+        // Apply text updates to the renderer
+        Object.entries(savedTextState).forEach(([elementId, text]) => {
+          // Handle both single-sided and dual-sided templates
+          if (elementId.startsWith('front_') || elementId.startsWith('back_')) {
+            const actualId = elementId.replace(/^(front_|back_)/, '');
+            tempRenderer.updateText(actualId, text);
+          } else {
+            tempRenderer.updateText(elementId, text);
+          }
+        });
+      }
+      
+      // Render the canvas with updates
+      tempRenderer.render();
+      
+      // Generate preview using stage.toDataURL
+      const preview = await new Promise((resolve) => {
+        // Wait a frame for render to complete
+        requestAnimationFrame(() => {
+          if (tempRenderer.stage) {
+            console.log('[ProductCustomizer] Generating PNG preview for variant change');
+            const dataUrl = tempRenderer.stage.toDataURL({
+              pixelRatio: 1  // Lower pixel ratio for faster generation
+            });
+            console.log('[ProductCustomizer] Generated preview:', {
+              mimeType: 'PNG (default)',
+              pixelRatio: 1,
+              dataUrlLength: dataUrl?.length,
+              dataUrlPrefix: dataUrl?.substring(0, 50)
+            });
+            resolve(dataUrl);
+          } else {
+            resolve(null);
+          }
+        });
+      });
+      
+      // Update main product image and cache
+      if (preview) {
+        PreviewCache.set(variantId, preview);
+        this.updateMainProductImageDirectly(preview);
+      }
+    } catch (error) {
+      console.error('[ProductCustomizer] Error updating product image for variant:', error);
+    } finally {
+      // Cleanup
+      ProductCustomizerModal.isUpdatingProductImage = false;
+      if (tempRenderer.stage) {
+        tempRenderer.stage.destroy();
+      }
+      if (tempContainer && tempContainer.parentNode) {
+        tempContainer.parentNode.removeChild(tempContainer);
+      }
+    }
+  }
+  
+  getTemplateIdForVariant(variantId) {
+    // Try multiple methods to find template ID
+    
+    // Method 1: Check current window.productData
+    if (window.productData?.variants) {
+      const variant = window.productData.variants.find(v => v.id == variantId);
+      if (variant?.metafields?.custom_designer?.template_id) {
+        return variant.metafields.custom_designer.template_id;
+      }
+    }
+    
+    // Method 2: Query DOM for variant input with template data
+    const variantInputs = document.querySelectorAll(`input[data-variant-id="${variantId}"]`);
+    for (const input of variantInputs) {
+      // Check if there's a template ID stored in a parent element
+      const templateContainer = input.closest('[data-template-id]');
+      if (templateContainer?.dataset.templateId) {
+        return templateContainer.dataset.templateId;
+      }
+    }
+    
+    // Method 3: Check the customize button's data attributes
+    const customizeBtn = document.getElementById('customize-product-btn');
+    if (customizeBtn && customizeBtn.dataset.variantId == variantId) {
+      return customizeBtn.dataset.templateId;
+    }
+    
+    // Method 4: Try to find from variant radio inputs
+    const colorInputs = document.querySelectorAll('input[type="radio"][name*="Color"], input[type="radio"][name*="color"]');
+    for (const input of colorInputs) {
+      if (input.dataset.variantId == variantId) {
+        // Check for template ID in various places
+        const form = input.closest('form');
+        if (form) {
+          const hiddenInput = form.querySelector(`input[type="hidden"][name="id"][value="${variantId}"]`);
+          if (hiddenInput && hiddenInput.dataset.templateId) {
+            return hiddenInput.dataset.templateId;
+          }
+        }
+      }
+    }
+    
+    console.log('[ProductCustomizer] Could not find template ID for variant:', variantId);
+    return null;
+  }
+  
+  updateMainProductImageDirectly(previewUrl) {
+    console.log('[ProductCustomizer] Directly updating main product image');
+    
+    // Find the main product image without relying on stored references
+    const mainProductImage = this.findMainProductImage();
+    if (!mainProductImage) {
+      console.warn('[ProductCustomizer] Could not find main product image');
+      return;
+    }
+    
+    // Store original if not already stored
+    if (!mainProductImage.dataset.originalSrc) {
+      mainProductImage.dataset.originalSrc = mainProductImage.src;
+      mainProductImage.dataset.originalSrcset = mainProductImage.srcset || '';
+    }
+    
+    // Update the image
+    mainProductImage.src = previewUrl;
+    mainProductImage.srcset = ''; // Clear srcset to prevent browser from using original
+    mainProductImage.setAttribute('data-customization-preview', 'true');
+    
+    console.log('[ProductCustomizer] Main product image updated');
+  }
+  
+  findMainProductImage() {
+    // Horizon 2025 themes (Tinker, etc.)
+    // These themes use custom elements like <media-gallery> and <slideshow-component>
+    const horizonImage = document.querySelector(
+      'media-gallery img:first-of-type, ' +
+      'media-gallery slideshow-component img:first-of-type, ' +
+      'slideshow-component img.selected, ' +
+      'slideshow-component img[aria-selected="true"]'
+    );
+    if (horizonImage) return horizonImage;
+    
+    // Dawn-based themes (Dawn, Craft, Sense, etc.)
+    // These themes typically use data attributes and BEM-style classes
+    const dawnImage = document.querySelector(
+      '.product__media img[data-media-type="image"]:not(.zoom-image), ' +
+      '.product__main-photos img.main-product-image, ' +
+      '.product__image img.product__img, ' +
+      'slideshow-wrapper img.slideshow__slide-image--active'
+    );
+    if (dawnImage) return dawnImage;
+    
+    // Legacy/generic themes
+    // Older themes and custom implementations
+    const legacyImage = document.querySelector(
+      '.media-gallery img:first-of-type, ' +  // Class-based media gallery
+      '.product-media img:first-of-type, ' +
+      '.product__media--featured img, ' +
+      '[data-product-featured-image], ' +
+      '.product-gallery img:first-of-type'
+    );
+    if (legacyImage) return legacyImage;
+    
+    // Final fallback - any large product image
+    return this.findAnyLargeProductImage();
+  }
+  
+  findAnyLargeProductImage() {
+    // Look for any product image that's not a thumbnail
+    const productImages = document.querySelectorAll('.product img[src*="/products/"], .product-single img[src*="/products/"]');
+    
+    for (const img of productImages) {
+      // Skip thumbnails and zoom images
+      if (img.classList.contains('product__thumb') || 
+          img.classList.contains('thumbnail') || 
+          img.classList.contains('zoom-image') ||
+          img.width < 200) {
+        continue;
+      }
+      
+      // Skip recommendation images
+      if (img.closest('.product-recommendations, .related-products, [data-section-type="related-products"]')) {
+        continue;
+      }
+      
+      return img;
+    }
+    
+    return null;
   }
 
   }
