@@ -991,6 +991,63 @@ Modern Shopify themes like Horizon use DOM manipulation that can reset custom va
 - **Base64 Detection**: Accurately identifies custom swatches vs theme defaults
 - **Temporary Observers**: Balance between protection and performance
 
+## Product Image Selection System
+
+### Overview
+The `findMainProductImage()` method in `product-customizer-modal.js` provides a reliable way to locate the main product image across different Shopify themes. The method is organized by theme type for clarity and performance.
+
+### Theme-Specific Selectors
+
+The method uses a cascading approach, checking theme-specific selectors in order:
+
+1. **Horizon 2025 Themes** (Tinker, etc.):
+   ```javascript
+   // Custom elements used by modern Horizon themes
+   'media-gallery img:first-of-type'
+   'media-gallery slideshow-component img:first-of-type'
+   'slideshow-component img.selected'
+   'slideshow-component img[aria-selected="true"]'
+   ```
+
+2. **Dawn-Based Themes** (Dawn, Craft, Sense, etc.):
+   ```javascript
+   // Data attributes and BEM-style classes
+   '.product__media img[data-media-type="image"]:not(.zoom-image)'
+   '.product__main-photos img.main-product-image'
+   '.product__image img.product__img'
+   'slideshow-wrapper img.slideshow__slide-image--active'
+   ```
+
+3. **Legacy/Generic Themes**:
+   ```javascript
+   // Older themes and custom implementations
+   '.media-gallery img:first-of-type'  // Class-based media gallery
+   '.product-media img:first-of-type'
+   '.product__media--featured img'
+   '[data-product-featured-image]'
+   '.product-gallery img:first-of-type'
+   ```
+
+4. **Final Fallback**:
+   - Calls `findAnyLargeProductImage()` helper method
+   - Searches for any product image ≥200px that's not a thumbnail
+   - Excludes images in recommendation sections
+
+### Usage
+
+The method is used in several places:
+
+1. **`updateMainProductImage()`**: Updates the product image with customization preview
+2. **`updateMainProductImageDirectly()`**: Direct image update without stored references
+3. **`storeOriginalProductImage()`**: Stores original images before customization
+
+### Benefits of This Approach
+
+- **Performance**: Faster by checking only relevant selectors per theme
+- **Clarity**: Clear organization shows which selectors work with which themes
+- **Maintainability**: Easy to update selectors for specific theme types
+- **Reliability**: Fallback ensures an image is found even in custom themes
+
 # important-instruction-reminders
 Do what has been asked; nothing more, nothing less.
 NEVER create files unless they're absolutely necessary for achieving your goal.
