@@ -263,6 +263,13 @@
         restoreSwatchesFromStorage();
       }, 100);
     }
+    
+    // Test blur effect on variant change
+    if (window.ProductCustomizerModal?.activeInstance && 
+        window.ProductCustomizerModal.activeInstance.testBlurEffect) {
+      console.log('[SwatchProtection] Triggering blur effect test');
+      window.ProductCustomizerModal.activeInstance.testBlurEffect();
+    }
   };
   
   // Set up MutationObserver to watch for DOM morphing on variant pickers
@@ -820,6 +827,13 @@ if (typeof ProductCustomizerModal === 'undefined') {
           .pcm-content {
             padding: 20px;
           }
+        }
+        
+        /* Blur transition for product images during variant change */
+        .product-image-transitioning {
+          transition: opacity 0.3s ease, filter 0.3s ease;
+          opacity: 0.3;
+          filter: blur(10px);
         }
       </style>
     `;
@@ -2639,6 +2653,49 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Update preview
     this.updatePreview();
+  }
+  
+  // Test method to demonstrate blur effect on variant change
+  testBlurEffect() {
+    console.log('[ProductCustomizer] Testing blur effect on main product image');
+    
+    const mainImage = this.findMainProductImage();
+    if (mainImage) {
+      // Add blur
+      mainImage.classList.add('product-image-transitioning');
+      console.log('[ProductCustomizer] Blur added to main image');
+      
+      // Remove blur after 2 seconds (for testing)
+      setTimeout(() => {
+        mainImage.classList.remove('product-image-transitioning');
+        console.log('[ProductCustomizer] Blur removed from main image');
+      }, 2000);
+    } else {
+      console.warn('[ProductCustomizer] Could not find main product image to blur');
+    }
+  }
+  
+  // Helper method to transition to a new image with smooth loading
+  transitionToNewImage(imageElement, newSrc) {
+    if (!imageElement) return;
+    
+    console.log('[ProductCustomizer] Transitioning to new image');
+    
+    // Preload the new image
+    const tempImg = new Image();
+    tempImg.onload = () => {
+      imageElement.src = newSrc;
+      // Remove blur after image loads
+      setTimeout(() => {
+        imageElement.classList.remove('product-image-transitioning');
+        console.log('[ProductCustomizer] Blur removed after image load');
+      }, 50);
+    };
+    tempImg.onerror = () => {
+      console.error('[ProductCustomizer] Failed to load new image');
+      // Keep blurred on error as requested
+    };
+    tempImg.src = newSrc;
   }
 
   }
