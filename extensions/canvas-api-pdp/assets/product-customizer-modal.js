@@ -276,11 +276,10 @@
       }, 100);
     }
     
-    // Test blur effect on variant change
-    if (window.ProductCustomizerModal?.activeInstance && 
-        window.ProductCustomizerModal.activeInstance.testBlurEffect) {
-      console.log('[SwatchProtection] Triggering blur effect test');
-      window.ProductCustomizerModal.activeInstance.testBlurEffect();
+    // Update product image if customizations exist
+    const currentVariantId = new URLSearchParams(window.location.search).get('variant');
+    if (currentVariantId) {
+      updateProductImageIfCustomized(currentVariantId);
     }
   };
   
@@ -2812,11 +2811,18 @@ if (typeof ProductCustomizerModal === 'undefined') {
       return;
     }
     
+    // Immediately blur the current image
+    const mainImage = this.findMainProductImage();
+    if (mainImage) {
+      console.log('[ProductCustomizer] Adding blur transition to main product image');
+      mainImage.classList.add('product-image-transitioning');
+    }
+    
     // Check cache first
     const cachedPreview = PreviewCache.get(variantId);
     if (cachedPreview) {
       console.log('[ProductCustomizer] Using cached preview for variant:', variantId);
-      this.updateMainProductImageDirectly(cachedPreview);
+      this.transitionToNewImage(mainImage, cachedPreview);
       return;
     }
     
@@ -2888,7 +2894,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
       // Update main product image and cache
       if (preview) {
         PreviewCache.set(variantId, preview);
-        this.updateMainProductImageDirectly(preview);
+        this.transitionToNewImage(mainImage, preview);
       }
     } catch (error) {
       console.error('[ProductCustomizer] Error updating product image for variant:', error);
