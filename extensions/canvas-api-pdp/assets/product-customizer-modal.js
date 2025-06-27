@@ -901,6 +901,13 @@ if (typeof ProductCustomizerModal === 'undefined') {
             padding: 20px;
           }
         }
+        
+        /* Product image blur transition styles */
+        .product-image-transitioning {
+          transition: opacity 0.3s ease, filter 0.3s ease;
+          opacity: 0.3;
+          filter: blur(10px);
+        }
       </style>
     `;
 
@@ -2755,11 +2762,17 @@ if (typeof ProductCustomizerModal === 'undefined') {
       return;
     }
     
+    // Immediately blur the current image
+    const mainImage = this.findMainProductImage();
+    if (mainImage) {
+      mainImage.classList.add('product-image-transitioning');
+    }
+    
     // Check cache first
     const cachedPreview = PreviewCache.get(variantId);
     if (cachedPreview) {
       console.log('[ProductCustomizer] Using cached preview for variant:', variantId);
-      this.updateMainProductImageDirectly(cachedPreview);
+      this.transitionToNewImage(mainImage, cachedPreview);
       return;
     }
     
@@ -2831,10 +2844,14 @@ if (typeof ProductCustomizerModal === 'undefined') {
       // Update main product image and cache
       if (preview) {
         PreviewCache.set(variantId, preview);
-        this.updateMainProductImageDirectly(preview);
+        this.transitionToNewImage(mainImage, preview);
       }
     } catch (error) {
       console.error('[ProductCustomizer] Error updating product image for variant:', error);
+      // Remove blur on error
+      if (mainImage) {
+        mainImage.classList.remove('product-image-transitioning');
+      }
     } finally {
       // Cleanup
       ProductCustomizerModal.isUpdatingProductImage = false;
@@ -2914,7 +2931,42 @@ if (typeof ProductCustomizerModal === 'undefined') {
     mainProductImage.srcset = ''; // Clear srcset to prevent browser from using original
     mainProductImage.setAttribute('data-customization-preview', 'true');
     
+    // Remove any blur transition class if present
+    mainProductImage.classList.remove('product-image-transitioning');
+    
     console.log('[ProductCustomizer] Main product image updated');
+  }
+  
+  transitionToNewImage(imageElement, newSrc) {
+    if (!imageElement) {
+      console.warn('[ProductCustomizer] No image element provided for transition');
+      return;
+    }
+    
+    // Store original if not already stored
+    if (!imageElement.dataset.originalSrc) {
+      imageElement.dataset.originalSrc = imageElement.src;
+      imageElement.dataset.originalSrcset = imageElement.srcset || '';
+    }
+    
+    // Preload the new image
+    const tempImg = new Image();
+    tempImg.onload = () => {
+      imageElement.src = newSrc;
+      imageElement.srcset = ''; // Clear srcset to prevent browser from using original
+      imageElement.setAttribute('data-customization-preview', 'true');
+      
+      // Remove blur after image loads
+      setTimeout(() => {
+        imageElement.classList.remove('product-image-transitioning');
+      }, 50);
+    };
+    tempImg.onerror = () => {
+      console.error('[ProductCustomizer] Failed to load preview image');
+      // Remove blur on error
+      imageElement.classList.remove('product-image-transitioning');
+    };
+    tempImg.src = newSrc;
   }
   
   findMainProductImage() {
