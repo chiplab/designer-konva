@@ -736,6 +736,12 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Track which side was last edited
     this.lastEditedSide = 'front';
     
+    // Track which sides have been edited
+    this.editedSides = {
+      front: false,
+      back: false
+    };
+    
     // Timer for debounced text state saving
     this.textSaveTimer = null;
     
@@ -1096,6 +1102,12 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Reset to front side when opening
     this.lastEditedSide = 'front';
     
+    // Reset edited sides tracking
+    this.editedSides = {
+      front: false,
+      back: false
+    };
+    
     // Only prevent body scroll on mobile
     if (window.innerWidth <= 749) {
       document.body.style.overflow = 'hidden';
@@ -1157,6 +1169,10 @@ if (typeof ProductCustomizerModal === 'undefined') {
     if (this.isDualSided) {
       // Apply text directly to the canvas data without switching
       
+      // Track if we found any updates for each side
+      let hasFrontUpdates = false;
+      let hasBackUpdates = false;
+      
       // Update front canvas data
       if (this.renderer.frontCanvasData) {
         Object.entries(this.savedTextUpdates).forEach(([key, value]) => {
@@ -1169,6 +1185,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
                 const element = frontElements[elementType].find(el => el.id === elementId);
                 if (element) {
                   element.text = value;
+                  hasFrontUpdates = true;
                 }
               }
             });
@@ -1188,6 +1205,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
                 const element = backElements[elementType].find(el => el.id === elementId);
                 if (element) {
                   element.text = value;
+                  hasBackUpdates = true;
                 }
               }
             });
@@ -1195,14 +1213,32 @@ if (typeof ProductCustomizerModal === 'undefined') {
         });
       }
       
+      // Mark sides as edited if we applied saved text
+      if (hasFrontUpdates) {
+        this.editedSides.front = true;
+        console.log('[ProductCustomizer] Marked front as edited due to saved text');
+      }
+      if (hasBackUpdates) {
+        this.editedSides.back = true;
+        console.log('[ProductCustomizer] Marked back as edited due to saved text');
+      }
+      
       // Ensure we're displaying the front canvas
       this.renderer.template = this.renderer.frontCanvasData;
       this.renderer.render();
     } else {
       // Apply text to single-sided template
+      let hasUpdates = false;
       Object.entries(this.savedTextUpdates).forEach(([elementId, value]) => {
         this.renderer.updateText(elementId, value);
+        hasUpdates = true;
       });
+      
+      // Mark as edited if we applied saved text
+      if (hasUpdates) {
+        this.editedSides.front = true;
+        console.log('[ProductCustomizer] Marked front as edited due to saved text (single-sided)');
+      }
     }
   }
   
@@ -1523,8 +1559,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
     
     // Find and update thumbnails
     if (this.isDualSided) {
-      // Update front thumbnail
-      if (this.frontPreviewUrl) {
+      // Update front thumbnail - ONLY if front was edited
+      if (this.frontPreviewUrl && this.editedSides.front) {
         const frontThumbnail = this.findThumbnailByAltText(variantTitle, false);
         if (frontThumbnail) {
           this.updateThumbnailImage(frontThumbnail, this.frontPreviewUrl);
@@ -1534,12 +1570,13 @@ if (typeof ProductCustomizerModal === 'undefined') {
         }
       }
       
-      // Update back thumbnail
-      if (this.backPreviewUrl) {
+      // Update back thumbnail - ONLY if back was edited
+      if (this.backPreviewUrl && this.editedSides.back) {
         console.log('[ProductCustomizer] LOOKING FOR BACK THUMBNAIL:', {
           variantTitle: variantTitle,
           expectedAltPattern: `${variantTitle} - Back`,
-          lastEditedSide: this.lastEditedSide
+          lastEditedSide: this.lastEditedSide,
+          backWasEdited: this.editedSides.back
         });
         
         const backThumbnail = this.findThumbnailByAltText(variantTitle, true);
@@ -1560,6 +1597,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
           const backThumbnails = Array.from(allThumbnails).filter(img => img.alt && img.alt.includes('- Back'));
           console.log('[ProductCustomizer] Back thumbnails found:', backThumbnails.map(img => img.alt));
         }
+      } else if (!this.editedSides.back) {
+        console.log('[ProductCustomizer] Skipping back thumbnail update - back side not edited');
       }
     } else {
       // For single-sided templates, only update the front image
@@ -2244,42 +2283,12 @@ if (typeof ProductCustomizerModal === 'undefined') {
     if (!this.renderer || !previewImage) return;
     
     if (this.isDualSided) {
-      // For dual-sided templates, handle based on which side was edited
-      if (this.lastEditedSide === 'back') {
-        console.log('[ProductCustomizer] UPDATE PREVIEW - BACK SIDE EDITED');
+      // For dual-sided templates, only update previews for edited sides
+      
+      // Handle front side preview
+      if (this.editedSides.front) {
+        console.log('[ProductCustomizer] Generating front preview (front was edited)');
         
-        // Ensure we're on the back canvas
-        if (this.renderer.template !== this.renderer.backCanvasData) {
-          this.renderer.template = this.renderer.backCanvasData;
-        }
-        
-        // Generate back preview with high quality for slideshow thumbnails
-        const backDataUrl = this.renderer.getDataURL({ pixelRatio: 1 });
-        this.backPreviewUrl = backDataUrl;
-        
-        console.log('[ProductCustomizer] Generated back preview data URL, length:', backDataUrl.length);
-        previewImage.src = backDataUrl;
-        previewImage.style.display = 'block';
-        
-        // For back edits, keep the current preview as back
-        this.currentPreviewUrl = backDataUrl;
-        
-        // Also ensure we have a front preview
-        if (!this.frontPreviewUrl) {
-          this.renderer.template = this.renderer.frontCanvasData;
-          this.frontPreviewUrl = this.renderer.getDataURL({ pixelRatio: 1 });
-          this.renderer.template = this.renderer.backCanvasData; // Switch back
-        }
-        
-        console.log('[ProductCustomizer] Generated back preview for back edit');
-        
-        // Update thumbnails for back edits
-        this.updateSlideshowThumbnails();
-        
-        // Update the specific back main image (not the active one)
-        this.updateSpecificMainImage(backDataUrl, true);
-      } else {
-        // Front side was edited
         // Ensure we're on the front canvas
         if (this.renderer.template !== this.renderer.frontCanvasData) {
           this.renderer.template = this.renderer.frontCanvasData;
@@ -2288,24 +2297,54 @@ if (typeof ProductCustomizerModal === 'undefined') {
         // Generate front preview with high quality for slideshow thumbnails
         const frontDataUrl = this.renderer.getDataURL({ pixelRatio: 1 });
         this.frontPreviewUrl = frontDataUrl;
-        previewImage.src = frontDataUrl;
-        previewImage.style.display = 'block';
         
-        // Update the current preview URL and main product image
-        this.currentPreviewUrl = frontDataUrl;
-        this.updateMainProductImage(frontDataUrl);
+        // If the last edited side was front, update the preview image
+        if (this.lastEditedSide === 'front') {
+          previewImage.src = frontDataUrl;
+          previewImage.style.display = 'block';
+          this.currentPreviewUrl = frontDataUrl;
+          this.updateMainProductImage(frontDataUrl);
+        }
+      }
+      
+      // Handle back side preview - ONLY if back was explicitly edited
+      if (this.editedSides.back) {
+        console.log('[ProductCustomizer] Generating back preview (back was edited)');
         
-        // Also ensure we have a back preview
-        if (this.renderer.backCanvasData && !this.backPreviewUrl) {
+        // Switch to back canvas
+        if (this.renderer.template !== this.renderer.backCanvasData) {
           this.renderer.template = this.renderer.backCanvasData;
-          this.backPreviewUrl = this.renderer.getDataURL({ pixelRatio: 1 });
-          this.renderer.template = this.renderer.frontCanvasData; // Switch back
         }
         
-        console.log('[ProductCustomizer] Generated front preview for front edit');
+        // Generate back preview with high quality for slideshow thumbnails
+        const backDataUrl = this.renderer.getDataURL({ pixelRatio: 1 });
+        this.backPreviewUrl = backDataUrl;
+        
+        // If the last edited side was back, update the preview image
+        if (this.lastEditedSide === 'back') {
+          previewImage.src = backDataUrl;
+          previewImage.style.display = 'block';
+          this.currentPreviewUrl = backDataUrl;
+          // Update the specific back main image (not the active one)
+          this.updateSpecificMainImage(backDataUrl, true);
+        }
+        
+        // Switch back to front if we were originally on front
+        if (this.lastEditedSide === 'front' && this.renderer.template !== this.renderer.frontCanvasData) {
+          this.renderer.template = this.renderer.frontCanvasData;
+        }
       }
+      
+      // Only update thumbnails if at least one side was edited
+      if (this.editedSides.front || this.editedSides.back) {
+        this.updateSlideshowThumbnails();
+      }
+      
+      console.log('[ProductCustomizer] Preview update complete. Edited sides:', this.editedSides);
     } else {
-      // Single-sided template with high quality for slideshow thumbnails
+      // Single-sided template - only update if edited
+      this.editedSides.front = true; // Single-sided templates count as front
+      
       const dataUrl = this.renderer.getDataURL({ pixelRatio: 1 });
       previewImage.src = dataUrl;
       previewImage.style.display = 'block';
@@ -2517,6 +2556,9 @@ if (typeof ProductCustomizerModal === 'undefined') {
           // For dual-sided templates, we need to switch to the correct side before updating
           this.lastEditedSide = side; // Track which side was edited
           
+          // Mark the side as edited
+          this.editedSides[side] = true;
+          
           if (side === 'back') {
             // Log back side text change
             const label = e.target.previousElementSibling?.textContent || 'Unknown';
@@ -2541,6 +2583,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
         } else {
           // Single-sided template
           this.lastEditedSide = 'front';
+          this.editedSides.front = true;
           this.renderer.updateText(elementId, e.target.value);
         }
         
