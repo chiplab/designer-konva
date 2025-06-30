@@ -124,13 +124,36 @@ export async function generateVariantSwatch({
 function applyTextCustomizations(state: any, textUpdates: Record<string, string>): any {
   const newState = JSON.parse(JSON.stringify(state));
   
+  console.log('[Swatch Generator] Applying text customizations. Available updates:', Object.keys(textUpdates));
+  
   // Update text elements
   if (newState.elements) {
     ['textElements', 'curvedTextElements', 'gradientTextElements'].forEach(elementType => {
       if (newState.elements[elementType]) {
         newState.elements[elementType].forEach((element: any) => {
+          let textApplied = false;
+          
+          // Try direct match first
           if (textUpdates[element.id]) {
+            console.log(`[Swatch Generator] Direct match found for ${element.id}, updating text to: "${textUpdates[element.id]}"`);
             element.text = textUpdates[element.id];
+            textApplied = true;
+          } 
+          // Try with front_ prefix
+          else if (textUpdates[`front_${element.id}`]) {
+            console.log(`[Swatch Generator] Front prefix match found for ${element.id}, updating text to: "${textUpdates[`front_${element.id}`]}"`);
+            element.text = textUpdates[`front_${element.id}`];
+            textApplied = true;
+          }
+          // Try with back_ prefix
+          else if (textUpdates[`back_${element.id}`]) {
+            console.log(`[Swatch Generator] Back prefix match found for ${element.id}, updating text to: "${textUpdates[`back_${element.id}`]}"`);
+            element.text = textUpdates[`back_${element.id}`];
+            textApplied = true;
+          }
+          
+          if (!textApplied) {
+            console.log(`[Swatch Generator] No match found for element ${element.id} in ${elementType}. Current text: "${element.text}"`);
           }
         });
       }
