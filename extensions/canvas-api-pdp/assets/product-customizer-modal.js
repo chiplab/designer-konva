@@ -301,12 +301,167 @@
       return;
     }
     
+    // Get current variant title to check for pattern changes
+    const currentVariantTitle = modal.getVariantTitle();
+    const currentPattern = extractPatternFromTitle(currentVariantTitle);
+    
+    // Check if pattern has changed
+    if (window.lastKnownPattern && currentPattern && window.lastKnownPattern !== currentPattern) {
+      console.log('[SwatchProtection] Pattern change detected:', window.lastKnownPattern, '->', currentPattern);
+      
+      // Trigger swatch regeneration for pattern change
+      clearTimeout(window.swatchUpdateTimer);
+      window.swatchUpdateTimer = setTimeout(() => {
+        console.log('[SwatchProtection] Triggering swatch update for pattern change');
+        updateVariantSwatchesForPatternChange(modal.options.templateId, currentVariantTitle, modal);
+      }, 300);
+    }
+    
+    // Update the last known pattern
+    window.lastKnownPattern = currentPattern;
+    
     // Debounce to prevent rapid updates
     clearTimeout(window.productImageUpdateTimer);
     window.productImageUpdateTimer = setTimeout(() => {
       console.log('[SwatchProtection] Triggering product image update for variant:', variantId);
       modal.updateProductImageForVariant(variantId);
     }, 200);
+  };
+  
+  // Helper function to extract pattern from variant title
+  const extractPatternFromTitle = (title) => {
+    if (!title) return null;
+    // Variant titles are typically "Color / Pattern"
+    const parts = title.split(' / ');
+    return parts.length > 1 ? parts[1].trim() : null;
+  };
+  
+  // Function to update variant swatches when pattern changes
+  const updateVariantSwatchesForPatternChange = async (templateId, variantTitle, modal) => {
+    console.log('[SwatchProtection] Starting variant swatch update for pattern change');
+    
+    // Check if we have saved text customizations
+    const savedTextState = localStorage.getItem('customization_global_text');
+    if (!savedTextState) {
+      console.log('[SwatchProtection] No saved text customizations, skipping swatch update');
+      return;
+    }
+    
+    try {
+      const textState = JSON.parse(savedTextState);
+      const currentPattern = extractPatternFromTitle(variantTitle);
+      
+      if (!currentPattern) {
+        console.log('[SwatchProtection] Could not extract pattern from variant title');
+        return;
+      }
+      
+      // Find all color variant inputs for the current pattern
+      const colorInputs = document.querySelectorAll('input[type="radio"][name*="Color"]');
+      const variants = [];
+      
+      colorInputs.forEach((input) => {
+        const variantId = input.getAttribute('data-variant-id');
+        const variantValue = input.value;
+        
+        // Check if this variant is for the current pattern
+        // We need to check if this color variant exists for the current pattern
+        if (variantId && variantValue) {
+          // Extract just the color part from the value (e.g., "Red" from "Red / 8 Spot")
+          const colorName = variantValue.split(' / ')[0].trim();
+          variants.push({ id: variantId, color: colorName });
+        }
+      });
+      
+      if (variants.length === 0) {
+        console.log('[SwatchProtection] No color variants found');
+        return;
+      }
+      
+      console.log(`[SwatchProtection] Found ${variants.length} color variants to update`);
+      
+      // Prepare customization data
+      const customizationData = {
+        textUpdates: textState,
+        canvasState: null
+      };
+      
+      // Check if we have saved canvas state from full designer
+      const savedCanvasState = localStorage.getItem('customization_global_state');
+      if (savedCanvasState) {
+        try {
+          customizationData.canvasState = JSON.parse(savedCanvasState);
+        } catch (e) {
+          console.error('[SwatchProtection] Failed to parse saved canvas state');
+        }
+      }
+      
+      // Call server API to generate swatches
+      const apiUrl = modal.options.apiUrl || '/apps/designer';
+      const response = await fetch(`${apiUrl}/api/public/variant-swatches`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          templateId: templateId,
+          variants: variants,
+          customization: customizationData,
+          options: { 
+            size: 128, 
+            quality: 0.8, 
+            side: 'front' // Always use front for swatches
+          }
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      // Update swatches in DOM
+      if (result.success && result.swatches) {
+        console.log(`[SwatchProtection] Successfully generated ${result.generatedCount} swatches`);
+        
+        Object.entries(result.swatches).forEach(([variantId, dataUrl]) => {
+          const input = document.querySelector(`input[data-variant-id="${variantId}"]`);
+          if (input) {
+            const swatchSpan = input.nextElementSibling;
+            if (swatchSpan && swatchSpan.classList.contains('swatch')) {
+              // Store original if not already stored
+              if (!swatchSpan.dataset.originalBackground) {
+                const currentStyle = swatchSpan.getAttribute('style');
+                swatchSpan.dataset.originalBackground = currentStyle || '';
+              }
+              
+              // Update with server-generated swatch
+              const newStyle = `--swatch-background: url(${dataUrl});`;
+              swatchSpan.style.cssText = newStyle;
+              swatchSpan.setAttribute('data-customization-preview', 'true');
+              swatchSpan.setAttribute('data-server-generated', 'true');
+              swatchSpan.setAttribute('data-custom-timestamp', Date.now().toString());
+              
+              // Save to global swatch protection storage
+              saveSwatchData(
+                variantId,
+                newStyle,
+                {
+                  'data-customization-preview': 'true',
+                  'data-server-generated': 'true',
+                  'data-custom-timestamp': Date.now().toString()
+                }
+              );
+            }
+          }
+        });
+        
+        console.log('[SwatchProtection] Variant swatches updated successfully');
+      } else {
+        console.error('[SwatchProtection] Server swatch generation failed:', result.error);
+      }
+    } catch (error) {
+      console.error('[SwatchProtection] Error updating variant swatches:', error);
+    }
   };
   
   // Set up MutationObserver to watch for DOM morphing on variant pickers
@@ -495,6 +650,8 @@
     saveSwatchData,
     getSwatchData,
     restoreSwatchesFromStorage,
+    updateVariantSwatchesForPatternChange,
+    updateProductImageIfCustomized,
     clearCustomSwatches: () => {
       console.log('[SwatchProtection] Clearing all custom swatches');
       customSwatchStorage.clear();
