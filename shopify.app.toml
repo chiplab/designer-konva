@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://closest-tag-suit-tops.trycloudflare.com"
+application_url = "https://directories-suggesting-juice-rapid.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://closest-tag-suit-tops.trycloudflare.com/auth/callback",
-  "https://closest-tag-suit-tops.trycloudflare.com/auth/shopify/callback",
-  "https://closest-tag-suit-tops.trycloudflare.com/api/auth/callback"
+  "https://directories-suggesting-juice-rapid.trycloudflare.com/auth/callback",
+  "https://directories-suggesting-juice-rapid.trycloudflare.com/auth/shopify/callback",
+  "https://directories-suggesting-juice-rapid.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://closest-tag-suit-tops.trycloudflare.com"
+url = "https://directories-suggesting-juice-rapid.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 
