@@ -2803,16 +2803,50 @@ if (typeof ProductCustomizerModal === 'undefined') {
       
       // Apply saved text customizations
       const savedTextState = this.loadGlobalTextState();
-      if (savedTextState) {
-        // Apply text updates to the renderer
+      if (savedTextState && tempRenderer.isDualSided) {
+        // For dual-sided templates, we need to apply text to both front and back canvas data
+        if (tempRenderer.frontCanvasData) {
+          Object.entries(savedTextState).forEach(([key, value]) => {
+            if (key.startsWith('front_')) {
+              const elementId = key.replace('front_', '');
+              // Find and update the text element in frontCanvasData
+              const frontElements = tempRenderer.frontCanvasData.elements;
+              ['textElements', 'curvedTextElements', 'gradientTextElements'].forEach(elementType => {
+                if (frontElements[elementType]) {
+                  const element = frontElements[elementType].find(el => el.id === elementId);
+                  if (element) {
+                    element.text = value;
+                  }
+                }
+              });
+            }
+          });
+        }
+        
+        if (tempRenderer.backCanvasData) {
+          Object.entries(savedTextState).forEach(([key, value]) => {
+            if (key.startsWith('back_')) {
+              const elementId = key.replace('back_', '');
+              // Find and update the text element in backCanvasData
+              const backElements = tempRenderer.backCanvasData.elements;
+              ['textElements', 'curvedTextElements', 'gradientTextElements'].forEach(elementType => {
+                if (backElements[elementType]) {
+                  const element = backElements[elementType].find(el => el.id === elementId);
+                  if (element) {
+                    element.text = value;
+                  }
+                }
+              });
+            }
+          });
+        }
+        
+        // Start with front canvas
+        tempRenderer.template = tempRenderer.frontCanvasData;
+      } else if (savedTextState) {
+        // Single-sided template - apply text normally
         Object.entries(savedTextState).forEach(([elementId, text]) => {
-          // Handle both single-sided and dual-sided templates
-          if (elementId.startsWith('front_') || elementId.startsWith('back_')) {
-            const actualId = elementId.replace(/^(front_|back_)/, '');
-            tempRenderer.updateText(actualId, text);
-          } else {
-            tempRenderer.updateText(elementId, text);
-          }
+          tempRenderer.updateText(elementId, text);
         });
       }
       
@@ -2845,6 +2879,44 @@ if (typeof ProductCustomizerModal === 'undefined') {
       if (preview) {
         PreviewCache.set(variantId, preview);
         this.transitionToNewImage(mainImage, preview);
+        
+        // Check if template is dual-sided and generate both front/back previews
+        if (tempRenderer.isDualSided) {
+          console.log('[ProductCustomizer] Dual-sided template detected, generating front and back previews');
+          
+          // Store front preview
+          this.frontPreviewUrl = preview;
+          
+          // Generate back preview
+          tempRenderer.template = tempRenderer.backCanvasData;
+          tempRenderer.render();
+          
+          const backPreview = await new Promise((resolve) => {
+            requestAnimationFrame(() => {
+              if (tempRenderer.stage) {
+                const dataUrl = tempRenderer.stage.toDataURL({ pixelRatio: 1 });
+                resolve(dataUrl);
+              } else {
+                resolve(null);
+              }
+            });
+          });
+          
+          if (backPreview) {
+            this.backPreviewUrl = backPreview;
+            console.log('[ProductCustomizer] Generated back preview for variant');
+          }
+          
+          this.isDualSided = true;
+        } else {
+          // Single-sided template
+          this.currentPreviewUrl = preview;
+          this.isDualSided = false;
+        }
+        
+        // Update slideshow thumbnails for this variant
+        console.log('[ProductCustomizer] Updating slideshow thumbnails after variant change');
+        this.updateSlideshowThumbnails();
       }
     } catch (error) {
       console.error('[ProductCustomizer] Error updating product image for variant:', error);

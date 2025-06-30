@@ -1048,6 +1048,116 @@ The method is used in several places:
 - **Maintainability**: Easy to update selectors for specific theme types
 - **Reliability**: Fallback ensures an image is found even in custom themes
 
+## Slideshow/Carousel Thumbnail Targeting System
+
+### Overview
+The `product-customizer-modal.js` implements a sophisticated system for updating product image thumbnails in Shopify themes. This system ensures that when users customize products and switch variants, all thumbnails (front, back, and main images) display the correct customized previews.
+
+### Key Methods for Thumbnail Management
+
+1. **`updateSlideshowThumbnails()`** (line ~1347)
+   - Main method for updating carousel thumbnails
+   - Uses alt-text matching to find correct thumbnails
+   - Handles both front and back thumbnails for dual-sided templates
+   - Preserves original image data for restoration
+
+2. **`findThumbnailByAltText(variantTitle, isBack)`** (line ~1415)
+   - Searches for thumbnails using alt text patterns
+   - Two-pass approach: exact match first, then fuzzy match
+   - Specifically targets slideshow control thumbnails:
+     ```javascript
+     'slideshow-controls button.slideshow-controls__thumbnail img'
+     'button.slideshow-control img'
+     ```
+
+3. **`updateThumbnailImage(img, previewUrl)`** (line ~1505)
+   - Updates individual thumbnail images
+   - Handles base64 preview updates with cache busting
+   - Stores original src/srcset for restoration
+   - Attempts to trigger slideshow component refresh
+
+### Thumbnail Selectors
+
+The system uses specific selectors to target different thumbnail locations:
+
+```javascript
+// Back thumbnails in controls
+'slideshow-controls img[alt*="- Back"]'
+
+// Main slideshow images
+'slideshow-slide img[alt*="- Back"]'
+
+// Front thumbnails (without "- Back" suffix)
+'slideshow-controls button.slideshow-controls__thumbnail img'
+```
+
+### Alt Text Matching Strategy
+
+1. **Exact Match Pattern**:
+   - Front: `{Color} / {Pattern}`
+   - Back: `{Color} / {Pattern} - Back`
+   - Example: "Green / 8 Spot" or "Green / 8 Spot - Back"
+
+2. **Fuzzy Match Fallback**:
+   - Extracts color and pattern components
+   - Matches if both components are found in alt text
+   - 70% word match threshold for partial matches
+
+### Integration with Variant Changes
+
+When variants change with active customizations:
+
+1. **`updateProductImageForVariant()`** (line ~2756):
+   - Generates preview for new variant
+   - For dual-sided templates:
+     - Generates front preview and stores in `this.frontPreviewUrl`
+     - Switches to back canvas and generates back preview
+     - Stores back preview in `this.backPreviewUrl`
+   - Calls `updateSlideshowThumbnails()` to update all thumbnails
+
+2. **Global Variant Change Handler**:
+   - SwatchProtection system detects variant changes
+   - Calls `updateProductImageIfCustomized()`
+   - Triggers thumbnail updates for customized products
+
+### Troubleshooting Thumbnail Updates
+
+1. **Thumbnails Not Updating**:
+   - Check if `updateSlideshowThumbnails()` is being called
+   - Verify alt text matches expected pattern
+   - Ensure `isDualSided` flag is set correctly
+   - Check console for "LOOKING FOR BACK THUMBNAIL" logs
+
+2. **Debug Logging**:
+   - The system includes extensive logging for thumbnail searches
+   - Look for patterns like:
+     ```
+     [ProductCustomizer] LOOKING FOR BACK THUMBNAIL: {details}
+     [ProductCustomizer] FOUND BACK THUMBNAIL TO UPDATE: {details}
+     [ProductCustomizer] NO BACK THUMBNAIL FOUND
+     ```
+
+3. **Common Issues**:
+   - Alt text format variations between themes
+   - Thumbnails loaded dynamically after initial search
+   - Slideshow components not refreshing after update
+
+### Best Practices
+
+1. **Always Update All Images Together**:
+   - Main product image
+   - Front thumbnail (if exists)
+   - Back thumbnail (if dual-sided)
+
+2. **Preserve Original Data**:
+   - Store `data-original-src` before modifications
+   - Allow restoration when customization is removed
+
+3. **Force Visual Updates**:
+   - Use cache busting for base64 updates
+   - Trigger component refresh methods when available
+   - Force reflow with display toggle as fallback
+
 # important-instruction-reminders
 Do what has been asked; nothing more, nothing less.
 NEVER create files unless they're absolutely necessary for achieving your goal.
