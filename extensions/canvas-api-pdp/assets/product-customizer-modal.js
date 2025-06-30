@@ -1082,16 +1082,27 @@ if (typeof ProductCustomizerModal === 'undefined') {
 
   attachEventListeners() {
     // Close button
-    this.modal.querySelector('.pcm-close').addEventListener('click', () => this.close(false));
+    this.modal.querySelector('.pcm-close').addEventListener('click', () => this.save());
     
     // Overlay click
-    this.modal.querySelector('.pcm-overlay').addEventListener('click', () => this.close(false));
+    this.modal.querySelector('.pcm-overlay').addEventListener('click', () => this.save());
     
     // Save button
     document.getElementById('saveCustomization').addEventListener('click', () => this.save());
     
     // Advanced editor button
     document.getElementById('advancedEditor').addEventListener('click', () => this.openAdvancedEditor());
+    
+    // Click outside modal panel (for desktop where overlay is hidden)
+    this.outsideClickHandler = (event) => {
+      if (this.isOpen) {
+        const panel = this.modal.querySelector('.pcm-panel');
+        if (!panel.contains(event.target)) {
+          this.save();
+        }
+      }
+    };
+    document.addEventListener('click', this.outsideClickHandler);
   }
 
   async open() {
@@ -1874,54 +1885,6 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.hasFilteredSlideshow = true;
   }
   
-  restoreOriginalProductImages() {
-    // Restore the main product image to its original source
-    this.originalProductImages.forEach(({element, originalSrc, originalSrcset}) => {
-      if (element && document.contains(element)) {
-        // Only restore if element is still in the DOM
-        element.src = originalSrc;
-        if (originalSrcset) {
-          element.srcset = originalSrcset;
-        }
-        // Remove the customization preview marker
-        element.removeAttribute('data-customization-preview');
-      }
-    });
-    
-    // Restore slideshow thumbnails
-    const customizedThumbnails = document.querySelectorAll(
-      'slideshow-slide img[data-customization-preview="true"], ' +  // Horizon theme
-      'button.slideshow-control img[data-customization-preview="true"], ' +
-      'button.slideshow-controls__thumbnail img[data-customization-preview="true"], ' +
-      '.slideshow-nav__button img[data-customization-preview="true"], ' +
-      '.product__thumb img[data-customization-preview="true"]'
-    );
-    
-    customizedThumbnails.forEach(thumbnail => {
-      if (thumbnail.dataset.originalSrc) {
-        thumbnail.src = thumbnail.dataset.originalSrc;
-        if (thumbnail.dataset.originalSrcset) {
-          thumbnail.srcset = thumbnail.dataset.originalSrcset;
-        }
-        if (thumbnail.dataset.originalSizes) {
-          thumbnail.setAttribute('sizes', thumbnail.dataset.originalSizes);
-        }
-        thumbnail.removeAttribute('data-customization-preview');
-        delete thumbnail.dataset.originalSrc;
-        delete thumbnail.dataset.originalSrcset;
-        delete thumbnail.dataset.originalSizes;
-        
-        // Disconnect any mutation observer
-        if (thumbnail._customizationObserver) {
-          thumbnail._customizationObserver.disconnect();
-          delete thumbnail._customizationObserver;
-        }
-      }
-    });
-    
-    // Also restore variant swatches
-    this.restoreOriginalVariantSwatches();
-  }
   
   updateVariantSwatches() {
     // For dual-sided templates, always use front preview for swatches
@@ -2003,68 +1966,6 @@ if (typeof ProductCustomizerModal === 'undefined') {
     }
   }
   
-  restoreOriginalVariantSwatches() {
-    // Find all variant swatches that have been customized (both img and span elements)
-    const customizedImages = document.querySelectorAll('img[data-customization-preview="true"]');
-    const customizedSpans = document.querySelectorAll('span[data-customization-preview="true"]');
-    const multiPreviews = document.querySelectorAll('span[data-multi-preview="true"]');
-    
-    // Clear saved variant previews from localStorage when restoring
-    const currentVariantTitle = this.getVariantTitle();
-    if (currentVariantTitle) {
-      const parts = currentVariantTitle.split(' / ');
-      const edgePattern = parts.length > 1 ? parts[1].trim() : null;
-      if (edgePattern) {
-        const variantPreviewsKey = `variant_previews_${edgePattern}`;
-        localStorage.removeItem(variantPreviewsKey);
-        console.log(`[ProductCustomizer] Cleared saved previews for pattern: ${edgePattern}`);
-      }
-    }
-    
-    // Restore customized img elements
-    customizedImages.forEach(swatch => {
-      if (swatch.dataset.originalSrc) {
-        console.log('[ProductCustomizer] Restoring original image swatch:', swatch.dataset.originalSrc);
-        swatch.src = swatch.dataset.originalSrc;
-        if (swatch.dataset.originalSrcset) {
-          swatch.srcset = swatch.dataset.originalSrcset;
-        }
-        swatch.removeAttribute('data-customization-preview');
-        
-        // Remove parent customization marker
-        const swatchParent = swatch.closest('[data-has-customization]');
-        if (swatchParent) {
-          swatchParent.removeAttribute('data-has-customization');
-        }
-      }
-    });
-    
-    // Restore customized span elements (CSS background swatches)
-    customizedSpans.forEach(swatch => {
-      if (swatch.dataset.originalBackground) {
-        console.log('[ProductCustomizer] Restoring original CSS swatch');
-        swatch.setAttribute('style', swatch.dataset.originalBackground);
-        delete swatch.dataset.originalBackground;
-        swatch.removeAttribute('data-customization-preview');
-        
-        // Remove parent customization marker
-        const swatchParent = swatch.closest('[data-has-customization]');
-        if (swatchParent) {
-          swatchParent.removeAttribute('data-has-customization');
-        }
-      }
-    });
-    
-    // Restore multi-variant previews
-    multiPreviews.forEach(swatch => {
-      if (swatch.dataset.originalBackground) {
-        console.log('[ProductCustomizer] Restoring multi-preview swatch');
-        swatch.setAttribute('style', swatch.dataset.originalBackground);
-        delete swatch.dataset.originalBackground;
-        swatch.removeAttribute('data-multi-preview');
-      }
-    });
-  }
   
   async generateServerSideSwatches() {
     console.log('[ProductCustomizer] Generating server-side swatches...');
@@ -2587,7 +2488,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
 
   // Remove positionModal method as we're using CSS positioning within product-details
   
-  close(keepCustomization = false) {
+  close() {
     this.modal.classList.remove('open');
     this.isOpen = false;
     document.body.style.overflow = '';
@@ -2595,17 +2496,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Keep the instance reference but mark as closed
     // This allows variant change detection to still work after modal is closed
     
-    // Only restore original product images if we're not keeping a customization
-    if (!keepCustomization) {
-      this.restoreOriginalProductImages();
-      // Clear saved text updates if not keeping customization
-      this.savedTextUpdates = null;
-      
-      // Clear custom swatches if not keeping customization
-      if (this.clearCustomSwatches) {
-        this.clearCustomSwatches();
-      }
-    }
+    // Note: We now always keep customizations when closing since all exit paths save
     
     // Clear any pending timers
     if (this.updateTimer) {
@@ -2625,6 +2516,11 @@ if (typeof ProductCustomizerModal === 'undefined') {
     if (this.renderer) {
       this.renderer.destroy();
       this.renderer = null;
+    }
+    
+    // Remove outside click handler
+    if (this.outsideClickHandler) {
+      document.removeEventListener('click', this.outsideClickHandler);
     }
     
     // Reset dual-sided state
@@ -2817,7 +2713,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
     // Update main product image
     this.updateMainProductImage();
     
-    this.close(true); // Keep customization visible after save
+    this.close(); // Keep customization visible after save
   }
   
   debugSlideshowComponent() {
@@ -2968,7 +2864,7 @@ if (typeof ProductCustomizerModal === 'undefined') {
         
         // Don't automatically add to cart - just close the modal
         // The user can click "Add to Cart" on the product page when ready
-        this.close(true); // Pass true to keep the customization preview
+        this.close(); // Keep the customization preview
       }
     });
   }
