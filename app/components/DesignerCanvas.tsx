@@ -668,10 +668,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     const newEllipse: ShapeElement = {
       id: `ellipse-${Date.now()}`,
       type: 'ellipse',
-      x: designableArea.x + designableArea.width / 2 - 50, // Center of designable area
-      y: designableArea.y + designableArea.height / 2 - 40,
-      width: 100,
-      height: 80,
+      x: designableArea.x + designableArea.width / 2 - 200, // Center of designable area
+      y: designableArea.y + designableArea.height / 2 - 200,
+      width: 400,
+      height: 400,
       fill: '#ffffff',
       stroke: '#000000',
       strokeWidth: 2,
@@ -688,12 +688,12 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     const newRing: ShapeElement = {
       id: `ring-${Date.now()}`,
       type: 'ring',
-      x: designableArea.x + designableArea.width / 2 - 50, // Center of designable area
-      y: designableArea.y + designableArea.height / 2 - 50,
-      width: 100,
-      height: 100,
-      innerRadius: 25,
-      outerRadius: 50,
+      x: designableArea.x + designableArea.width / 2 - 200, // Center of designable area
+      y: designableArea.y + designableArea.height / 2 - 200,
+      width: 400,
+      height: 400,
+      innerRadius: 100,
+      outerRadius: 200,
       fill: '#ffffff',
       stroke: '#000000',
       strokeWidth: 2,
@@ -710,10 +710,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     const newRect: ShapeElement = {
       id: `rect-${Date.now()}`,
       type: 'rect',
-      x: designableArea.x + designableArea.width / 2 - 60, // Center of designable area
-      y: designableArea.y + designableArea.height / 2 - 40,
-      width: 120,
-      height: 80,
+      x: designableArea.x + designableArea.width / 2 - 200, // Center of designable area
+      y: designableArea.y + designableArea.height / 2 - 200,
+      width: 400,
+      height: 400,
       fill: '#ffffff',
       stroke: '#000000',
       strokeWidth: 2,
