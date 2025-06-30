@@ -486,6 +486,26 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     }
   }, [selectedId, scale]);
 
+  // Update transformer when curved text changes
+  React.useEffect(() => {
+    if (selectedId && transformerRef.current) {
+      const curvedEl = curvedTextElements.find(el => el.id === selectedId);
+      if (curvedEl) {
+        // Force transformer to update for curved text changes
+        setTimeout(() => {
+          const stage = transformerRef.current?.getStage();
+          const selectedNode = stage?.findOne('#' + selectedId);
+          if (selectedNode) {
+            transformerRef.current.nodes([selectedNode]);
+            transformerRef.current.forceUpdate();
+            transformerRef.current.getLayer()?.batchDraw();
+            updateToolbarPosition();
+          }
+        }, 50);
+      }
+    }
+  }, [curvedTextElements, selectedId]);
+
   // Create unified array of all elements with their types and z-indexes
   const unifiedElements = React.useMemo(() => {
     const elements: UnifiedCanvasElement[] = [];
@@ -3567,6 +3587,14 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                     }}
                     onTransformEnd={(e) => {
                       const node = e.target;
+                      const scaleY = node.scaleY(); // Use vertical scale for font size
+                      const currentFontSize = textEl.fontSize || 24;
+                      const newFontSize = Math.round(Math.max(8, Math.min(200, currentFontSize * scaleY))); // Clamp between 8-200
+                      
+                      // Reset scale to 1
+                      node.scaleX(1);
+                      node.scaleY(1);
+                      
                       setTextElements(prev => 
                         prev.map(el => 
                           el.id === textEl.id 
@@ -3575,8 +3603,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                                 x: node.x(),
                                 y: node.y(),
                                 rotation: node.rotation(),
-                                scaleX: node.scaleX(),
-                                scaleY: node.scaleY()
+                                fontSize: newFontSize,
+                                scaleX: 1,
+                                scaleY: 1
                               }
                             : el
                         )
@@ -3621,6 +3650,14 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                     }}
                     onTransformEnd={(e) => {
                       const node = e.target;
+                      const scaleY = node.scaleY(); // Use vertical scale for font size
+                      const currentFontSize = gradientEl.fontSize || 24;
+                      const newFontSize = Math.round(Math.max(8, Math.min(200, currentFontSize * scaleY))); // Clamp between 8-200
+                      
+                      // Reset scale to 1
+                      node.scaleX(1);
+                      node.scaleY(1);
+                      
                       setGradientTextElements(prev => 
                         prev.map(el => 
                           el.id === gradientEl.id 
@@ -3629,8 +3666,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                                 x: node.x(),
                                 y: node.y(),
                                 rotation: node.rotation(),
-                                scaleX: node.scaleX(),
-                                scaleY: node.scaleY()
+                                fontSize: newFontSize,
+                                scaleX: 1,
+                                scaleY: 1
                               }
                             : el
                         )
@@ -3709,19 +3747,33 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                     }}
                     onTransformEnd={(e) => {
                       const node = e.target;
+                      const scaleY = node.scaleY(); // Use vertical scale
+                      const currentFontSize = curvedEl.fontSize || 20;
+                      const currentRadius = curvedEl.radius;
+                      
+                      // Update both font size and radius proportionally
+                      const newFontSize = Math.round(Math.max(8, Math.min(200, currentFontSize * scaleY))); // Clamp between 8-200
+                      const newRadius = Math.round(Math.max(50, Math.min(1000, currentRadius * scaleY))); // Scale radius with reasonable bounds
+                      
+                      // Reset scale to 1
+                      node.scaleX(1);
+                      node.scaleY(1);
+                      
                       setCurvedTextElements(prev => 
                         prev.map(el => 
                           el.id === curvedEl.id 
                             ? { 
                                 ...el, 
                                 x: node.x(),
-                                // Calculate topY from centerY based on flip state
+                                // Calculate topY with new radius
                                 topY: curvedEl.flipped 
-                                  ? node.y() + curvedEl.radius 
-                                  : node.y() - curvedEl.radius,
+                                  ? node.y() + newRadius  // Use new radius
+                                  : node.y() - newRadius,
                                 rotation: node.rotation(),
-                                scaleX: node.scaleX(),
-                                scaleY: node.scaleY()
+                                fontSize: newFontSize,
+                                radius: newRadius, // Update the radius!
+                                scaleX: 1,
+                                scaleY: 1
                               }
                             : el
                         )
@@ -4775,7 +4827,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                 <input
                   type="range"
                   min="50"
-                  max="300"
+                  max="500"
                   value={curvedTextElements.find(el => el.id === selectedId)?.radius || 100}
                   onChange={(e) => handleDiameterChange(parseInt(e.target.value))}
                   style={{ 
