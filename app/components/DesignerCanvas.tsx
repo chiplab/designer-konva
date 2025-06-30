@@ -3688,9 +3688,21 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                   ? curvedEl.topY - curvedEl.radius  // Bottom edge stays at topY
                   : curvedEl.topY + curvedEl.radius; // Top edge stays at topY
                 
-                // Create path for text - scale with font size
+                // Create path for text - measure actual text width
                 const fontSize = curvedEl.fontSize || 20;
-                const textLength = curvedEl.text.length * fontSize * 0.6; // Scale text length with font size
+                
+                // Measure actual text width using a temporary Konva Text node
+                const tempText = new (window as any).Konva.Text({
+                  text: curvedEl.text,
+                  fontSize: fontSize,
+                  fontFamily: curvedEl.fontFamily,
+                  fontStyle: curvedEl.fontWeight === 'bold' ? 'bold' : 'normal'
+                });
+                const measuredWidth = tempText.width();
+                tempText.destroy(); // Clean up temporary node
+                
+                // Use measured width with a small padding factor
+                const textLength = measuredWidth * 1.1; // Add 10% padding for better spacing
                 const angleSpan = Math.min(textLength / curvedEl.radius, Math.PI * 1.5); // Max 270 degrees
                 
                 let startAngle, endAngle, sweepFlag;
