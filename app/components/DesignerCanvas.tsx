@@ -1,5 +1,5 @@
 import React from 'react';
-import { Stage, Layer, Text, TextPath, Transformer, Group, Image, Rect } from 'react-konva';
+import { Stage, Layer, Text, TextPath, Transformer, Group, Image, Rect, Ellipse, Ring } from 'react-konva';
 import useImage from 'use-image';
 import { CURATED_FONTS, getFontsByCategory, DEFAULT_FONT } from '../constants/fonts';
 import { fontLoader } from '../services/font-loader';
@@ -94,7 +94,7 @@ const ImageElement: React.FC<{
 // Define unified element type
 type UnifiedCanvasElement = {
   id: string;
-  type: 'text' | 'gradientText' | 'curvedText' | 'image';
+  type: 'text' | 'gradientText' | 'curvedText' | 'image' | 'shape';
   zIndex: number;
   data: any; // Will contain the specific element data
 };
@@ -190,6 +190,29 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   const [backBackgroundColor, setBackBackgroundColor] = React.useState('transparent');
   const [backBaseImageUrl, setBackBaseImageUrl] = React.useState<string>('');
   
+  // Shape elements state
+  type ShapeType = 'ellipse' | 'ring' | 'rect';
+  type ShapeElement = {
+    id: string;
+    type: ShapeType;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    innerRadius?: number; // For ring only
+    outerRadius?: number; // For ring only
+    fill?: string;
+    stroke?: string;
+    strokeWidth?: number;
+    rotation?: number;
+    scaleX?: number;
+    scaleY?: number;
+    zIndex?: number;
+  };
+  
+  const [frontShapeElements, setFrontShapeElements] = React.useState<Array<ShapeElement>>([]);
+  const [backShapeElements, setBackShapeElements] = React.useState<Array<ShapeElement>>([]);
+  
   // Get current side's state dynamically
   const textElements = currentSide === 'front' ? frontTextElements : backTextElements;
   const setTextElements = currentSide === 'front' ? setFrontTextElements : setBackTextElements;
@@ -201,10 +224,12 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   const setImageElements = currentSide === 'front' ? setFrontImageElements : setBackImageElements;
   const backgroundColor = currentSide === 'front' ? frontBackgroundColor : backBackgroundColor;
   const setBackgroundColor = currentSide === 'front' ? setFrontBackgroundColor : setBackBackgroundColor;
+  const shapeElements = currentSide === 'front' ? frontShapeElements : backShapeElements;
+  const setShapeElements = currentSide === 'front' ? setFrontShapeElements : setBackShapeElements;
   
   // Clipboard for copy/paste
   const [clipboard, setClipboard] = React.useState<{
-    type: 'text' | 'gradientText' | 'curvedText' | 'image';
+    type: 'text' | 'gradientText' | 'curvedText' | 'image' | 'shape';
     data: any;
     sourceSide: 'front' | 'back';
   } | null>(null);
@@ -503,14 +528,23 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       });
     });
     
+    shapeElements.forEach((shape) => {
+      elements.push({
+        id: shape.id,
+        type: 'shape',
+        zIndex: shape.zIndex ?? currentZIndex++,
+        data: shape
+      });
+    });
+    
     const sorted = elements.sort((a, b) => a.zIndex - b.zIndex);
     console.log('Unified elements sorted by zIndex:', sorted.map(el => ({
       type: el.type,
       zIndex: el.zIndex,
-      text: el.type === 'image' ? 'image' : el.data.text
+      text: el.type === 'image' || el.type === 'shape' ? el.type : el.data.text
     })));
     return sorted;
-  }, [textElements, gradientTextElements, curvedTextElements, imageElements]);
+  }, [textElements, gradientTextElements, curvedTextElements, imageElements, shapeElements]);
 
 
   // Helper function to update element zIndex
@@ -525,6 +559,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       prev.map(el => el.id === elementId ? { ...el, zIndex: newZIndex } : el)
     );
     setImageElements(prev => 
+      prev.map(el => el.id === elementId ? { ...el, zIndex: newZIndex } : el)
+    );
+    setShapeElements(prev => 
       prev.map(el => el.id === elementId ? { ...el, zIndex: newZIndex } : el)
     );
   };
@@ -626,7 +663,67 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     setCurvedTextElements(prev => [...prev, newCurvedText]);
   };
 
+  const addEllipse = () => {
+    const maxZIndex = Math.max(...unifiedElements.map(el => el.zIndex), -1) + 1;
+    const newEllipse: ShapeElement = {
+      id: `ellipse-${Date.now()}`,
+      type: 'ellipse',
+      x: designableArea.x + designableArea.width / 2 - 50, // Center of designable area
+      y: designableArea.y + designableArea.height / 2 - 40,
+      width: 100,
+      height: 80,
+      fill: '#ffffff',
+      stroke: '#000000',
+      strokeWidth: 2,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      zIndex: maxZIndex
+    };
+    setShapeElements(prev => [...prev, newEllipse]);
+  };
 
+  const addRing = () => {
+    const maxZIndex = Math.max(...unifiedElements.map(el => el.zIndex), -1) + 1;
+    const newRing: ShapeElement = {
+      id: `ring-${Date.now()}`,
+      type: 'ring',
+      x: designableArea.x + designableArea.width / 2 - 50, // Center of designable area
+      y: designableArea.y + designableArea.height / 2 - 50,
+      width: 100,
+      height: 100,
+      innerRadius: 25,
+      outerRadius: 50,
+      fill: '#ffffff',
+      stroke: '#000000',
+      strokeWidth: 2,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      zIndex: maxZIndex
+    };
+    setShapeElements(prev => [...prev, newRing]);
+  };
+
+  const addRectangle = () => {
+    const maxZIndex = Math.max(...unifiedElements.map(el => el.zIndex), -1) + 1;
+    const newRect: ShapeElement = {
+      id: `rect-${Date.now()}`,
+      type: 'rect',
+      x: designableArea.x + designableArea.width / 2 - 60, // Center of designable area
+      y: designableArea.y + designableArea.height / 2 - 40,
+      width: 120,
+      height: 80,
+      fill: '#ffffff',
+      stroke: '#000000',
+      strokeWidth: 2,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      zIndex: maxZIndex
+    };
+    setShapeElements(prev => [...prev, newRect]);
+  };
 
   const handleStageClick = (e: any) => {
     // Get the clicked target
@@ -716,15 +813,30 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       };
       setImageElements(prev => [...prev, newEl]);
       setSelectedId(newEl.id);
+      return;
+    }
+    
+    const shapeEl = shapeElements.find(el => el.id === selectedId);
+    if (shapeEl) {
+      const newEl = {
+        ...shapeEl,
+        id: `${shapeEl.type}-${Date.now()}`,
+        x: shapeEl.x + 20,
+        y: shapeEl.y + 20,
+        zIndex: maxZIndex
+      };
+      setShapeElements(prev => [...prev, newEl]);
+      setSelectedId(newEl.id);
     }
   };
   
   // Helper function to get element type
-  const getElementType = (elementId: string): 'text' | 'gradientText' | 'curvedText' | 'image' | null => {
+  const getElementType = (elementId: string): 'text' | 'gradientText' | 'curvedText' | 'image' | 'shape' | null => {
     if (textElements.find(el => el.id === elementId)) return 'text';
     if (gradientTextElements.find(el => el.id === elementId)) return 'gradientText';
     if (curvedTextElements.find(el => el.id === elementId)) return 'curvedText';
     if (imageElements.find(el => el.id === elementId)) return 'image';
+    if (shapeElements.find(el => el.id === elementId)) return 'shape';
     return null;
   };
   
@@ -746,6 +858,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         break;
       case 'image':
         element = imageElements.find(el => el.id === elementId);
+        break;
+      case 'shape':
+        element = shapeElements.find(el => el.id === elementId);
         break;
     }
     
@@ -801,6 +916,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         pastedElement.x = clipboard.data.x + offset;
         pastedElement.y = clipboard.data.y + offset;
         break;
+      case 'shape':
+        pastedElement.x = clipboard.data.x + offset;
+        pastedElement.y = clipboard.data.y + offset;
+        break;
     }
     
     // Add to current side
@@ -816,6 +935,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         break;
       case 'image':
         setImageElements(prev => [...prev, pastedElement]);
+        break;
+      case 'shape':
+        setShapeElements(prev => [...prev, pastedElement]);
         break;
     }
     
@@ -1101,7 +1223,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         textElements: ensureZIndex(frontTextElements),
         curvedTextElements: ensureZIndex(frontCurvedTextElements),
         gradientTextElements: ensureZIndex(frontGradientTextElements),
-        imageElements: ensureZIndex(frontImageElements)
+        imageElements: ensureZIndex(frontImageElements),
+        shapeElements: ensureZIndex(frontShapeElements)
       },
       assets: {
         baseImage: frontBaseImageUrl,
@@ -1117,7 +1240,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         textElements: ensureZIndex(backTextElements),
         curvedTextElements: ensureZIndex(backCurvedTextElements),
         gradientTextElements: ensureZIndex(backGradientTextElements),
-        imageElements: ensureZIndex(backImageElements)
+        imageElements: ensureZIndex(backImageElements),
+        shapeElements: ensureZIndex(backShapeElements)
       },
       assets: {
         baseImage: backBaseImageUrl,
@@ -1137,7 +1261,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         textElements: ensureZIndex(textElements),
         curvedTextElements: ensureZIndex(curvedTextElements),
         gradientTextElements: ensureZIndex(gradientTextElements),
-        imageElements: ensureZIndex(imageElements)
+        imageElements: ensureZIndex(imageElements),
+        shapeElements: ensureZIndex(shapeElements)
       },
       assets: {
         baseImage: baseImageUrl,
@@ -1167,6 +1292,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
           if (sideState.elements.curvedTextElements) setFrontCurvedTextElements(sideState.elements.curvedTextElements);
           if (sideState.elements.gradientTextElements) setFrontGradientTextElements(sideState.elements.gradientTextElements);
           if (sideState.elements.imageElements) setFrontImageElements(sideState.elements.imageElements);
+          if (sideState.elements.shapeElements) setFrontShapeElements(sideState.elements.shapeElements);
         }
         if (sideState.assets?.baseImage) setFrontBaseImageUrl(sideState.assets.baseImage);
       } else {
@@ -1179,6 +1305,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
           if (sideState.elements.curvedTextElements) setBackCurvedTextElements(sideState.elements.curvedTextElements);
           if (sideState.elements.gradientTextElements) setBackGradientTextElements(sideState.elements.gradientTextElements);
           if (sideState.elements.imageElements) setBackImageElements(sideState.elements.imageElements);
+          if (sideState.elements.shapeElements) setBackShapeElements(sideState.elements.shapeElements);
         }
         if (sideState.assets?.baseImage) setBackBaseImageUrl(sideState.assets.baseImage);
       }
@@ -2029,6 +2156,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     setCurvedTextElements(prev => prev.filter(el => el.id !== selectedId));
     setGradientTextElements(prev => prev.filter(el => el.id !== selectedId));
     setImageElements(prev => prev.filter(el => el.id !== selectedId));
+    setShapeElements(prev => prev.filter(el => el.id !== selectedId));
     
     // Clear selection and force transformer to detach
     setSelectedId(null);
@@ -2510,6 +2638,17 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         </button>
         <button onClick={addCurvedText} style={{ padding: '8px 16px', fontSize: '14px', marginRight: '10px' }}>
           Add Curved Text
+        </button>
+        
+        {/* Shape buttons */}
+        <button onClick={addEllipse} style={{ padding: '8px 16px', fontSize: '14px', marginRight: '10px' }}>
+          Add Ellipse
+        </button>
+        <button onClick={addRing} style={{ padding: '8px 16px', fontSize: '14px', marginRight: '10px' }}>
+          Add Ring
+        </button>
+        <button onClick={addRectangle} style={{ padding: '8px 16px', fontSize: '14px', marginRight: '10px' }}>
+          Add Rectangle
         </button>
         
         {/* Add Image Button with file input */}
@@ -3609,6 +3748,132 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                 );
               }
               
+              if (element.type === 'shape') {
+                const shapeEl = element.data;
+                
+                // Common props for all shapes
+                const commonProps = {
+                  key: shapeEl.id,
+                  id: shapeEl.id,
+                  x: shapeEl.x + (shapeEl.width || 0) / 2, // Center-based positioning
+                  y: shapeEl.y + (shapeEl.height || 0) / 2,
+                  fill: shapeEl.fill || '#ffffff',
+                  stroke: shapeEl.stroke || '#000000',
+                  strokeWidth: shapeEl.stroke ? (shapeEl.strokeWidth || 2) : 0,
+                  rotation: shapeEl.rotation || 0,
+                  scaleX: shapeEl.scaleX || 1,
+                  scaleY: shapeEl.scaleY || 1,
+                  draggable: true,
+                  onClick: () => setSelectedId(shapeEl.id),
+                  onTap: () => setSelectedId(shapeEl.id),
+                  onDragEnd: (e: any) => {
+                    const node = e.target;
+                    setShapeElements(prev =>
+                      prev.map(el =>
+                        el.id === shapeEl.id
+                          ? { ...el, x: node.x() - shapeEl.width / 2, y: node.y() - shapeEl.height / 2 }
+                          : el
+                      )
+                    );
+                    setTimeout(updateToolbarPosition, 0);
+                  },
+                  onTransformEnd: (e: any) => {
+                    const node = e.target;
+                    const scaleX = node.scaleX();
+                    const scaleY = node.scaleY();
+                    
+                    // Reset scale and apply to dimensions
+                    node.scaleX(1);
+                    node.scaleY(1);
+                    
+                    if (shapeEl.type === 'rect') {
+                      const newWidth = Math.max(5, shapeEl.width * scaleX);
+                      const newHeight = Math.max(5, shapeEl.height * scaleY);
+                      setShapeElements(prev =>
+                        prev.map(el =>
+                          el.id === shapeEl.id
+                            ? {
+                                ...el,
+                                x: node.x() - newWidth / 2,
+                                y: node.y() - newHeight / 2,
+                                width: newWidth,
+                                height: newHeight,
+                                rotation: node.rotation()
+                              }
+                            : el
+                        )
+                      );
+                    } else if (shapeEl.type === 'ellipse') {
+                      const newWidth = Math.max(10, shapeEl.width * scaleX);
+                      const newHeight = Math.max(10, shapeEl.height * scaleY);
+                      setShapeElements(prev =>
+                        prev.map(el =>
+                          el.id === shapeEl.id
+                            ? {
+                                ...el,
+                                x: node.x() - newWidth / 2,
+                                y: node.y() - newHeight / 2,
+                                width: newWidth,
+                                height: newHeight,
+                                rotation: node.rotation()
+                              }
+                            : el
+                        )
+                      );
+                    } else if (shapeEl.type === 'ring') {
+                      const scale = Math.max(scaleX, scaleY);
+                      const newOuter = Math.max(20, (shapeEl.outerRadius || 50) * scale);
+                      const newInner = Math.max(10, (shapeEl.innerRadius || 25) * scale);
+                      setShapeElements(prev =>
+                        prev.map(el =>
+                          el.id === shapeEl.id
+                            ? {
+                                ...el,
+                                x: node.x() - newOuter,
+                                y: node.y() - newOuter,
+                                outerRadius: newOuter,
+                                innerRadius: newInner,
+                                width: newOuter * 2,
+                                height: newOuter * 2,
+                                rotation: node.rotation()
+                              }
+                            : el
+                        )
+                      );
+                    }
+                    setTimeout(updateToolbarPosition, 0);
+                  }
+                };
+                
+                if (shapeEl.type === 'rect') {
+                  return (
+                    <Rect
+                      {...commonProps}
+                      width={shapeEl.width}
+                      height={shapeEl.height}
+                      offsetX={shapeEl.width / 2}
+                      offsetY={shapeEl.height / 2}
+                    />
+                  );
+                } else if (shapeEl.type === 'ellipse') {
+                  return (
+                    <Ellipse
+                      {...commonProps}
+                      radiusX={shapeEl.width / 2}
+                      radiusY={shapeEl.height / 2}
+                    />
+                  );
+                } else if (shapeEl.type === 'ring') {
+                  return (
+                    <Ring
+                      {...commonProps}
+                      innerRadius={shapeEl.innerRadius || 25}
+                      outerRadius={shapeEl.outerRadius || 50}
+                    />
+                  );
+                }
+              }
+              
               return null; // Should never reach here
             })}
           </Group>
@@ -4546,6 +4811,299 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
               >
                 ↕️
               </button>
+            </>
+          )}
+          
+          {/* Shape Controls - only show for shape elements */}
+          {shapeElements.find(el => el.id === selectedId) && (
+            <>
+              <div style={{ width: '1px', background: '#e0e0e0', height: '24px', margin: '0 4px' }} />
+              
+              {/* Fill Color */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  data-shape-fill-button="true"
+                  onClick={() => setShowColorPicker(!showColorPicker)}
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    backgroundColor: shapeElements.find(el => el.id === selectedId)?.fill || '#ffffff',
+                    border: '2px solid #ccc',
+                    cursor: 'pointer',
+                    padding: 0,
+                    transition: 'all 0.2s',
+                    boxShadow: showColorPicker ? '0 0 0 2px #0066ff' : 'none'
+                  }}
+                  title="Fill Color"
+                />
+                
+                {/* Shape Fill Color Picker Popup */}
+                {showColorPicker && (
+                  <div
+                    data-shape-fill-picker="true"
+                    style={{
+                      position: 'absolute',
+                      top: '36px',
+                      right: 0,
+                      background: 'white',
+                      border: '1px solid #ccc',
+                      borderRadius: '6px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                      padding: '8px',
+                      display: 'flex',
+                      gap: '6px',
+                      flexWrap: 'wrap',
+                      width: '200px',
+                      zIndex: 1001,
+                    }}>
+                    {[
+                      { name: 'White', hex: '#ffffff' },
+                      { name: 'Red', hex: '#c8102e' },
+                      { name: 'Blue', hex: '#0057b8' },
+                      { name: 'Green', hex: '#009639' },
+                      { name: 'Black', hex: '#000000' },
+                      { name: 'Purple', hex: '#5f259f' },
+                      { name: 'Yellow', hex: '#fff110' },
+                      { name: 'Grey', hex: '#a2aaad' },
+                      { name: 'Orange', hex: '#ff8200' },
+                      { name: 'Ivory', hex: '#f1e6b2' },
+                      { name: 'Light Blue', hex: '#71c5e8' },
+                      { name: 'Pink', hex: '#f8a3bc' },
+                      { name: 'Brown', hex: '#9e652e' },
+                      { name: 'Light Grey', hex: '#cccccc' },
+                      { name: 'Light Pink', hex: '#ffaaaa' },
+                      { name: 'Sky Blue', hex: '#7fa8db' },
+                      { name: 'Mint Green', hex: '#e0eed5' },
+                      { name: 'Lavender', hex: '#aaaaff' },
+                      { name: 'Amber', hex: '#febd11' },
+                      { name: 'Olive', hex: '#97872a' },
+                      { name: 'Peach', hex: '#ffcfa3' },
+                      { name: 'Cream', hex: '#f7f4e8' },
+                      { name: 'Powder Blue', hex: '#b8d6e0' },
+                      { name: 'Blush', hex: '#ffd6e1' },
+                      { name: 'Tan', hex: '#c49a73' }
+                    ].map((color) => {
+                      const currentFill = shapeElements.find(el => el.id === selectedId)?.fill || '#ffffff';
+                      
+                      return (
+                        <button
+                          key={color.hex}
+                          onClick={() => {
+                            setShapeElements(prev =>
+                              prev.map(el =>
+                                el.id === selectedId ? { ...el, fill: color.hex } : el
+                              )
+                            );
+                            setShowColorPicker(false);
+                          }}
+                          style={{
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '50%',
+                            backgroundColor: color.hex,
+                            border: currentFill === color.hex ? '2px solid #0066ff' : '1px solid #ccc',
+                            cursor: 'pointer',
+                            padding: 0,
+                            transition: 'all 0.2s',
+                            boxShadow: color.hex === '#ffffff' ? 'inset 0 0 0 1px #ddd' : 'none'
+                          }}
+                          title={color.name}
+                          onMouseEnter={(e) => {
+                            if (currentFill !== color.hex) {
+                              e.currentTarget.style.transform = 'scale(1.1)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = 'scale(1)';
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              
+              {/* Stroke Color Control */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '12px', color: '#666' }}>Stroke:</span>
+                <div style={{ position: 'relative' }}>
+                  <button
+                    data-shape-stroke-button="true"
+                    onClick={() => setShowStrokeColorPicker(!showStrokeColorPicker)}
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '50%',
+                      backgroundColor: (() => {
+                        const stroke = shapeElements.find(el => el.id === selectedId)?.stroke || '#000000';
+                        return stroke === 'transparent' ? '#f0f0f0' : stroke;
+                      })(),
+                      backgroundImage: (() => {
+                        const stroke = shapeElements.find(el => el.id === selectedId)?.stroke || '#000000';
+                        if (stroke === 'transparent') {
+                          return 'linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc), linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc)';
+                        }
+                        return undefined;
+                      })(),
+                      backgroundSize: '6px 6px',
+                      backgroundPosition: '0 0, 3px 3px',
+                      border: '2px solid #ccc',
+                      cursor: 'pointer',
+                      padding: 0,
+                      transition: 'all 0.2s',
+                      boxShadow: showStrokeColorPicker ? '0 0 0 2px #0066ff' : 'none'
+                    }}
+                    title="Stroke Color"
+                  />
+                  
+                  {/* Shape Stroke Color Picker Popup */}
+                  {showStrokeColorPicker && (
+                    <div
+                      data-shape-stroke-picker="true"
+                      style={{
+                        position: 'absolute',
+                        top: '36px',
+                        right: 0,
+                        background: 'white',
+                        border: '1px solid #ccc',
+                        borderRadius: '6px',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                        padding: '8px',
+                        display: 'flex',
+                        gap: '6px',
+                        flexWrap: 'wrap',
+                        width: '200px',
+                        zIndex: 1001,
+                      }}>
+                      {/* None/Transparent option */}
+                      <button
+                        onClick={() => {
+                          setShapeElements(prev =>
+                            prev.map(el =>
+                              el.id === selectedId ? { ...el, stroke: 'transparent', strokeWidth: 0 } : el
+                            )
+                          );
+                          setShowStrokeColorPicker(false);
+                        }}
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          backgroundColor: '#f0f0f0',
+                          backgroundImage: 'linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc), linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc)',
+                          backgroundSize: '8px 8px',
+                          backgroundPosition: '0 0, 4px 4px',
+                          border: (shapeElements.find(el => el.id === selectedId)?.stroke || 'transparent') === 'transparent' ? '2px solid #0066ff' : '1px solid #ccc',
+                          cursor: 'pointer',
+                          padding: 0,
+                          transition: 'all 0.2s',
+                        }}
+                        title="No Stroke"
+                        onMouseEnter={(e) => {
+                          const currentStroke = shapeElements.find(el => el.id === selectedId)?.stroke || 'transparent';
+                          if (currentStroke !== 'transparent') {
+                            e.currentTarget.style.transform = 'scale(1.1)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                        }}
+                      />
+                      
+                      {[
+                        { name: 'White', hex: '#ffffff' },
+                        { name: 'Red', hex: '#c8102e' },
+                        { name: 'Blue', hex: '#0057b8' },
+                        { name: 'Green', hex: '#009639' },
+                        { name: 'Black', hex: '#000000' },
+                        { name: 'Purple', hex: '#5f259f' },
+                        { name: 'Yellow', hex: '#fff110' },
+                        { name: 'Grey', hex: '#a2aaad' },
+                        { name: 'Orange', hex: '#ff8200' },
+                        { name: 'Ivory', hex: '#f1e6b2' },
+                        { name: 'Light Blue', hex: '#71c5e8' },
+                        { name: 'Pink', hex: '#f8a3bc' },
+                        { name: 'Brown', hex: '#9e652e' },
+                        { name: 'Light Grey', hex: '#cccccc' },
+                        { name: 'Light Pink', hex: '#ffaaaa' },
+                        { name: 'Sky Blue', hex: '#7fa8db' },
+                        { name: 'Mint Green', hex: '#e0eed5' },
+                        { name: 'Lavender', hex: '#aaaaff' },
+                        { name: 'Amber', hex: '#febd11' },
+                        { name: 'Olive', hex: '#97872a' },
+                        { name: 'Peach', hex: '#ffcfa3' },
+                        { name: 'Cream', hex: '#f7f4e8' },
+                        { name: 'Powder Blue', hex: '#b8d6e0' },
+                        { name: 'Blush', hex: '#ffd6e1' },
+                        { name: 'Tan', hex: '#c49a73' }
+                      ].map((color) => {
+                        const currentStroke = shapeElements.find(el => el.id === selectedId)?.stroke || '#000000';
+                        
+                        return (
+                          <button
+                            key={color.hex}
+                            onClick={() => {
+                              setShapeElements(prev =>
+                                prev.map(el =>
+                                  el.id === selectedId ? { ...el, stroke: color.hex, strokeWidth: el.strokeWidth || 2 } : el
+                                )
+                              );
+                              setShowStrokeColorPicker(false);
+                            }}
+                            style={{
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '50%',
+                              backgroundColor: color.hex,
+                              border: currentStroke === color.hex ? '2px solid #0066ff' : '1px solid #ccc',
+                              cursor: 'pointer',
+                              padding: 0,
+                              transition: 'all 0.2s',
+                              boxShadow: color.hex === '#ffffff' ? 'inset 0 0 0 1px #ddd' : 'none'
+                            }}
+                            title={color.name}
+                            onMouseEnter={(e) => {
+                              if (currentStroke !== color.hex) {
+                                e.currentTarget.style.transform = 'scale(1.1)';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'scale(1)';
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* Stroke Width Control */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '12px', color: '#666' }}>Width:</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="20"
+                  value={shapeElements.find(el => el.id === selectedId)?.strokeWidth || 2}
+                  onChange={(e) => {
+                    const width = parseInt(e.target.value) || 0;
+                    setShapeElements(prev =>
+                      prev.map(el =>
+                        el.id === selectedId ? { ...el, strokeWidth: width } : el
+                      )
+                    );
+                  }}
+                  style={{
+                    width: '40px',
+                    padding: '2px 4px',
+                    fontSize: '12px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px'
+                  }}
+                />
+              </div>
             </>
           )}
         </div>
