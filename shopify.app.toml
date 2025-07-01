@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://vector-renaissance-helicopter-expansys.trycloudflare.com"
+application_url = "https://journey-jets-critical-configuration.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://vector-renaissance-helicopter-expansys.trycloudflare.com/auth/callback",
-  "https://vector-renaissance-helicopter-expansys.trycloudflare.com/auth/shopify/callback",
-  "https://vector-renaissance-helicopter-expansys.trycloudflare.com/api/auth/callback"
+  "https://journey-jets-critical-configuration.trycloudflare.com/auth/callback",
+  "https://journey-jets-critical-configuration.trycloudflare.com/auth/shopify/callback",
+  "https://journey-jets-critical-configuration.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://vector-renaissance-helicopter-expansys.trycloudflare.com"
+url = "https://journey-jets-critical-configuration.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 
