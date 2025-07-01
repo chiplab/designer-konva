@@ -357,152 +357,220 @@ if (typeof CanvasTextRenderer === 'undefined') {
       clipGroup.add(bgRect);
     }
 
-    // Render images first (so text appears on top)
+    // Collect all elements with their types
+    const allElements = [];
+    
+    // Add images
     elements.imageElements?.forEach(el => {
-      if (this.images[el.id]) {
-        const img = new Konva.Image({
+      allElements.push({ type: 'image', data: el, zIndex: el.zIndex || 0 });
+    });
+    
+    // Add shapes
+    elements.shapeElements?.forEach(el => {
+      allElements.push({ type: 'shape', data: el, zIndex: el.zIndex || 0 });
+    });
+    
+    // Add text elements
+    elements.textElements?.forEach(el => {
+      allElements.push({ type: 'text', data: el, zIndex: el.zIndex || 0 });
+    });
+    
+    // Add gradient text elements
+    elements.gradientTextElements?.forEach(el => {
+      allElements.push({ type: 'gradientText', data: el, zIndex: el.zIndex || 0 });
+    });
+    
+    // Add curved text elements
+    elements.curvedTextElements?.forEach(el => {
+      allElements.push({ type: 'curvedText', data: el, zIndex: el.zIndex || 0 });
+    });
+    
+    // Sort by z-index
+    allElements.sort((a, b) => a.zIndex - b.zIndex);
+    
+    // Render all elements in z-order
+    allElements.forEach(element => {
+      if (element.type === 'image') {
+        const el = element.data;
+        if (this.images[el.id]) {
+          const img = new Konva.Image({
+            id: el.id,
+            image: this.images[el.id],
+            x: el.x,
+            y: el.y,
+            width: el.width,
+            height: el.height,
+            rotation: el.rotation || 0,
+            scaleX: el.scaleX || 1,
+            scaleY: el.scaleY || 1
+          });
+          clipGroup.add(img);
+        }
+      } else if (element.type === 'shape') {
+        const el = element.data;
+        // Common properties for all shapes
+        const commonProps = {
+          x: el.x + (el.width || 0) / 2, // Center-based positioning
+          y: el.y + (el.height || 0) / 2,
+          fill: el.fill || '#ffffff',
+          stroke: el.stroke || '#000000',
+          strokeWidth: el.stroke ? (el.strokeWidth || 2) : 0,
+          rotation: el.rotation || 0,
+          scaleX: el.scaleX || 1,
+          scaleY: el.scaleY || 1
+        };
+        
+        let shape;
+        if (el.type === 'rect') {
+          shape = new Konva.Rect({
+            ...commonProps,
+            width: el.width,
+            height: el.height,
+            offsetX: el.width / 2,
+            offsetY: el.height / 2
+          });
+        } else if (el.type === 'ellipse') {
+          shape = new Konva.Ellipse({
+            ...commonProps,
+            radiusX: el.width / 2,
+            radiusY: el.height / 2
+          });
+        } else if (el.type === 'ring') {
+          shape = new Konva.Ring({
+            ...commonProps,
+            innerRadius: el.innerRadius || 25,
+            outerRadius: el.outerRadius || 50
+          });
+        }
+        
+        if (shape) {
+          clipGroup.add(shape);
+        }
+      } else if (element.type === 'text') {
+        const el = element.data;
+        const text = this.textUpdates[el.id] || el.text;
+        let textConfig = {
           id: el.id,
-          image: this.images[el.id],
+          text: text,
           x: el.x,
           y: el.y,
-          width: el.width,
-          height: el.height,
+          fontSize: el.fontSize || 24,
+          fontFamily: el.fontFamily || 'Arial',
+          fontStyle: el.fontWeight === 'bold' ? 'bold' : 'normal',
+          rotation: el.rotation || 0,
+          scaleX: el.scaleX || 1,
+          scaleY: el.scaleY || 1
+        };
+
+        // Handle fill
+        if (el.fill === 'gold-gradient') {
+          textConfig.fillLinearGradientStartPoint = { x: 0, y: 0 };
+          textConfig.fillLinearGradientEndPoint = { x: 0, y: el.fontSize || 24 };
+          textConfig.fillLinearGradientColorStops = [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'];
+        } else {
+          textConfig.fill = el.fill || 'black';
+        }
+
+        // Handle stroke
+        if (el.stroke && el.stroke !== 'transparent') {
+          textConfig.stroke = el.stroke;
+          textConfig.strokeWidth = el.strokeWidth || 2;
+          textConfig.fillAfterStrokeEnabled = true;
+        }
+
+        const textNode = new Konva.Text(textConfig);
+        clipGroup.add(textNode);
+      } else if (element.type === 'gradientText') {
+        const el = element.data;
+        const text = this.textUpdates[el.id] || el.text;
+        const textNode = new Konva.Text({
+          id: el.id,
+          text: text,
+          x: el.x,
+          y: el.y,
+          fontSize: el.fontSize || 24,
+          fontFamily: el.fontFamily || 'Arial',
+          fontStyle: el.fontWeight === 'bold' ? 'bold' : 'normal',
+          rotation: el.rotation || 0,
+          scaleX: el.scaleX || 1,
+          scaleY: el.scaleY || 1,
+          fillLinearGradientStartPoint: { x: 0, y: 0 },
+          fillLinearGradientEndPoint: { x: 0, y: el.fontSize || 24 },
+          fillLinearGradientColorStops: [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B']
+        });
+        clipGroup.add(textNode);
+      } else if (element.type === 'curvedText') {
+        const el = element.data;
+        const text = this.textUpdates[el.id] || el.text;
+        
+        // Calculate center Y based on whether text is flipped
+        const centerY = el.flipped 
+          ? el.topY - el.radius
+          : el.topY + el.radius;
+        
+        // Create group for curved text
+        const group = new Konva.Group({
+          id: el.id,
+          x: el.x,
+          y: centerY,
           rotation: el.rotation || 0,
           scaleX: el.scaleX || 1,
           scaleY: el.scaleY || 1
         });
-        clipGroup.add(img);
+
+        // Calculate text path
+        const fontSize = el.fontSize || 20;
+        const textLength = text.length * fontSize * 0.6;
+        const angleSpan = Math.min(textLength / el.radius, Math.PI * 1.5);
+        
+        let startAngle, endAngle, sweepFlag;
+        if (el.flipped) {
+          startAngle = Math.PI/2 + angleSpan/2;
+          endAngle = Math.PI/2 - angleSpan/2;
+          sweepFlag = 0;
+        } else {
+          startAngle = -Math.PI/2 - angleSpan/2;
+          endAngle = -Math.PI/2 + angleSpan/2;
+          sweepFlag = 1;
+        }
+        
+        const startX = Math.cos(startAngle) * el.radius;
+        const startY = Math.sin(startAngle) * el.radius;
+        const endX = Math.cos(endAngle) * el.radius;
+        const endY = Math.sin(endAngle) * el.radius;
+        
+        const largeArcFlag = angleSpan > Math.PI ? 1 : 0;
+        const pathData = `M ${startX},${startY} A ${el.radius},${el.radius} 0 ${largeArcFlag},${sweepFlag} ${endX},${endY}`;
+
+        let textPathConfig = {
+          text: text,
+          data: pathData,
+          fontSize: fontSize,
+          fontFamily: el.fontFamily || 'Arial',
+          fontStyle: el.fontWeight === 'bold' ? 'bold' : 'normal',
+          align: 'center'
+        };
+
+        // Handle fill
+        if (el.fill === 'gold-gradient') {
+          textPathConfig.fillLinearGradientStartPoint = { x: 0, y: 0 };
+          textPathConfig.fillLinearGradientEndPoint = { x: 0, y: fontSize };
+          textPathConfig.fillLinearGradientColorStops = [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'];
+        } else {
+          textPathConfig.fill = el.fill || 'black';
+        }
+
+        // Handle stroke
+        if (el.stroke && el.stroke !== 'transparent') {
+          textPathConfig.stroke = el.stroke;
+          textPathConfig.strokeWidth = el.strokeWidth || 2;
+          textPathConfig.fillAfterStrokeEnabled = true;
+        }
+
+        const textPath = new Konva.TextPath(textPathConfig);
+        group.add(textPath);
+        clipGroup.add(group);
       }
-    });
-
-    // Render regular text elements
-    elements.textElements?.forEach(el => {
-      const text = this.textUpdates[el.id] || el.text;
-      let textConfig = {
-        id: el.id,
-        text: text,
-        x: el.x,
-        y: el.y,
-        fontSize: el.fontSize || 24,
-        fontFamily: el.fontFamily || 'Arial',
-        fontStyle: el.fontWeight === 'bold' ? 'bold' : 'normal',
-        rotation: el.rotation || 0,
-        scaleX: el.scaleX || 1,
-        scaleY: el.scaleY || 1
-      };
-
-      // Handle fill
-      if (el.fill === 'gold-gradient') {
-        textConfig.fillLinearGradientStartPoint = { x: 0, y: 0 };
-        textConfig.fillLinearGradientEndPoint = { x: 0, y: el.fontSize || 24 };
-        textConfig.fillLinearGradientColorStops = [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'];
-      } else {
-        textConfig.fill = el.fill || 'black';
-      }
-
-      // Handle stroke
-      if (el.stroke && el.stroke !== 'transparent') {
-        textConfig.stroke = el.stroke;
-        textConfig.strokeWidth = el.strokeWidth || 2;
-        textConfig.fillAfterStrokeEnabled = true;
-      }
-
-      const textNode = new Konva.Text(textConfig);
-      clipGroup.add(textNode);
-    });
-
-    // Render gradient text elements
-    elements.gradientTextElements?.forEach(el => {
-      const text = this.textUpdates[el.id] || el.text;
-      const textNode = new Konva.Text({
-        id: el.id,
-        text: text,
-        x: el.x,
-        y: el.y,
-        fontSize: el.fontSize || 24,
-        fontFamily: el.fontFamily || 'Arial',
-        fontStyle: el.fontWeight === 'bold' ? 'bold' : 'normal',
-        rotation: el.rotation || 0,
-        scaleX: el.scaleX || 1,
-        scaleY: el.scaleY || 1,
-        fillLinearGradientStartPoint: { x: 0, y: 0 },
-        fillLinearGradientEndPoint: { x: 0, y: el.fontSize || 24 },
-        fillLinearGradientColorStops: [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B']
-      });
-      clipGroup.add(textNode);
-    });
-
-    // Render curved text elements
-    elements.curvedTextElements?.forEach(el => {
-      const text = this.textUpdates[el.id] || el.text;
-      
-      // Calculate center Y based on whether text is flipped
-      const centerY = el.flipped 
-        ? el.topY - el.radius
-        : el.topY + el.radius;
-      
-      // Create group for curved text
-      const group = new Konva.Group({
-        id: el.id,
-        x: el.x,
-        y: centerY,
-        rotation: el.rotation || 0,
-        scaleX: el.scaleX || 1,
-        scaleY: el.scaleY || 1
-      });
-
-      // Calculate text path
-      const fontSize = el.fontSize || 20;
-      const textLength = text.length * fontSize * 0.6;
-      const angleSpan = Math.min(textLength / el.radius, Math.PI * 1.5);
-      
-      let startAngle, endAngle, sweepFlag;
-      if (el.flipped) {
-        startAngle = Math.PI/2 + angleSpan/2;
-        endAngle = Math.PI/2 - angleSpan/2;
-        sweepFlag = 0;
-      } else {
-        startAngle = -Math.PI/2 - angleSpan/2;
-        endAngle = -Math.PI/2 + angleSpan/2;
-        sweepFlag = 1;
-      }
-      
-      const startX = Math.cos(startAngle) * el.radius;
-      const startY = Math.sin(startAngle) * el.radius;
-      const endX = Math.cos(endAngle) * el.radius;
-      const endY = Math.sin(endAngle) * el.radius;
-      
-      const largeArcFlag = angleSpan > Math.PI ? 1 : 0;
-      const pathData = `M ${startX},${startY} A ${el.radius},${el.radius} 0 ${largeArcFlag},${sweepFlag} ${endX},${endY}`;
-
-      let textPathConfig = {
-        text: text,
-        data: pathData,
-        fontSize: fontSize,
-        fontFamily: el.fontFamily || 'Arial',
-        fontStyle: el.fontWeight === 'bold' ? 'bold' : 'normal',
-        align: 'center'
-      };
-
-      // Handle fill
-      if (el.fill === 'gold-gradient') {
-        textPathConfig.fillLinearGradientStartPoint = { x: 0, y: 0 };
-        textPathConfig.fillLinearGradientEndPoint = { x: 0, y: fontSize };
-        textPathConfig.fillLinearGradientColorStops = [0, '#FFD700', 0.5, '#FFA500', 1, '#B8860B'];
-      } else {
-        textPathConfig.fill = el.fill || 'black';
-      }
-
-      // Handle stroke
-      if (el.stroke && el.stroke !== 'transparent') {
-        textPathConfig.stroke = el.stroke;
-        textPathConfig.strokeWidth = el.strokeWidth || 2;
-        textPathConfig.fillAfterStrokeEnabled = true;
-      }
-
-      const textPath = new Konva.TextPath(textPathConfig);
-      group.add(textPath);
-      clipGroup.add(group);
     });
 
     // Add clip group to design layer
