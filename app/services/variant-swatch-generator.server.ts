@@ -486,6 +486,47 @@ async function renderSwatch(state: any, size: number, quality: number): Promise<
         }
       }
     }
+    
+    // Shape elements
+    if (state.elements.shapeElements) {
+      state.elements.shapeElements.forEach((element: any) => {
+        const commonProps = {
+          x: (element.x + (element.width || 0) / 2) * scale, // Center-based positioning
+          y: (element.y + (element.height || 0) / 2) * scale,
+          fill: element.fill || '#ffffff',
+          stroke: element.stroke || '#000000',
+          strokeWidth: element.stroke ? ((element.strokeWidth || 2) * scale) : 0,
+          rotation: element.rotation || 0,
+          scaleX: element.scaleX || 1,
+          scaleY: element.scaleY || 1,
+        };
+        
+        if (element.type === 'rect') {
+          const rect = new Konva.Rect({
+            ...commonProps,
+            width: element.width * scale,
+            height: element.height * scale,
+            offsetX: (element.width * scale) / 2,
+            offsetY: (element.height * scale) / 2,
+          });
+          contentGroup.add(rect);
+        } else if (element.type === 'ellipse') {
+          const ellipse = new Konva.Ellipse({
+            ...commonProps,
+            radiusX: (element.width * scale) / 2,
+            radiusY: (element.height * scale) / 2,
+          });
+          contentGroup.add(ellipse);
+        } else if (element.type === 'ring') {
+          const ring = new Konva.Ring({
+            ...commonProps,
+            innerRadius: (element.innerRadius || 25) * scale,
+            outerRadius: (element.outerRadius || 50) * scale,
+          });
+          contentGroup.add(ring);
+        }
+      });
+    }
   }
   
   // Render to canvas
