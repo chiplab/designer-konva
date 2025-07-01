@@ -10,6 +10,10 @@ import { fontLoader } from './font-loader';
 interface CanvasState {
   dimensions: { width: number; height: number };
   backgroundColor: string;
+  backgroundGradient?: {
+    type: 'linear' | 'radial';
+    colorStops: (number | string)[];
+  };
   designableArea: {
     width: number;
     height: number;
@@ -70,6 +74,22 @@ interface CanvasState {
       width: number;
       height: number;
       rotation?: number;
+    }>;
+    shapeElements?: Array<{
+      id: string;
+      type: 'ellipse' | 'ring' | 'rect';
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      innerRadius?: number; // For ring only
+      outerRadius?: number; // For ring only
+      fill?: string;
+      stroke?: string;
+      strokeWidth?: number;
+      rotation?: number;
+      scaleX?: number;
+      scaleY?: number;
     }>;
   };
   assets: {
@@ -149,18 +169,6 @@ export async function renderCanvasToBuffer(
   // TODO: Implement server-side font loading
   console.log('Fonts to load:', Array.from(fontsToLoad));
   
-  // Render background
-  if (state.backgroundColor && state.backgroundColor !== 'transparent') {
-    const bg = new Konva.Rect({
-      x: 0,
-      y: 0,
-      width,
-      height,
-      fill: state.backgroundColor,
-    });
-    layer.add(bg);
-  }
-  
   // Render base image if exists
   if (state.assets.baseImage) {
     try {
@@ -214,6 +222,44 @@ export async function renderCanvasToBuffer(
     },
   });
   layer.add(clipGroup);
+  
+  // Render background inside clipped area
+  if (state.backgroundColor && state.backgroundColor !== 'transparent') {
+    let bgConfig: any = {
+      x: state.designableArea.x,
+      y: state.designableArea.y,
+      width: state.designableArea.width,
+      height: state.designableArea.height,
+      cornerRadius: state.designableArea.cornerRadius || 0,
+    };
+    
+    if (state.backgroundColor === 'linear-gradient') {
+      bgConfig = {
+        ...bgConfig,
+        fillLinearGradientStartPoint: { x: 0, y: 0 },
+        fillLinearGradientEndPoint: { x: state.designableArea.width, y: 0 },
+        fillLinearGradientColorStops: state.backgroundGradient?.type === 'linear' && state.backgroundGradient?.colorStops 
+          ? state.backgroundGradient.colorStops 
+          : [0, '#c8102e', 1, '#ffaaaa'],
+      };
+    } else if (state.backgroundColor === 'radial-gradient') {
+      bgConfig = {
+        ...bgConfig,
+        fillRadialGradientStartPoint: { x: state.designableArea.width / 2, y: state.designableArea.height / 2 },
+        fillRadialGradientEndPoint: { x: state.designableArea.width / 2, y: state.designableArea.height / 2 },
+        fillRadialGradientStartRadius: 0,
+        fillRadialGradientEndRadius: Math.min(state.designableArea.width, state.designableArea.height) / 2,
+        fillRadialGradientColorStops: state.backgroundGradient?.type === 'radial' && state.backgroundGradient?.colorStops 
+          ? state.backgroundGradient.colorStops 
+          : [0, '#c8102e', 1, '#ffaaaa'],
+      };
+    } else {
+      bgConfig.fill = state.backgroundColor;
+    }
+    
+    const bg = new Konva.Rect(bgConfig);
+    clipGroup.add(bg);
+  }
   
   // Render text elements
   state.elements.textElements?.forEach(element => {
@@ -324,6 +370,46 @@ export async function renderCanvasToBuffer(
       }
     }
   }
+  
+  // Render shape elements
+  state.elements.shapeElements?.forEach(element => {
+    const commonProps = {
+      id: element.id,
+      x: element.x + (element.width || 0) / 2, // Center-based positioning
+      y: element.y + (element.height || 0) / 2,
+      fill: element.fill || '#ffffff',
+      stroke: element.stroke || '#000000',
+      strokeWidth: element.stroke ? (element.strokeWidth || 2) : 0,
+      rotation: element.rotation || 0,
+      scaleX: element.scaleX || 1,
+      scaleY: element.scaleY || 1,
+    };
+    
+    if (element.type === 'rect') {
+      const rect = new Konva.Rect({
+        ...commonProps,
+        width: element.width,
+        height: element.height,
+        offsetX: element.width / 2,
+        offsetY: element.height / 2,
+      });
+      clipGroup.add(rect);
+    } else if (element.type === 'ellipse') {
+      const ellipse = new Konva.Ellipse({
+        ...commonProps,
+        radiusX: element.width / 2,
+        radiusY: element.height / 2,
+      });
+      clipGroup.add(ellipse);
+    } else if (element.type === 'ring') {
+      const ring = new Konva.Ring({
+        ...commonProps,
+        innerRadius: element.innerRadius || 25,
+        outerRadius: element.outerRadius || 50,
+      });
+      clipGroup.add(ring);
+    }
+  });
   
   // Draw the stage
   stage.draw();

@@ -207,21 +207,8 @@ export async function processGenerateVariantsJob(
     
     console.log(`Job ${jobId}: Created thumbnail generation job ${thumbnailJob.id} - requires manual processing`);
     
-    // Clear any cached modules to prevent contamination
-    try {
-      const moduleKeys = Object.keys(require.cache).filter(key => 
-        key.includes('job-queue') || 
-        key.includes('job-processor')
-      );
-      
-      moduleKeys.forEach(key => {
-        delete require.cache[key];
-      });
-      
-      console.log(`Job ${jobId}: Cleared ${moduleKeys.length} job-related modules from cache`);
-    } catch (error) {
-      console.error(`Job ${jobId}: Failed to clear module cache:`, error);
-    }
+    // Note: Module cache clearing is not needed in ES modules
+    // ES modules have their own module resolution system that prevents contamination
     
   } catch (error) {
     console.error(`Job ${jobId}: Failed with error:`, error);
