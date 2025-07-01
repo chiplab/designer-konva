@@ -168,6 +168,9 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   // Current side being edited
   const [currentSide, setCurrentSide] = React.useState<'front' | 'back'>('front');
   
+  // Same design on both sides toggle
+  const [sameDesignBothSides, setSameDesignBothSides] = React.useState(false);
+  
   const [dimensions, setDimensions] = React.useState({ 
     width: (shopifyVariant || layoutVariant) ? 1368 : (productLayout?.width || 1000), 
     height: (shopifyVariant || layoutVariant) ? 1368 : (productLayout?.height || 1000)
@@ -505,6 +508,49 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       }
     }
   }, [curvedTextElements, selectedId]);
+
+  // Sync front to back when enabling same design mode
+  React.useEffect(() => {
+    if (sameDesignBothSides) {
+      // Copy all front elements to back
+      setBackTextElements([...frontTextElements]);
+      setBackGradientTextElements([...frontGradientTextElements]);
+      setBackCurvedTextElements([...frontCurvedTextElements]);
+      setBackImageElements([...frontImageElements]);
+      setBackShapeElements([...frontShapeElements]);
+      setBackBackgroundColor(frontBackgroundColor);
+      
+      // Force current side to front
+      setCurrentSide('front');
+      
+      // Show notification
+      setNotification({
+        message: 'Front design copied to back side',
+        type: 'success'
+      });
+      setTimeout(() => setNotification(null), 3000);
+    }
+  }, [sameDesignBothSides]);
+
+  // Auto-sync front to back when same design mode is on
+  React.useEffect(() => {
+    if (sameDesignBothSides && currentSide === 'front') {
+      setBackTextElements([...frontTextElements]);
+      setBackGradientTextElements([...frontGradientTextElements]);
+      setBackCurvedTextElements([...frontCurvedTextElements]);
+      setBackImageElements([...frontImageElements]);
+      setBackShapeElements([...frontShapeElements]);
+      setBackBackgroundColor(frontBackgroundColor);
+    }
+  }, [
+    sameDesignBothSides,
+    frontTextElements,
+    frontGradientTextElements,
+    frontCurvedTextElements,
+    frontImageElements,
+    frontShapeElements,
+    frontBackgroundColor
+  ]);
 
   // Create unified array of all elements with their types and z-indexes
   const unifiedElements = React.useMemo(() => {
@@ -1251,7 +1297,23 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       }
     };
     
-    const backState = {
+    // For back state, use front elements if same design mode is on
+    const backState = sameDesignBothSides ? {
+      dimensions,
+      backgroundColor: frontBackgroundColor,
+      backgroundGradient: getBackgroundGradient(frontBackgroundColor),
+      designableArea,
+      elements: {
+        textElements: ensureZIndex(frontTextElements),
+        curvedTextElements: ensureZIndex(frontCurvedTextElements),
+        gradientTextElements: ensureZIndex(frontGradientTextElements),
+        imageElements: ensureZIndex(frontImageElements),
+        shapeElements: ensureZIndex(frontShapeElements)
+      },
+      assets: {
+        baseImage: backBaseImageUrl, // Keep separate base image
+      }
+    } : {
       dimensions,
       backgroundColor: backBackgroundColor,
       backgroundGradient: getBackgroundGradient(backBackgroundColor),
@@ -1272,6 +1334,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
     return {
       front: frontState,
       back: backState,
+      sameDesignBothSides, // Include toggle state in saved data
       // Include legacy format for backward compatibility (current side's state)
       dimensions,
       backgroundColor,
@@ -1292,6 +1355,11 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
 
   const loadCanvasState = async (state: any) => {
     if (!state) return;
+    
+    // Load toggle state if present
+    if (state.sameDesignBothSides !== undefined) {
+      setSameDesignBothSides(state.sameDesignBothSides);
+    }
     
     // Helper function to apply state to a specific side
     const applySideState = async (sideState: any, side: 'front' | 'back') => {
@@ -2625,7 +2693,8 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
               Front
             </button>
             <button
-              onClick={() => setCurrentSide('back')}
+              onClick={() => !sameDesignBothSides && setCurrentSide('back')}
+              disabled={sameDesignBothSides}
               style={{
                 padding: '8px 20px',
                 fontSize: '14px',
@@ -2633,23 +2702,44 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
                 color: currentSide === 'back' ? 'white' : '#333',
                 border: '1px solid #ccc',
                 borderRadius: '0 4px 4px 0',
-                cursor: 'pointer',
+                cursor: sameDesignBothSides ? 'not-allowed' : 'pointer',
+                opacity: sameDesignBothSides ? 0.5 : 1,
                 fontWeight: currentSide === 'back' ? 'bold' : 'normal',
                 transition: 'all 0.2s'
               }}
               onMouseEnter={(e) => {
-                if (currentSide !== 'back') {
+                if (currentSide !== 'back' && !sameDesignBothSides) {
                   e.currentTarget.style.backgroundColor = '#e0e0e0';
                 }
               }}
               onMouseLeave={(e) => {
-                if (currentSide !== 'back') {
+                if (currentSide !== 'back' && !sameDesignBothSides) {
                   e.currentTarget.style.backgroundColor = '#f0f0f0';
                 }
               }}
             >
               Back
             </button>
+            
+            {/* Same Design Toggle - Only show if template has dual sides */}
+            <div style={{ display: 'inline-flex', alignItems: 'center', marginLeft: '20px' }}>
+              <label style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '8px',
+                fontSize: '14px',
+                color: '#333',
+                cursor: 'pointer'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={sameDesignBothSides}
+                  onChange={(e) => setSameDesignBothSides(e.target.checked)}
+                  style={{ cursor: 'pointer' }}
+                />
+                Same artwork on both sides?
+              </label>
+            </div>
           </div>
         )}
         
