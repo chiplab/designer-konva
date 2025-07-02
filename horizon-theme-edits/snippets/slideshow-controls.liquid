@@ -15,6 +15,7 @@
   @param {string} [class] - Additional classes to apply to the controls
   @param {boolean} [secondary] - Whether the controls are secondary
   @param {string} [current_variant_title] - Current variant title to filter thumbnails by
+  @param {string} [index_mapping] - Comma-separated list of "original:filtered" index pairs
 
   @example
   {%- render 'slideshow-controls', style: 'dots', item_count: 10 -%}
@@ -106,6 +107,11 @@
             # Track the actual media index and shown thumbnail count
             assign actual_media_index = 0
             assign shown_thumbnail_count = 0
+            
+            # Parse the index mapping if provided
+            if index_mapping
+              assign mapping_pairs = index_mapping | split: ','
+            endif
           -%}
           {% for media in thumbnails %}
             {%- liquid
@@ -121,6 +127,19 @@
               
               # Store the current media's actual index before incrementing
               assign current_media_index = actual_media_index
+              
+              # Find the mapped slide index for this media
+              assign slide_index = current_media_index
+              if mapping_pairs and show_thumbnail
+                for pair in mapping_pairs
+                  assign parts = pair | split: ':'
+                  assign pair_original_index = parts[0] | times: 1
+                  if pair_original_index == current_media_index
+                    assign slide_index = parts[1]
+                    break
+                  endif
+                endfor
+              endif
             -%}
             
             {% if show_thumbnail %}
@@ -135,7 +154,7 @@
               <button
                 class="slideshow-control button button-unstyled slideshow-controls__thumbnail"
                 aria-label="{{ 'accessibility.slide_status' | t: index: shown_thumbnail_count, length: item_count }}"
-                on:click="/select/{{ current_media_index }}"
+                on:click="/select/{{ slide_index }}"
                 style="--aspect-ratio: {% if aspect_ratio == 'adapt' %}{{ media.preview_image.aspect_ratio | default: 1.0 }}{% else %}{{ aspect_ratio }}{% endif %};"
                 ref="thumbnails[]"
                 {% if is_first_shown %}

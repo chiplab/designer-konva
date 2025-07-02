@@ -143,6 +143,12 @@
 >
   {% capture slides %}
     {% assign shown_media_count = 0 %}
+    {%- liquid
+      # Create a mapping of original indices to filtered indices
+      # This will be a comma-separated string of "original:filtered" pairs
+      assign index_mapping = ''
+      assign filtered_slide_index = 0
+    -%}
     {% for media in sorted_media %}
       {%- liquid
         # Check if this media belongs to current variant
@@ -170,6 +176,15 @@
       
       {% if show_media %}
         {% assign shown_media_count = shown_media_count | plus: 1 %}
+        {%- liquid
+          # Add to index mapping: original_index:filtered_index
+          if index_mapping != ''
+            assign index_mapping = index_mapping | append: ','
+          endif
+          assign mapping_pair = forloop.index0 | append: ':' | append: filtered_slide_index
+          assign index_mapping = index_mapping | append: mapping_pair
+          assign filtered_slide_index = filtered_slide_index | plus: 1
+        -%}
         {% capture children %}
           {%- render 'product-media', media: media -%}
         {% endcapture %}
@@ -210,7 +225,8 @@
           controls_on_media: controls_on_media,
           pagination_position: pagination_position,
           aspect_ratio: block.settings.aspect_ratio,
-          current_variant_title: current_variant_title
+          current_variant_title: current_variant_title,
+          index_mapping: index_mapping
         -%}
       {% endif %}
 
@@ -218,10 +234,11 @@
         {%- render 'slideshow-controls',
           class: 'desktop:hidden media-gallery__mobile-controls',
           style: block.settings.slideshow_mobile_controls_style,
-          item_count: sorted_media.size,
+          item_count: shown_media_count,
           controls_on_media: true,
           pagination_position: 'center',
-          current_variant_title: current_variant_title
+          current_variant_title: current_variant_title,
+          index_mapping: index_mapping
         -%}
       {% endif %}
     {% endcapture %}
@@ -237,7 +254,7 @@
     ref: 'slideshow',
     class: slideshow_class,
     slides: slides,
-    slide_count: sorted_media.size,
+    slide_count: shown_media_count,
     slideshow_arrows: slideshow_arrows,
     arrows_position: icons_position,
     controls: controls
