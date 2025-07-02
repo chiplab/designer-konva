@@ -962,6 +962,35 @@ Modern Shopify themes like Horizon use DOM manipulation that can reset custom va
    - Sets up MutationObservers on these elements to detect DOM morphing
    - Implements temporary observers that auto-disconnect after 2 seconds
 
+### Slideshow Component State Management
+
+Horizon themes use web components with internal state that can become stale when DOM is morphed during variant changes. This affects slideshow controls and thumbnail clicking.
+
+#### The Problem
+
+1. **DOM Morphing**: When variants change, Horizon themes fetch new HTML and morph the existing DOM
+2. **Stale Component State**: Web components maintain internal state (like slide indices) that doesn't update with morphing
+3. **Broken Interactions**: Thumbnail clicks fail because the component's internal index mapping is out of sync
+
+#### The Solution: Key-Based Recreation
+
+Force web components to fully recreate by using unique `key` attributes that change with each variant:
+
+```liquid
+<!-- In slideshow-controls -->
+{% if current_variant_title %}
+  key="controls-{{ current_variant_title | handle }}"
+{% endif %}
+
+<!-- In main slideshow -->
+key: 'slideshow-' | append: current_variant.id
+```
+
+This ensures:
+- Components are destroyed and recreated instead of morphed
+- Internal state is properly initialized with filtered content
+- Index mappings remain synchronized with actual slides
+
 ### Implementation Flow
 
 1. **On Variant Change**:
@@ -990,6 +1019,7 @@ Modern Shopify themes like Horizon use DOM manipulation that can reset custom va
 - **Debouncing**: Prevents performance issues from rapid variant switching
 - **Base64 Detection**: Accurately identifies custom swatches vs theme defaults
 - **Temporary Observers**: Balance between protection and performance
+- **Key-Based Recreation**: Forces proper component initialization after DOM morphing
 
 ## Product Image Selection System
 
@@ -1157,6 +1187,46 @@ When variants change with active customizations:
    - Use cache busting for base64 updates
    - Trigger component refresh methods when available
    - Force reflow with display toggle as fallback
+
+## Theme-Specific Media Gallery Filtering
+
+### Server-Side Liquid Filtering for Horizon Themes
+
+To reduce the number of media items shown in product galleries and improve performance, implement server-side filtering using Liquid templates:
+
+#### Files to Modify
+
+1. **`blocks/_product-media.gallery.liquid`**:
+   - Add variant title tracking and filtering logic
+   - Filter slides, grid items, and zoom dialog thumbnails
+   - Pass `current_variant_title` to slideshow controls
+
+2. **`snippets/slideshow-controls.liquid`**:
+   - Accept `current_variant_title` parameter
+   - Filter thumbnails based on variant title
+   - Map original media indices to filtered positions for correct click handling
+   - Use `key` attribute to force component recreation on variant changes
+
+#### Index Mapping for Filtered Slideshows
+
+When filtering media, the slideshow component only receives the filtered slides, but thumbnails reference the original media positions. To fix this:
+
+1. **Create Index Mapping**: Track which original media positions map to filtered slide positions
+2. **Pass Correct Counts**: Use `shown_media_count` instead of total media count
+3. **Map Click Handlers**: Convert original media index to filtered slide index in thumbnails
+
+Example mapping: If media at positions 2 and 3 are shown after filtering, they become slides 0 and 1.
+
+#### Key Attributes for Component State
+
+Horizon themes use DOM morphing on variant changes, which can leave web components with stale state. Force recreation using unique keys:
+
+```liquid
+key="controls-{{ current_variant_title | handle }}"
+key: 'slideshow-' | append: current_variant.id
+```
+
+This ensures slideshow components properly reinitialize with the correct filtered content and index mappings.
 
 # important-instruction-reminders
 Do what has been asked; nothing more, nothing less.
