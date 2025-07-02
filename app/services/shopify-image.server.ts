@@ -712,3 +712,251 @@ export async function updateVariantImages(
   
   return updatedVariant ? updatedVariant.node : { id: variantId, media: { edges: [] } };
 }
+
+/**
+ * Cleans all variant images from a product
+ * This is useful before bulk syncing to avoid manual deletion
+ */
+export async function cleanAllVariantImages(
+  admin: any,
+  productId: string
+): Promise<{
+  success: boolean;
+  message: string;
+  variantsProcessed: number;
+  mediaRemoved: number;
+  errors: string[];
+}> {
+  const errors: string[] = [];
+  let variantsProcessed = 0;
+  let totalMediaRemoved = 0;
+
+  try {
+    console.log(`Starting nuclear clean for product ${productId}...`);
+    
+    // First, get ALL product media AND variant-specific media
+    const getProductMediaQuery = `#graphql
+      query GetProductAndVariantMedia($productId: ID!) {
+        product(id: $productId) {
+          id
+          title
+          # Get ALL media at the product level
+          media(first: 250) {
+            edges {
+              node {
+                ... on MediaImage {
+                  id
+                  image {
+                    url
+                  }
+                }
+              }
+            }
+          }
+          # Also get variant-specific media for detachment
+          variants(first: 250) {
+            edges {
+              node {
+                id
+                displayName
+                media(first: 10) {
+                  edges {
+                    node {
+                      ... on MediaImage {
+                        id
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+    
+    const productResponse = await admin.graphql(getProductMediaQuery, {
+      variables: { productId }
+    });
+    
+    const { data: productData } = await productResponse.json();
+    
+    if (!productData?.product) {
+      throw new Error("Product not found");
+    }
+    
+    const productTitle = productData.product.title;
+    const variants = productData.product.variants.edges || [];
+    const allProductMedia = productData.product.media.edges || [];
+    
+    console.log(`Found ${variants.length} variants for product "${productTitle}"`);
+    console.log(`Found ${allProductMedia.length} total media items in product`);
+    
+    // Collect ALL media IDs from the product
+    const allMediaIds = new Set<string>();
+    allProductMedia.forEach((edge: any) => {
+      if (edge.node?.id) {
+        allMediaIds.add(edge.node.id);
+      }
+    });
+    
+    // Collect variant-media associations for detachment
+    const allMediaToDetach: Array<{ variantId: string; mediaIds: string[] }> = [];
+    
+    for (const edge of variants) {
+      const variant = edge.node;
+      const mediaEdges = variant.media.edges || [];
+      
+      if (mediaEdges.length > 0) {
+        const mediaIds = mediaEdges.map((mediaEdge: any) => mediaEdge.node.id);
+        allMediaToDetach.push({
+          variantId: variant.id,
+          mediaIds: mediaIds
+        });
+        
+        console.log(`Variant "${variant.displayName}": found ${mediaIds.length} media items attached`);
+      }
+    }
+    
+    if (allMediaIds.size === 0) {
+      return {
+        success: true,
+        message: "No media found in product. Product is already clean.",
+        variantsProcessed: variants.length,
+        mediaRemoved: 0,
+        errors: []
+      };
+    }
+    
+    console.log(`Total media items to remove: ${allMediaIds.size} (${allMediaToDetach.length} variants have attached media)`);
+    
+    // Step 1: Detach all media from variants if needed
+    if (allMediaToDetach.length > 0) {
+      const BATCH_SIZE = 10;
+      console.log(`Detaching media from ${allMediaToDetach.length} variants in batches of ${BATCH_SIZE}...`);
+      
+      for (let i = 0; i < allMediaToDetach.length; i += BATCH_SIZE) {
+        const batch = allMediaToDetach.slice(i, i + BATCH_SIZE);
+        
+        try {
+          const detachMediaMutation = `#graphql
+            mutation productVariantDetachMedia($productId: ID!, $variantMedia: [ProductVariantDetachMediaInput!]!) {
+              productVariantDetachMedia(productId: $productId, variantMedia: $variantMedia) {
+                product {
+                  id
+                }
+                userErrors {
+                  field
+                  message
+                }
+              }
+            }
+          `;
+          
+          const detachResponse = await admin.graphql(detachMediaMutation, {
+            variables: {
+              productId: productId,
+              variantMedia: batch
+            }
+          });
+          
+          const { data: detachData } = await detachResponse.json();
+          
+          if (detachData?.productVariantDetachMedia?.userErrors?.length > 0) {
+            const detachErrors = detachData.productVariantDetachMedia.userErrors;
+            console.warn(`Batch ${Math.floor(i/BATCH_SIZE) + 1}: Some detach errors:`, detachErrors);
+            errors.push(...detachErrors.map((e: any) => `Detach error: ${e.message}`));
+          } else {
+            console.log(`Batch ${Math.floor(i/BATCH_SIZE) + 1}: Successfully detached media from ${batch.length} variants`);
+            variantsProcessed += batch.length;
+          }
+          
+          // Small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 250));
+        } catch (error) {
+          const errorMsg = `Failed to detach media batch ${Math.floor(i/BATCH_SIZE) + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          console.error(errorMsg);
+          errors.push(errorMsg);
+        }
+      }
+    } else {
+      console.log("No variant-attached media to detach. Proceeding to delete all product media...");
+    }
+    
+    // Step 2: Delete ALL media from the product
+    console.log(`Deleting ${allMediaIds.size} media items from product...`);
+    const mediaIdArray = Array.from(allMediaIds);
+    
+    // Delete media in smaller batches to avoid API limits
+    const DELETE_BATCH_SIZE = 20;
+    for (let i = 0; i < mediaIdArray.length; i += DELETE_BATCH_SIZE) {
+      const deleteBatch = mediaIdArray.slice(i, i + DELETE_BATCH_SIZE);
+      
+      try {
+        const deleteMediaMutation = `#graphql
+          mutation productDeleteMedia($productId: ID!, $mediaIds: [ID!]!) {
+            productDeleteMedia(productId: $productId, mediaIds: $mediaIds) {
+              deletedMediaIds
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `;
+        
+        const deleteResponse = await admin.graphql(deleteMediaMutation, {
+          variables: {
+            productId: productId,
+            mediaIds: deleteBatch
+          }
+        });
+        
+        const { data: deleteData } = await deleteResponse.json();
+        
+        if (deleteData?.productDeleteMedia?.userErrors?.length > 0) {
+          const deleteErrors = deleteData.productDeleteMedia.userErrors;
+          console.warn(`Delete batch ${Math.floor(i/DELETE_BATCH_SIZE) + 1}: Some errors:`, deleteErrors);
+          errors.push(...deleteErrors.map((e: any) => `Delete error: ${e.message}`));
+        } else if (deleteData?.productDeleteMedia?.deletedMediaIds) {
+          const deletedCount = deleteData.productDeleteMedia.deletedMediaIds.length;
+          totalMediaRemoved += deletedCount;
+          console.log(`Delete batch ${Math.floor(i/DELETE_BATCH_SIZE) + 1}: Deleted ${deletedCount} media items`);
+        }
+        
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 250));
+      } catch (error) {
+        const errorMsg = `Failed to delete media batch ${Math.floor(i/DELETE_BATCH_SIZE) + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        console.error(errorMsg);
+        errors.push(errorMsg);
+        // Continue with next batch even if this one fails
+      }
+    }
+    
+    // Final summary
+    const successMessage = totalMediaRemoved > 0
+      ? `Successfully removed ALL ${totalMediaRemoved} media items from "${productTitle}" (including ${variantsProcessed} variant attachments). Product media gallery is now completely empty and ready for fresh sync.`
+      : allMediaIds.size > 0
+      ? `Attempted to remove ${allMediaIds.size} media items from "${productTitle}", but some deletions failed. Check the product media gallery.`
+      : `No media was found in "${productTitle}". Product was already clean.`;
+    
+    return {
+      success: true,
+      message: successMessage,
+      variantsProcessed,
+      mediaRemoved: totalMediaRemoved,
+      errors
+    };
+    
+  } catch (error) {
+    console.error("Error in cleanAllVariantImages:", error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "Failed to clean variant images",
+      variantsProcessed,
+      mediaRemoved: totalMediaRemoved,
+      errors: [...errors, error instanceof Error ? error.message : "Unknown error"]
+    };
+  }
+}
