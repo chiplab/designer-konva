@@ -257,7 +257,8 @@
     slide_count: shown_media_count,
     slideshow_arrows: slideshow_arrows,
     arrows_position: icons_position,
-    controls: controls
+    controls: controls,
+    key: 'slideshow-' | append: current_variant.id
   %}
 
   {% if block.settings.media_presentation == 'grid' %}

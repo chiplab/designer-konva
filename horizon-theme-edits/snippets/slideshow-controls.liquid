@@ -52,6 +52,12 @@
   {% unless secondary %}
     ref="slideshowControls"
   {% endunless %}
+  {% if current_variant_title %}
+    key="controls-{{ current_variant_title | handle }}"
+  {% endif %}
+  {% if index_mapping %}
+    data-index-mapping="{{ index_mapping }}"
+  {% endif %}
   pagination-position="{{ pagination_position }}"
   scroll-mode="{{ scroll_mode }}"
   {% if controls_on_media %}
