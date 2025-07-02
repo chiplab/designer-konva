@@ -536,6 +536,33 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   }
 
+  if (action === "cleanAllVariantImages") {
+    const productId = formData.get("productId") as string;
+    
+    try {
+      // Import the clean function
+      const { cleanAllVariantImages } = await import("../services/shopify-image.server");
+      
+      console.log(`Cleaning all variant images for product ${productId}...`);
+      const result = await cleanAllVariantImages(admin, productId);
+      
+      return json({ 
+        success: true, 
+        message: result.message,
+        variantsProcessed: result.variantsProcessed,
+        mediaRemoved: result.mediaRemoved,
+        errors: result.errors
+      });
+      
+    } catch (error) {
+      console.error("Error cleaning variant images:", error);
+      return json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Failed to clean variant images" 
+      }, { status: 500 });
+    }
+  }
+
   if (action === "deleteTemplate") {
     const templateId = formData.get("templateId") as string;
     
@@ -1513,22 +1540,43 @@ export default function Templates() {
                               {group.templates.length} templates
                             </Text>
                           </div>
-                          <Button
-                            size="slim"
-                            onClick={async () => {
-                              const formData = new FormData();
-                              formData.append("_action", "syncProductThumbnails");
-                              formData.append("productId", group.productId);
-                              submit(formData, { method: "post" });
-                              
-                              // @ts-ignore - shopify is globally available in embedded apps
-                              if (typeof shopify !== 'undefined' && shopify.toast) {
-                                shopify.toast.show(`Syncing thumbnails for ${group.productName}...`);
-                              }
-                            }}
-                          >
-                            Sync this product
-                          </Button>
+                          <ButtonGroup>
+                            <Button
+                              size="slim"
+                              tone="critical"
+                              onClick={async () => {
+                                if (confirm(`This will remove ALL variant images from "${group.productName}" (${group.templates.length} templates). This helps avoid manual deletion before syncing. Continue?`)) {
+                                  const formData = new FormData();
+                                  formData.append("_action", "cleanAllVariantImages");
+                                  formData.append("productId", group.productId);
+                                  submit(formData, { method: "post" });
+                                  
+                                  // @ts-ignore - shopify is globally available in embedded apps
+                                  if (typeof shopify !== 'undefined' && shopify.toast) {
+                                    shopify.toast.show(`Cleaning variant images for ${group.productName}...`);
+                                  }
+                                }
+                              }}
+                            >
+                              Clean variant images
+                            </Button>
+                            <Button
+                              size="slim"
+                              onClick={async () => {
+                                const formData = new FormData();
+                                formData.append("_action", "syncProductThumbnails");
+                                formData.append("productId", group.productId);
+                                submit(formData, { method: "post" });
+                                
+                                // @ts-ignore - shopify is globally available in embedded apps
+                                if (typeof shopify !== 'undefined' && shopify.toast) {
+                                  shopify.toast.show(`Syncing thumbnails for ${group.productName}...`);
+                                }
+                              }}
+                            >
+                              Sync this product
+                            </Button>
+                          </ButtonGroup>
                         </div>
                       ))}
                     </>
