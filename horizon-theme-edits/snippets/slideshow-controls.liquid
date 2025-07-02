@@ -15,6 +15,7 @@
   @param {string} [class] - Additional classes to apply to the controls
   @param {boolean} [secondary] - Whether the controls are secondary
   @param {string} [current_variant_title] - Current variant title to filter thumbnails by
+  @param {string} [index_mapping] - Comma-separated list of "original:filtered" index pairs
 
   @example
   {%- render 'slideshow-controls', style: 'dots', item_count: 10 -%}
@@ -51,6 +52,9 @@
   {% unless secondary %}
     ref="slideshowControls"
   {% endunless %}
+  {% if current_variant_title %}
+    key="controls-{{ current_variant_title | handle }}"
+  {% endif %}
   pagination-position="{{ pagination_position }}"
   scroll-mode="{{ scroll_mode }}"
   {% if controls_on_media %}
@@ -102,6 +106,16 @@
         class="slideshow-controls__thumbnails-container"
       >
         <div class="slideshow-controls__thumbnails">
+          {%- liquid
+            # Track the actual media index and shown thumbnail count
+            assign actual_media_index = 0
+            assign shown_thumbnail_count = 0
+            
+            # Parse the index mapping if provided
+            if index_mapping
+              assign mapping_pairs = index_mapping | split: ','
+            endif
+          -%}
           {% for media in thumbnails %}
             {%- liquid
               # Filter thumbnails based on current variant if provided
@@ -113,16 +127,40 @@
                   assign show_thumbnail = false
                 endunless
               endif
+              
+              # Store the current media's actual index before incrementing
+              assign current_media_index = actual_media_index
+              
+              # Find the mapped slide index for this media
+              assign slide_index = current_media_index
+              if mapping_pairs and show_thumbnail
+                for pair in mapping_pairs
+                  assign parts = pair | split: ':'
+                  assign pair_original_index = parts[0] | times: 1
+                  if pair_original_index == current_media_index
+                    assign slide_index = parts[1]
+                    break
+                  endif
+                endfor
+              endif
             -%}
             
             {% if show_thumbnail %}
+              {%- liquid
+                # Increment shown count and determine if this is the first shown thumbnail
+                assign shown_thumbnail_count = shown_thumbnail_count | plus: 1
+                assign is_first_shown = false
+                if shown_thumbnail_count == 1
+                  assign is_first_shown = true
+                endif
+              -%}
               <button
                 class="slideshow-control button button-unstyled slideshow-controls__thumbnail"
-                aria-label="{{ 'accessibility.slide_status' | t: index: forloop.index, length: forloop.length }}"
-                on:click="/select/{{ forloop.index0 }}"
+                aria-label="{{ 'accessibility.slide_status' | t: index: shown_thumbnail_count, length: item_count }}"
+                on:click="/select/{{ slide_index }}"
                 style="--aspect-ratio: {% if aspect_ratio == 'adapt' %}{{ media.preview_image.aspect_ratio | default: 1.0 }}{% else %}{{ aspect_ratio }}{% endif %};"
                 ref="thumbnails[]"
-                {% if forloop.first %}
+                {% if is_first_shown %}
                   aria-selected="true"
                 {% endif %}
               >
@@ -157,6 +195,10 @@
               {% endif %}
             </button>
             {% endif %}
+            {%- liquid
+              # Always increment the actual media index, regardless of whether thumbnail was shown
+              assign actual_media_index = actual_media_index | plus: 1
+            -%}
           {% endfor %}
         </div>
       </scroll-hint>

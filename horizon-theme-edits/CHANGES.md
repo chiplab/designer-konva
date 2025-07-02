@@ -57,11 +57,18 @@ Added `current_variant_title` parameter when rendering slideshow-controls snippe
 ### 1. Added current_variant_title Parameter
 Added documentation for the new parameter that receives the current variant title for filtering.
 
-### 2. Thumbnail Filtering Logic (Lines 106-118)
-Added filtering logic in the thumbnails loop to:
-- Check if current_variant_title is provided
-- Compare media alt text with variant title (case-insensitive)
-- Only render thumbnails that match the current variant
+### 2. Thumbnail Filtering Logic with Index Fix (Lines 105-179)
+Fixed the thumbnail click handler issue by:
+- Tracking the actual media array index separately from the filtered loop index
+- Using `actual_media_index` to track position in the original media array
+- Using `shown_thumbnail_count` for display purposes (aria-labels)
+- Storing `current_media_index` before incrementing for use in click handlers
+- Always incrementing `actual_media_index` regardless of filter result
+
+**Key Changes:**
+- Line 138: Click handler now uses `current_media_index` instead of `forloop.index0`
+- Line 141: First thumbnail selection uses `is_first_shown` instead of `forloop.first`
+- Lines 176-179: Always increment the actual media index to maintain proper mapping
 
 ## How It Works
 - The filtering uses case-insensitive matching (converts both alt text and variant title to lowercase)
@@ -69,8 +76,7 @@ Added filtering logic in the thumbnails loop to:
 - Identifies back images by checking if alt text ends with "- back"
 - Shows both front and back images for the current variant only
 - Filters the main slideshow slides on initial page load
-- Relies on JavaScript's `filterSlideshowToActiveVariant()` method for thumbnail filtering
-- This approach ensures compatibility with dynamic slideshow components
+- **Thumbnail clicks now correctly map to the actual media position in the slideshow**
 
 ## To Apply These Changes
 1. Go to Shopify Admin > Online Store > Themes > Edit code
@@ -84,3 +90,4 @@ Added filtering logic in the thumbnails loop to:
 - No flash of all 49 images before JavaScript filtering
 - Works seamlessly with the JavaScript filtering for dynamic variant changes
 - Clean, server-side solution that reduces visual clutter
+- **Thumbnails now correctly select the corresponding slide when clicked**
