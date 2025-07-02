@@ -520,7 +520,19 @@ if (typeof CanvasTextRenderer === 'undefined') {
 
         // Calculate text path
         const fontSize = el.fontSize || 20;
-        const textLength = text.length * fontSize * 0.6;
+        
+        // Measure actual text width using a temporary Konva Text node
+        const tempText = new Konva.Text({
+          text: text,
+          fontSize: fontSize,
+          fontFamily: el.fontFamily || 'Arial',
+          fontStyle: el.fontWeight === 'bold' ? 'bold' : 'normal'
+        });
+        const measuredWidth = tempText.width();
+        tempText.destroy(); // Clean up temporary node
+        
+        // Use measured width with padding for better spacing
+        const textLength = measuredWidth * 1.1; // Add 10% padding
         const angleSpan = Math.min(textLength / el.radius, Math.PI * 1.5);
         
         let startAngle, endAngle, sweepFlag;

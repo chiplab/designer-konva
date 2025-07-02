@@ -268,7 +268,7 @@ export async function generateTemplateThumbnail(
     state.elements.shapeElements?.forEach((element: any) => {
       allElements.push({ 
         ...element, 
-        type: 'shape',
+        elementType: 'shape', // Use elementType to preserve original type
         zIndex: element.zIndex !== undefined ? element.zIndex : defaultZIndex++
       });
     });
@@ -323,7 +323,19 @@ export async function generateTemplateThumbnail(
         
         // Calculate text length and angle span
         const fontSize = element.fontSize || 20;
-        const textLength = element.text.length * fontSize * 0.6;
+        
+        // Measure actual text width using a temporary Konva Text node
+        const tempText = new Konva.Text({
+          text: element.text,
+          fontSize: fontSize,
+          fontFamily: element.fontFamily || 'Arial',
+          fontStyle: element.fontWeight === 'bold' ? 'bold' : 'normal'
+        });
+        const measuredWidth = tempText.width();
+        tempText.destroy(); // Clean up temporary node
+        
+        // Use measured width with padding for better spacing
+        const textLength = measuredWidth * 1.1; // Add 10% padding
         const circumference = 2 * Math.PI * element.radius;
         const angleSpan = Math.min((textLength / circumference) * 2 * Math.PI, 1.5 * Math.PI);
         
@@ -409,7 +421,7 @@ export async function generateTemplateThumbnail(
             console.error('Failed to create Konva.Image for user image:', error);
           }
         }
-      } else if (element.type === 'shape') {
+      } else if (element.elementType === 'shape') {
         console.log('Rendering shape element:', element.type, 'zIndex:', element.zIndex || 0);
         
         const commonProps = {
