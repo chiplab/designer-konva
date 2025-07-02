@@ -102,6 +102,11 @@
         class="slideshow-controls__thumbnails-container"
       >
         <div class="slideshow-controls__thumbnails">
+          {%- liquid
+            # Track the actual media index and shown thumbnail count
+            assign actual_media_index = 0
+            assign shown_thumbnail_count = 0
+          -%}
           {% for media in thumbnails %}
             {%- liquid
               # Filter thumbnails based on current variant if provided
@@ -113,16 +118,27 @@
                   assign show_thumbnail = false
                 endunless
               endif
+              
+              # Store the current media's actual index before incrementing
+              assign current_media_index = actual_media_index
             -%}
             
             {% if show_thumbnail %}
+              {%- liquid
+                # Increment shown count and determine if this is the first shown thumbnail
+                assign shown_thumbnail_count = shown_thumbnail_count | plus: 1
+                assign is_first_shown = false
+                if shown_thumbnail_count == 1
+                  assign is_first_shown = true
+                endif
+              -%}
               <button
                 class="slideshow-control button button-unstyled slideshow-controls__thumbnail"
-                aria-label="{{ 'accessibility.slide_status' | t: index: forloop.index, length: forloop.length }}"
-                on:click="/select/{{ forloop.index0 }}"
+                aria-label="{{ 'accessibility.slide_status' | t: index: shown_thumbnail_count, length: item_count }}"
+                on:click="/select/{{ current_media_index }}"
                 style="--aspect-ratio: {% if aspect_ratio == 'adapt' %}{{ media.preview_image.aspect_ratio | default: 1.0 }}{% else %}{{ aspect_ratio }}{% endif %};"
                 ref="thumbnails[]"
-                {% if forloop.first %}
+                {% if is_first_shown %}
                   aria-selected="true"
                 {% endif %}
               >
@@ -157,6 +173,10 @@
               {% endif %}
             </button>
             {% endif %}
+            {%- liquid
+              # Always increment the actual media index, regardless of whether thumbnail was shown
+              assign actual_media_index = actual_media_index | plus: 1
+            -%}
           {% endfor %}
         </div>
       </scroll-hint>

@@ -1169,7 +1169,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.updatePreview();
     
     // Filter slideshow to show only active variant
-    this.filterSlideshowToActiveVariant();
+    // REMOVED: Server-side filtering now handles this
+    // this.filterSlideshowToActiveVariant();
   }
   
   applyGlobalTextState() {
@@ -1625,7 +1626,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
     }
     
     // Filter slideshow to show only active variant
-    this.filterSlideshowToActiveVariant();
+    // REMOVED: Server-side filtering now handles this
+    // this.filterSlideshowToActiveVariant();
   }
   
   findThumbnailByAltText(variantTitle, isBack = false) {
@@ -1836,54 +1838,55 @@ if (typeof ProductCustomizerModal === 'undefined') {
     console.log('[ProductCustomizer] Thumbnail image updated');
   }
   
-  filterSlideshowToActiveVariant() {
-    console.log('[ProductCustomizer] Filtering slideshow to active variant only');
-    
-    const variantTitle = this.getVariantTitle();
-    if (!variantTitle) {
-      console.warn('[ProductCustomizer] Could not determine variant title for filtering');
-      return;
-    }
-    
-    console.log('[ProductCustomizer] Filtering for variant:', variantTitle);
-    
-    // Hide all slideshow slides first
-    const allSlides = document.querySelectorAll('slideshow-slide');
-    let visibleCount = 0;
-    
-    allSlides.forEach(slide => {
-      const img = slide.querySelector('img');
-      if (img && img.alt) {
-        // Show only if it matches current variant (front or back)
-        const isCurrentVariant = img.alt.includes(variantTitle);
-        slide.style.display = isCurrentVariant ? '' : 'none';
-        if (isCurrentVariant) {
-          visibleCount++;
-          console.log('[ProductCustomizer] Showing slide:', img.alt);
-        }
-      } else {
-        // Hide slides without proper alt text
-        slide.style.display = 'none';
-      }
-    });
-    
-    // Also hide thumbnail control buttons
-    const allThumbnailButtons = document.querySelectorAll('slideshow-controls button');
-    allThumbnailButtons.forEach(btn => {
-      const img = btn.querySelector('img');
-      if (img && img.alt) {
-        const isCurrentVariant = img.alt.includes(variantTitle);
-        btn.style.display = isCurrentVariant ? '' : 'none';
-      } else {
-        btn.style.display = 'none';
-      }
-    });
-    
-    console.log(`[ProductCustomizer] Filtered slideshow: showing ${visibleCount} of ${allSlides.length} slides`);
-    
-    // Store that we've filtered the slideshow
-    this.hasFilteredSlideshow = true;
-  }
+  // REMOVED: Server-side filtering now handles this
+  // filterSlideshowToActiveVariant() {
+  //   console.log('[ProductCustomizer] Filtering slideshow to active variant only');
+  //   
+  //   const variantTitle = this.getVariantTitle();
+  //   if (!variantTitle) {
+  //     console.warn('[ProductCustomizer] Could not determine variant title for filtering');
+  //     return;
+  //   }
+  //   
+  //   console.log('[ProductCustomizer] Filtering for variant:', variantTitle);
+  //   
+  //   // Hide all slideshow slides first
+  //   const allSlides = document.querySelectorAll('slideshow-slide');
+  //   let visibleCount = 0;
+  //   
+  //   allSlides.forEach(slide => {
+  //     const img = slide.querySelector('img');
+  //     if (img && img.alt) {
+  //       // Show only if it matches current variant (front or back)
+  //       const isCurrentVariant = img.alt.includes(variantTitle);
+  //       slide.style.display = isCurrentVariant ? '' : 'none';
+  //       if (isCurrentVariant) {
+  //         visibleCount++;
+  //         console.log('[ProductCustomizer] Showing slide:', img.alt);
+  //       }
+  //     } else {
+  //       // Hide slides without proper alt text
+  //       slide.style.display = 'none';
+  //     }
+  //   });
+  //   
+  //   // Also hide thumbnail control buttons
+  //   const allThumbnailButtons = document.querySelectorAll('slideshow-controls button');
+  //   allThumbnailButtons.forEach(btn => {
+  //     const img = btn.querySelector('img');
+  //     if (img && img.alt) {
+  //       const isCurrentVariant = img.alt.includes(variantTitle);
+  //       btn.style.display = isCurrentVariant ? '' : 'none';
+  //     } else {
+  //       btn.style.display = 'none';
+  //     }
+  //   });
+  //   
+  //   console.log(`[ProductCustomizer] Filtered slideshow: showing ${visibleCount} of ${allSlides.length} slides`);
+  //   
+  //   // Store that we've filtered the slideshow
+  //   this.hasFilteredSlideshow = true;
+  // }
   
   
   updateVariantSwatches() {
@@ -2529,22 +2532,23 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.frontPreviewUrl = null;
     this.backPreviewUrl = null;
     
-    // Restore all slideshow images if we filtered them
-    if (this.hasFilteredSlideshow) {
-      console.log('[ProductCustomizer] Restoring all slideshow slides');
-      
-      // Show all slideshow slides
-      document.querySelectorAll('slideshow-slide').forEach(slide => {
-        slide.style.display = '';
-      });
-      
-      // Show all thumbnail control buttons
-      document.querySelectorAll('slideshow-controls button').forEach(btn => {
-        btn.style.display = '';
-      });
-      
-      this.hasFilteredSlideshow = false;
-    }
+    // REMOVED: Server-side filtering now handles this
+    // // Restore all slideshow images if we filtered them
+    // if (this.hasFilteredSlideshow) {
+    //   console.log('[ProductCustomizer] Restoring all slideshow slides');
+    //   
+    //   // Show all slideshow slides
+    //   document.querySelectorAll('slideshow-slide').forEach(slide => {
+    //     slide.style.display = '';
+    //   });
+    //   
+    //   // Show all thumbnail control buttons
+    //   document.querySelectorAll('slideshow-controls button').forEach(btn => {
+    //     btn.style.display = '';
+    //   });
+    //   
+    //   this.hasFilteredSlideshow = false;
+    // }
   }
 
   async openAdvancedEditor() {
@@ -2914,7 +2918,8 @@ if (typeof ProductCustomizerModal === 'undefined') {
     this.updatePreview();
     
     // Filter slideshow to show only active variant
-    this.filterSlideshowToActiveVariant();
+    // REMOVED: Server-side filtering now handles this
+    // this.filterSlideshowToActiveVariant();
   }
   
   async updateProductImageForVariant(variantId) {
