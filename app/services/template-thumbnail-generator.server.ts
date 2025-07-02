@@ -268,7 +268,7 @@ export async function generateTemplateThumbnail(
     state.elements.shapeElements?.forEach((element: any) => {
       allElements.push({ 
         ...element, 
-        type: 'shape',
+        elementType: 'shape', // Use elementType to preserve original type
         zIndex: element.zIndex !== undefined ? element.zIndex : defaultZIndex++
       });
     });
@@ -421,7 +421,7 @@ export async function generateTemplateThumbnail(
             console.error('Failed to create Konva.Image for user image:', error);
           }
         }
-      } else if (element.type === 'shape') {
+      } else if (element.elementType === 'shape') {
         console.log('Rendering shape element:', element.type, 'zIndex:', element.zIndex || 0);
         
         const commonProps = {
