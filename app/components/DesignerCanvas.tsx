@@ -162,6 +162,47 @@ interface DesignerCanvasProps {
 }
 
 const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, productLayout, shopifyProduct, shopifyVariant, layoutVariant, initialState, onSave, isAdminView = true, templateColors = [], initialColorVariant }) => {
+  // Helper function to generate unique IDs
+  const generateUniqueId = (type: string) => {
+    return `${type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  };
+
+  // Deep copy functions for each element type
+  const deepCopyTextElements = (elements: Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>) => {
+    return elements.map(el => ({
+      ...el,
+      id: generateUniqueId('text')
+    }));
+  };
+
+  const deepCopyCurvedTextElements = (elements: Array<{id: string, text: string, x: number, topY: number, radius: number, flipped: boolean, fontFamily: string, fontSize?: number, fontWeight?: string, fill?: string, stroke?: string, strokeWidth?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>) => {
+    return elements.map(el => ({
+      ...el,
+      id: generateUniqueId('curved-text')
+    }));
+  };
+
+  const deepCopyGradientTextElements = (elements: Array<{id: string, text: string, x: number, y: number, fontFamily: string, fontSize?: number, rotation?: number, scaleX?: number, scaleY?: number, zIndex?: number}>) => {
+    return elements.map(el => ({
+      ...el,
+      id: generateUniqueId('gradient-text')
+    }));
+  };
+
+  const deepCopyImageElements = (elements: Array<{id: string, url: string, x: number, y: number, width: number, height: number, rotation?: number, zIndex?: number}>) => {
+    return elements.map(el => ({
+      ...el,
+      id: generateUniqueId('image')
+    }));
+  };
+
+  const deepCopyShapeElements = (elements: Array<ShapeElement>) => {
+    return elements.map(el => ({
+      ...el,
+      id: generateUniqueId('shape')
+    }));
+  };
+
   const shapeRef = React.useRef(null);
   const stageRef = React.useRef<any>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -512,12 +553,12 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   // Sync front to back when enabling same design mode
   React.useEffect(() => {
     if (sameDesignBothSides) {
-      // Copy all front elements to back
-      setBackTextElements([...frontTextElements]);
-      setBackGradientTextElements([...frontGradientTextElements]);
-      setBackCurvedTextElements([...frontCurvedTextElements]);
-      setBackImageElements([...frontImageElements]);
-      setBackShapeElements([...frontShapeElements]);
+      // Copy all front elements to back with new unique IDs
+      setBackTextElements(deepCopyTextElements(frontTextElements));
+      setBackGradientTextElements(deepCopyGradientTextElements(frontGradientTextElements));
+      setBackCurvedTextElements(deepCopyCurvedTextElements(frontCurvedTextElements));
+      setBackImageElements(deepCopyImageElements(frontImageElements));
+      setBackShapeElements(deepCopyShapeElements(frontShapeElements));
       setBackBackgroundColor(frontBackgroundColor);
       
       // Force current side to front
@@ -535,11 +576,11 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   // Auto-sync front to back when same design mode is on
   React.useEffect(() => {
     if (sameDesignBothSides && currentSide === 'front') {
-      setBackTextElements([...frontTextElements]);
-      setBackGradientTextElements([...frontGradientTextElements]);
-      setBackCurvedTextElements([...frontCurvedTextElements]);
-      setBackImageElements([...frontImageElements]);
-      setBackShapeElements([...frontShapeElements]);
+      setBackTextElements(deepCopyTextElements(frontTextElements));
+      setBackGradientTextElements(deepCopyGradientTextElements(frontGradientTextElements));
+      setBackCurvedTextElements(deepCopyCurvedTextElements(frontCurvedTextElements));
+      setBackImageElements(deepCopyImageElements(frontImageElements));
+      setBackShapeElements(deepCopyShapeElements(frontShapeElements));
       setBackBackgroundColor(frontBackgroundColor);
     }
   }, [
@@ -1389,11 +1430,20 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
           (window as any).__tempBackgroundGradient = sideState.backgroundGradient;
         }
         if (sideState.elements) {
-          if (sideState.elements.textElements) setBackTextElements(sideState.elements.textElements);
-          if (sideState.elements.curvedTextElements) setBackCurvedTextElements(sideState.elements.curvedTextElements);
-          if (sideState.elements.gradientTextElements) setBackGradientTextElements(sideState.elements.gradientTextElements);
-          if (sideState.elements.imageElements) setBackImageElements(sideState.elements.imageElements);
-          if (sideState.elements.shapeElements) setBackShapeElements(sideState.elements.shapeElements);
+          // If sameDesignBothSides is true, create unique IDs for back elements
+          if (state.sameDesignBothSides) {
+            if (sideState.elements.textElements) setBackTextElements(deepCopyTextElements(sideState.elements.textElements));
+            if (sideState.elements.curvedTextElements) setBackCurvedTextElements(deepCopyCurvedTextElements(sideState.elements.curvedTextElements));
+            if (sideState.elements.gradientTextElements) setBackGradientTextElements(deepCopyGradientTextElements(sideState.elements.gradientTextElements));
+            if (sideState.elements.imageElements) setBackImageElements(deepCopyImageElements(sideState.elements.imageElements));
+            if (sideState.elements.shapeElements) setBackShapeElements(deepCopyShapeElements(sideState.elements.shapeElements));
+          } else {
+            if (sideState.elements.textElements) setBackTextElements(sideState.elements.textElements);
+            if (sideState.elements.curvedTextElements) setBackCurvedTextElements(sideState.elements.curvedTextElements);
+            if (sideState.elements.gradientTextElements) setBackGradientTextElements(sideState.elements.gradientTextElements);
+            if (sideState.elements.imageElements) setBackImageElements(sideState.elements.imageElements);
+            if (sideState.elements.shapeElements) setBackShapeElements(sideState.elements.shapeElements);
+          }
         }
         if (sideState.assets?.baseImage) setBackBaseImageUrl(sideState.assets.baseImage);
       }
