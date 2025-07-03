@@ -162,3 +162,23 @@ model CustomerDesign {
   @@index([status])
   @@index([expiresAt])
 }
+
+model UserAsset {
+  id          String   @id @default(cuid())
+  shop        String
+  customerId  String?  // Shopify customer ID when logged in
+  sessionId   String?  // Browser session for anonymous users
+  url         String   // S3 URL
+  filename    String
+  filesize    Int
+  width       Int?
+  height      Int?
+  mimetype    String
+  tags        String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([shop, customerId])
+  @@index([shop, sessionId])
+  @@index([createdAt])
+}
