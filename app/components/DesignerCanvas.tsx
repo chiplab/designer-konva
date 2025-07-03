@@ -160,9 +160,13 @@ interface DesignerCanvasProps {
     color5?: string | null;
   }>;
   initialColorVariant?: string | null;
+  customerId?: string | null;
 }
 
-const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, productLayout, shopifyProduct, shopifyVariant, layoutVariant, initialState, onSave, isAdminView = true, templateColors = [], initialColorVariant }) => {
+const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, productLayout, shopifyProduct, shopifyVariant, layoutVariant, initialState, onSave, isAdminView = true, templateColors = [], initialColorVariant, customerId }) => {
+  // Debug logging
+  console.log('[DesignerCanvas] Received customerId prop:', customerId);
+  
   // Helper function to generate unique IDs
   const generateUniqueId = (type: string) => {
     return `${type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -5578,7 +5582,7 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
         onSelectImage={handleImageSelection}
         shop={window.__SHOP_DOMAIN__ || 'unknown'}
         sessionId={sessionId}
-        customerId={undefined} // TODO: Get from customer authentication when implemented
+        customerId={customerId}
       />
     </div>
   );

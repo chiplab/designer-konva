@@ -30,10 +30,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
     // Build query conditions
     const where: any = { shop };
     
-    // Filter by user (either sessionId or customerId)
-    if (customerId) {
+    // Filter by user - if logged in, show both customer assets AND session assets
+    if (customerId && sessionId) {
+      // Logged-in user: show assets from both customerId and sessionId
+      where.OR = [
+        { customerId: customerId },
+        { sessionId: sessionId }
+      ];
+    } else if (customerId) {
+      // Only customerId provided
       where.customerId = customerId;
     } else if (sessionId) {
+      // Only sessionId provided (anonymous user)
       where.sessionId = sessionId;
     } else {
       // If neither is provided, return empty array (no public assets)
@@ -42,10 +50,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
     // Add search filter if provided
     if (searchQuery) {
-      where.OR = [
-        { filename: { contains: searchQuery, mode: 'insensitive' } },
-        { tags: { has: searchQuery } }
-      ];
+      // If we already have an OR condition (for user filtering), we need to combine them
+      if (where.OR) {
+        // Apply search filter to each user condition
+        where.OR = where.OR.map((userCondition: any) => ({
+          ...userCondition,
+          OR: [
+            { filename: { contains: searchQuery, mode: 'insensitive' } },
+            { tags: { has: searchQuery } }
+          ]
+        }));
+      } else {
+        // No user OR condition, apply search filter directly
+        where.OR = [
+          { filename: { contains: searchQuery, mode: 'insensitive' } },
+          { tags: { has: searchQuery } }
+        ];
+      }
     }
 
     // Get total count

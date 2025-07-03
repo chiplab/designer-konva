@@ -29,6 +29,8 @@ export default function MediaBrowser({
   sessionId,
   customerId
 }: MediaBrowserProps) {
+  // Debug logging
+  console.log('[MediaBrowser] Received props:', { shop, sessionId, customerId });
   const [searchQuery, setSearchQuery] = React.useState('');
   const [selectedTag, setSelectedTag] = React.useState<string>('all');
   const [assets, setAssets] = React.useState<UserAsset[]>([]);
@@ -38,12 +40,49 @@ export default function MediaBrowser({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [selectedAsset, setSelectedAsset] = React.useState<string | null>(null);
 
-  // Load assets when modal opens
+  // Load assets when modal opens and migrate if needed
   React.useEffect(() => {
     if (isOpen) {
-      loadAssets();
+      // If user is logged in and has a sessionId, migrate assets first
+      if (customerId && sessionId) {
+        migrateAssets().then(() => loadAssets());
+      } else {
+        loadAssets();
+      }
     }
   }, [isOpen, sessionId, customerId]);
+
+  const migrateAssets = async () => {
+    try {
+      console.log('[MediaBrowser] Attempting to migrate assets from sessionId to customerId');
+      
+      // Check if we're running through the Shopify App Proxy
+      const isProxyAccess = window.location.hostname.includes('.myshopify.com');
+      const apiPath = isProxyAccess ? '/apps/designer/api/assets/migrate' : '/api/assets/migrate';
+      
+      const response = await fetch(apiPath, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          shop,
+          sessionId,
+          customerId
+        })
+      });
+      
+      const result = await response.json();
+      if (result.success && result.migratedCount > 0) {
+        console.log(`[MediaBrowser] Successfully migrated ${result.migratedCount} assets`);
+        // Clear sessionId from localStorage after successful migration
+        localStorage.removeItem('mediaBrowserSessionId');
+      }
+    } catch (error) {
+      console.error('[MediaBrowser] Failed to migrate assets:', error);
+      // Don't block loading if migration fails
+    }
+  };
 
   const loadAssets = async () => {
     setIsLoading(true);
@@ -53,7 +92,11 @@ export default function MediaBrowser({
       if (sessionId) params.append('sessionId', sessionId);
       if (customerId) params.append('customerId', customerId);
       
-      const response = await fetch(`/api/assets/list?${params.toString()}`);
+      // Check if we're running through the Shopify App Proxy
+      const isProxyAccess = window.location.hostname.includes('.myshopify.com');
+      const apiPath = isProxyAccess ? '/apps/designer/api/assets/list' : '/api/assets/list';
+      
+      const response = await fetch(`${apiPath}?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
         setAssets(data.assets || []);
@@ -83,7 +126,11 @@ export default function MediaBrowser({
 
     try {
       setUploadProgress(0);
-      const response = await fetch('/api/assets/upload', {
+      // Check if we're running through the Shopify App Proxy
+      const isProxyAccess = window.location.hostname.includes('.myshopify.com');
+      const apiPath = isProxyAccess ? '/apps/designer/api/assets/upload' : '/api/assets/upload';
+      
+      const response = await fetch(apiPath, {
         method: 'POST',
         body: formData,
       });
@@ -293,7 +340,17 @@ export default function MediaBrowser({
           }}>
             <span style={{ fontSize: '14px', color: '#6b5900' }}>
               You are not signed in. Images will be saved temporarily. 
-              <a href="/auth/login" style={{ marginLeft: '8px', color: '#0066ff', textDecoration: 'none' }}>
+              <a 
+                href={(() => {
+                  if (window.location.hostname.includes('.myshopify.com')) {
+                    // Build the full return URL including all query params
+                    const currentFullUrl = window.location.pathname + window.location.search;
+                    return `/customer_authentication/login?return_to=${encodeURIComponent(currentFullUrl)}&locale=en`;
+                  }
+                  return '/auth/login'; // Merchant auth - unchanged
+                })()} 
+                style={{ marginLeft: '8px', color: '#0066ff', textDecoration: 'none' }}
+              >
                 Sign in to save permanently →
               </a>
             </span>
