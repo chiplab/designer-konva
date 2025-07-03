@@ -4,6 +4,7 @@ import useImage from 'use-image';
 import { CURATED_FONTS, getFontsByCategory, DEFAULT_FONT } from '../constants/fonts';
 import { fontLoader } from '../services/font-loader';
 import FontBrowser from './FontBrowser';
+import MediaBrowser from './MediaBrowser';
 
 // Declare global window properties
 declare global {
@@ -159,9 +160,13 @@ interface DesignerCanvasProps {
     color5?: string | null;
   }>;
   initialColorVariant?: string | null;
+  customerId?: string | null;
 }
 
-const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, productLayout, shopifyProduct, shopifyVariant, layoutVariant, initialState, onSave, isAdminView = true, templateColors = [], initialColorVariant }) => {
+const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, productLayout, shopifyProduct, shopifyVariant, layoutVariant, initialState, onSave, isAdminView = true, templateColors = [], initialColorVariant, customerId }) => {
+  // Debug logging
+  console.log('[DesignerCanvas] Received customerId prop:', customerId);
+  
   // Helper function to generate unique IDs
   const generateUniqueId = (type: string) => {
     return `${type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -413,6 +418,10 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
   const [showFontPicker, setShowFontPicker] = React.useState(false);
   const [showFontBrowser, setShowFontBrowser] = React.useState(false);
   
+  // Media Browser state
+  const [showMediaBrowser, setShowMediaBrowser] = React.useState(false);
+  const [sessionId, setSessionId] = React.useState<string | null>(null);
+  
   // Text Panel state
   const [showTextPanel, setShowTextPanel] = React.useState(true);
   const [editingTextId, setEditingTextId] = React.useState<string | null>(null);
@@ -427,6 +436,60 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       console.warn(`Failed to load font: ${fontFamily}`, error);
     }
   };
+
+  // Handle image selection from MediaBrowser
+  const handleImageSelection = (imageUrl: string) => {
+    // Load the image to get its natural dimensions
+    const img = new window.Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      // Calculate size maintaining aspect ratio
+      const maxSize = 400; // Maximum width or height
+      const aspectRatio = img.width / img.height;
+      let width, height;
+      
+      if (img.width > img.height) {
+        // Landscape image
+        width = Math.min(img.width, maxSize);
+        height = width / aspectRatio;
+      } else {
+        // Portrait or square image
+        height = Math.min(img.height, maxSize);
+        width = height * aspectRatio;
+      }
+      
+      // Add image to canvas at center of designable area
+      const maxZIndex = Math.max(...unifiedElements.map(el => el.zIndex), -1) + 1;
+      const newImage = {
+        id: `image-${Date.now()}`,
+        url: imageUrl,
+        x: designableArea.x + designableArea.width / 2 - width / 2, // Center horizontally
+        y: designableArea.y + designableArea.height / 2 - height / 2, // Center vertically
+        width: width,
+        height: height,
+        rotation: 0,
+        zIndex: maxZIndex
+      };
+      setImageElements(prev => [...prev, newImage]);
+    };
+    img.onerror = () => {
+      console.error('Failed to load image for dimensions');
+      // Fallback to square if image fails to load
+      const maxZIndex = Math.max(...unifiedElements.map(el => el.zIndex), -1) + 1;
+      const newImage = {
+        id: `image-${Date.now()}`,
+        url: imageUrl,
+        x: designableArea.x + designableArea.width / 2 - 50,
+        y: designableArea.y + designableArea.height / 2 - 50,
+        width: 100,
+        height: 100,
+        rotation: 0,
+        zIndex: maxZIndex
+      };
+      setImageElements(prev => [...prev, newImage]);
+    };
+    img.src = imageUrl;
+  };
   
   // Preload priority fonts on mount
   React.useEffect(() => {
@@ -434,6 +497,17 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
       await fontLoader.preloadFonts(priorityFontIds);
     };
     loadPriorityFonts();
+  }, []);
+
+  // Initialize session ID for anonymous users
+  React.useEffect(() => {
+    // Get or create session ID
+    let existingSessionId = localStorage.getItem('mediaBrowserSessionId');
+    if (!existingSessionId) {
+      existingSessionId = crypto.randomUUID();
+      localStorage.setItem('mediaBrowserSessionId', existingSessionId);
+    }
+    setSessionId(existingSessionId);
   }, []);
 
   // Calculate scale factor for responsive canvas with padding
@@ -2811,105 +2885,22 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
           Add Rectangle
         </button>
         
-        {/* Add Image Button with file input */}
-        <label style={{ 
-          padding: '8px 16px', 
-          fontSize: '14px', 
-          marginRight: '10px',
-          backgroundColor: '#f0f0f0',
-          border: '1px solid #ccc',
-          borderRadius: '3px',
-          cursor: 'pointer',
-          display: 'inline-block'
-        }}>
-          Add Image
-          <input
-            type="file"
-            accept="image/*"
-            style={{ display: 'none' }}
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (file) {
-                const formData = new FormData();
-                formData.append('file', file);
-                formData.append('assetType', 'userImage');
-                
-                try {
-                  const response = await fetch('/api/assets/upload', {
-                    method: 'POST',
-                    body: formData,
-                  });
-                  const result = await response.json();
-                  if (result.success) {
-                    // Load the image to get its natural dimensions
-                    const img = new window.Image();
-                    img.crossOrigin = 'anonymous';
-                    img.onload = () => {
-                      // Calculate size maintaining aspect ratio
-                      const maxSize = 400; // Maximum width or height
-                      const aspectRatio = img.width / img.height;
-                      let width, height;
-                      
-                      if (img.width > img.height) {
-                        // Landscape image
-                        width = Math.min(img.width, maxSize);
-                        height = width / aspectRatio;
-                      } else {
-                        // Portrait or square image
-                        height = Math.min(img.height, maxSize);
-                        width = height * aspectRatio;
-                      }
-                      
-                      // Add image to canvas at center of designable area
-                      const maxZIndex = Math.max(...unifiedElements.map(el => el.zIndex), -1) + 1;
-                      const newImage = {
-                        id: `image-${Date.now()}`,
-                        url: result.asset.url,
-                        x: designableArea.x + designableArea.width / 2 - width / 2, // Center horizontally
-                        y: designableArea.y + designableArea.height / 2 - height / 2, // Center vertically
-                        width: width,
-                        height: height,
-                        rotation: 0,
-                        zIndex: maxZIndex
-                      };
-                      setImageElements(prev => [...prev, newImage]);
-                    };
-                    img.onerror = () => {
-                      console.error('Failed to load image for dimensions');
-                      // Fallback to square if image fails to load
-                      const maxZIndex = Math.max(...unifiedElements.map(el => el.zIndex), -1) + 1;
-                      const newImage = {
-                        id: `image-${Date.now()}`,
-                        url: result.asset.url,
-                        x: designableArea.x + designableArea.width / 2 - 50,
-                        y: designableArea.y + designableArea.height / 2 - 50,
-                        width: 100,
-                        height: 100,
-                        rotation: 0,
-                        zIndex: maxZIndex
-                      };
-                      setImageElements(prev => [...prev, newImage]);
-                    };
-                    img.src = result.asset.url;
-                  } else {
-                    setNotification({ 
-                      message: `Upload failed: ${result.error}`, 
-                      type: 'error' 
-                    });
-                    setTimeout(() => setNotification(null), 5000);
-                  }
-                } catch (error) {
-                  console.error('Upload error:', error);
-                  setNotification({ 
-                    message: 'Failed to upload image', 
-                    type: 'error' 
-                  });
-                  setTimeout(() => setNotification(null), 5000);
-                }
-              }
-            }}
-          />
-        </label>
+        {/* Browse Images Button */}
+        <button 
+          onClick={() => setShowMediaBrowser(true)}
+          style={{ 
+            padding: '8px 16px', 
+            fontSize: '14px', 
+            marginRight: '10px',
+            backgroundColor: '#f0f0f0',
+            border: '1px solid #ccc',
+            borderRadius: '3px',
+            cursor: 'pointer',
+            display: 'inline-block'
+          }}
+        >
+          Browse Images
+        </button>
         
         <button 
           onClick={() => setDesignableArea(prev => ({ ...prev, visible: !prev.visible }))}
@@ -5570,6 +5561,29 @@ const DesignerCanvas: React.FC<DesignerCanvasProps> = ({ initialTemplate, produc
           </div>
         )}
       </div>
+      
+      {/* FontBrowser Modal */}
+      <FontBrowser
+        isOpen={showFontBrowser}
+        onClose={() => setShowFontBrowser(false)}
+        onSelectFont={handleFontChange}
+        currentFont={(() => {
+          const textEl = textElements.find(el => el.id === selectedId);
+          const curvedEl = curvedTextElements.find(el => el.id === selectedId);
+          const gradientEl = gradientTextElements.find(el => el.id === selectedId);
+          return textEl?.fontFamily || curvedEl?.fontFamily || gradientEl?.fontFamily || DEFAULT_FONT;
+        })()}
+      />
+      
+      {/* MediaBrowser Modal */}
+      <MediaBrowser
+        isOpen={showMediaBrowser}
+        onClose={() => setShowMediaBrowser(false)}
+        onSelectImage={handleImageSelection}
+        shop={window.__SHOP_DOMAIN__ || 'unknown'}
+        sessionId={sessionId}
+        customerId={customerId}
+      />
     </div>
   );
 };

@@ -3,7 +3,7 @@
 client_id = "1e12e608ca0a9afcd087a76c1152fa47"
 name = "designer"
 handle = "designer-17"
-application_url = "https://recruiting-millions-looked-notification.trycloudflare.com"
+application_url = "https://saudi-ricky-polls-stuart.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,13 +27,13 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://recruiting-millions-looked-notification.trycloudflare.com/auth/callback",
-  "https://recruiting-millions-looked-notification.trycloudflare.com/auth/shopify/callback",
-  "https://recruiting-millions-looked-notification.trycloudflare.com/api/auth/callback"
+  "https://saudi-ricky-polls-stuart.trycloudflare.com/auth/callback",
+  "https://saudi-ricky-polls-stuart.trycloudflare.com/auth/shopify/callback",
+  "https://saudi-ricky-polls-stuart.trycloudflare.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://recruiting-millions-looked-notification.trycloudflare.com"
+url = "https://saudi-ricky-polls-stuart.trycloudflare.com"
 subpath = "designer"
 prefix = "apps"
 

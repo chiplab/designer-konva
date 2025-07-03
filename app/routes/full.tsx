@@ -16,6 +16,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
                url.searchParams.get("shop") || 
                "printlabs-app-dev.myshopify.com"; // Default for testing
   
+  // Get customer ID from query parameters (Shopify app proxy passes it as logged_in_customer_id)
+  const customerId = url.searchParams.get("logged_in_customer_id") || null;
+  
+  // Debug: Log headers and query params to find customer info
+  console.log("[full.tsx] Request headers:");
+  request.headers.forEach((value, key) => {
+    console.log(`  ${key}: ${value}`);
+  });
+  console.log("[full.tsx] Query parameters:");
+  url.searchParams.forEach((value, key) => {
+    console.log(`  ${key}: ${value}`);
+  });
+  console.log("[full.tsx] Detected customerId from logged_in_customer_id param:", customerId);
+  
   // Load design or template data
   let templateData = null;
   let designData = null;
@@ -168,7 +182,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
         <script>
           window.__TEMPLATE_COLORS__ = ${JSON.stringify(templateColors)};
           window.__INITIAL_COLOR_VARIANT__ = ${JSON.stringify(colorVariant)};
+          window.__CUSTOMER_ID__ = ${JSON.stringify(customerId)};
+          
+          // Debug logging
+          console.log('[full.tsx HTML] Customer ID passed to frontend:', ${JSON.stringify(customerId)});
         </script>
+        
+        <!-- Debug info (temporary) -->
+        <div id="debug-info" style="position: fixed; top: 0; right: 0; background: #333; color: white; padding: 10px; font-size: 12px; z-index: 9999;">
+          Shop: ${shop}<br>
+          Customer ID: ${customerId || 'Not detected'}<br>
+          <button onclick="this.parentElement.style.display='none'">Hide</button>
+        </div>
         
         <!-- Load our standalone canvas bundle (includes Konva) -->
         <script src="standalone/standalone-canvas.js"></script>
